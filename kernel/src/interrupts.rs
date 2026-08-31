@@ -58,6 +58,7 @@ extern "C" {
     fn fujo_pit_stub();
     fn fujo_kbd_stub();
     fn fujo_ser2_stub();
+    fn fujo_pf_stub();
 }
 
 core::arch::global_asm!(r#"
@@ -178,6 +179,35 @@ fujo_ser2_stub:
     pop rcx
     pop rax
     iretq
+
+    # ---- #PF (向量 14) —— M12 按需零页: 保存全部 caller-saved,
+    #      C 处理 (fujo_pf_handler) 后 pop 寄存器 + iretq 重试原指令。 ----
+    .p2align 4
+    .global fujo_pf_stub
+fujo_pf_stub:
+    push rax
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push r8
+    push r9
+    push r10
+    push r11
+    mov rdi, 14
+    mov rsi, rsp          # regs 帧: [0..8]=r11..rax, [9]=ERR, [10]=RIP, [11]=CS,
+    call fujo_pf_handler  #              [12]=RFLAGS, [13]=RSP, [14]=SS
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rax
+    add rsp, 8            # 跳过错误码
+    iretq
 "#);
 
 /// 异常处理（C 侧, 只打印并停机）— 带现场诊断 (M10: CS/RIP/CR2 定位)
@@ -252,7 +282,7 @@ pub fn init() {
     let kbd_addr = fujo_kbd_stub as usize as u64;
 
     unsafe {
-        for i in 0..15usize {
+        for i in 0..14usize {
             // volatile: 防死存储消除 (优化器陷阱, 同 gdt.rs)
             let e = (core::ptr::addr_of_mut!(IDT) as *mut IdtEntry).add(i);
             core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_lo), (stub_base + (i as u64) * 14) as u16);
@@ -266,6 +296,16 @@ pub fn init() {
             core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_hi), ((stub_base + (i as u64) * 14) >> 32) as u32);
             core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).zero), 0u32);
         }
+        // ---- 向量 14 (#PF): M12 专用桩 (全寄存器保存, 可重试) ----
+        let pf_addr = fujo_pf_stub as usize as u64;
+        let e = (core::ptr::addr_of_mut!(IDT) as *mut IdtEntry).add(14);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_lo), pf_addr as u16);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).sel), 0x08u16);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).ist), 0u8);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).attr), 0x8Eu8);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_mid), (pf_addr >> 16) as u16);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_hi), (pf_addr >> 32) as u32);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).zero), 0u32);
         let e = (core::ptr::addr_of_mut!(IDT) as *mut IdtEntry).add(0x20);
         core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_lo), pit_addr as u16);
         core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).sel), 0x08u16);

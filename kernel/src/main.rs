@@ -173,9 +173,10 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     serial::uart2_init();
     out_line("m10  : com2 model-link up (irq3 @115200) - engine=qwen waits host server");
 
-    // ---- M11: 虚拟内存/堆 (U 位硬化 + brk/mmap 原语) ----
+    // ---- M11/M12: 虚拟内存/堆 (U 位硬化 + 按需零页) ----
     mem::init();
     mem::harden_user_guard();
+    mem::demand_zero_init();
     out_line("mem  : virtual memory v0 - user heap 0x800000..0xC00000 (brk/mmap ready)");
 
     // ---- M10.1: 启动 Logo (自绘徽章) -> os shell ----

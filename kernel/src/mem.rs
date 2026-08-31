@@ -128,10 +128,7 @@ pub extern "C" fn fujo_brk(ptr: u64) -> i64 {
             return -12; // -ENOMEM
         }
         if ptr > old {
-            // 扩展: 新内存清零 (零页语义由恒等映射+写零满足)
-            for a in old..ptr {
-                (a as *mut u8).write(0);
-            }
+            // M12: 不再内核清零 —— 堆区 P=0, 用户首写时按需零页 (demand_zero)
             HEAP_BRK = ptr;
         }
         // Linux 语义: 成功返回新堆尾 (v0 只增不缩, 缩请求返回旧值=当前值)
@@ -160,9 +157,7 @@ pub extern "C" fn fujo_mmap(addr: u64, len: u64, prot: u64, flags: u64, fd: u64,
             serial::write_line("mem  : mmap out of heap region -ENOMEM");
             return -12; // -ENOMEM
         }
-        for a in old..old + need {
-            (a as *mut u8).write(0);
-        }
+        // M12: 不再内核清零 —— 按需零页由 #PF 处理器分发
         HEAP_BRK = old + need;
         serial::write_str("mem  : mmap anon ");
         print_hex(old);
@@ -173,8 +168,159 @@ pub extern "C" fn fujo_mmap(addr: u64, len: u64, prot: u64, flags: u64, fd: u64,
     }
 }
 
-/// 系统调用 munmap(nr11) v0: no-op (回收在 M12/M13 帧分配器后实现)。
+/// 系统调用 munmap(nr11) v0: no-op (回收在帧分配器/调度器后实现)。
 #[no_mangle]
 pub extern "C" fn fujo_munmap(_addr: u64, _len: u64) -> i64 {
     0
+}
+
+// ---------------------------------------------------------------------------
+// M12 · 缺页处理: 按需零页 (需求段 0x800000..0xC00000 用内核 PT 替换恒等映射)
+// ---------------------------------------------------------------------------
+
+/// 帧分配区域 (恒等映射: 物理=虚拟, 16MiB..63MiB, 全部在 64MiB 恒等内)。
+const FRAME_BASE: u64 = 0x1000000;
+const FRAME_END: u64 = 0x3F00000;
+const FRAME_PAGES: usize = ((FRAME_END - FRAME_BASE) / 0x1000) as usize;
+const BITMAP_LEN: usize = (FRAME_PAGES + 7) / 8;
+
+static mut FRAME_BITMAP: [u8; BITMAP_LEN] = [0; BITMAP_LEN];
+static mut PF_COUNT: u64 = 0;
+
+/// 页码表容器: 必须 4096 对齐 (页表基址低 12 位=标志位, 未对齐会报保留位 #PF)。
+#[repr(C, align(4096))]
+struct PtAligned([u64; 512]);
+
+/// 堆区替换 PT (每张 512 项, 初始 P=0 -> 首写触发按需零页)。
+static mut PT_HEAP0: PtAligned = PtAligned([0; 512]); // 0x800000..0xA00000
+static mut PT_HEAP1: PtAligned = PtAligned([0; 512]); // 0xA00000..0xC00000
+
+unsafe fn write_cr3_flush() {
+    let cr3 = read_cr3();
+    core::arch::asm!(
+        "mov {}, cr3",
+        in(reg) cr3,
+        options(nomem, nostack, preserves_flags)
+    );
+}
+
+/// M12 初始化: 把恒等映射的 PD[4]/PD[5] 替换为内核 PT (P=0), 使堆区按需物理帧。
+pub fn demand_zero_init() {
+    unsafe {
+        let pm4 = read_cr3() as *mut u64;
+        let pdpt = (pm4.read() & 0x000F_FFFF_FFFF_F000) as *mut u64;
+        let pd = (pdpt.read() & 0x000F_FFFF_FFFF_F000) as *mut u64;
+        // PD 索引: VA 0x800000>>21 = 4 (PT_HEAP0), 0xA00000>>21 = 5 (PT_HEAP1)
+        let old0 = pd.add(4).read();
+        let old1 = pd.add(5).read();
+        pd.add(4).write(core::ptr::addr_of_mut!(PT_HEAP0) as u64 | 0x7); // P|W|U
+        pd.add(5).write(core::ptr::addr_of_mut!(PT_HEAP1) as u64 | 0x7);
+        write_cr3_flush();
+        serial::write_str("m12  : demand-zero heap PD[4/5] replaced (old ");
+        print_hex(old0 & 0xFFF);
+        serial::write_str("/");
+        print_hex(old1 & 0xFFF);
+        serial::write_line(") - zero-on-first-write armed");
+    }
+}
+
+/// 分配并清零一页物理帧 (返回物理地址; 恒等映射内核可写)。
+fn frame_alloc_zero() -> Option<u64> {
+    unsafe {
+        for i in 0..FRAME_PAGES {
+            let byte = i / 8;
+            let bit = i % 8;
+            let cur = core::ptr::read_volatile(core::ptr::addr_of!(FRAME_BITMAP[byte]));
+            if cur & (1 << bit) == 0 {
+                core::ptr::write_volatile(
+                    core::ptr::addr_of_mut!(FRAME_BITMAP[byte]),
+                    cur | (1 << bit),
+                );
+                let phys = FRAME_BASE + (i as u64) * 0x1000;
+                // 清零 (内核直写)
+                for k in 0..512usize {
+                    ((phys as *mut u64).add(k)).write(0);
+                }
+                return Some(phys);
+            }
+        }
+    }
+    None
+}
+
+/// 按需零页: 用户堆区首写 -> 分配零帧 -> 置 PTE -> invlpg -> true (iretq 重试)。
+fn demand_zero(cr2: u64) -> bool {
+    unsafe {
+        if cr2 < USER_HEAP_BASE || cr2 >= USER_HEAP_BASE + USER_HEAP_LEN {
+            return false;
+        }
+        let off = (cr2 - USER_HEAP_BASE) as usize;
+        let pt_idx = off >> 12; // 0..1023
+        let (table, idx) = if pt_idx < 512 {
+            (core::ptr::addr_of_mut!(PT_HEAP0).cast::<u64>(), pt_idx)
+        } else {
+            (core::ptr::addr_of_mut!(PT_HEAP1).cast::<u64>(), pt_idx - 512)
+        };
+        let pte_addr = (table as *mut u64).add(idx);
+        if core::ptr::read_volatile(pte_addr) & 1 != 0 {
+            return false; // 已映射 (不应发生)
+        }
+        let phys = match frame_alloc_zero() {
+            Some(p) => p,
+            None => {
+                serial::write_line("mem  : out of frames (demand-zero)");
+                return false;
+            }
+        };
+        core::ptr::write_volatile(pte_addr, phys | 0x7); // P|W|U
+        core::arch::asm!(
+            "invlpg [{0}]",
+            in(reg) cr2,
+            options(nomem, nostack, preserves_flags)
+        );
+        PF_COUNT += 1;
+        if PF_COUNT <= 8 || PF_COUNT % 1024 == 0 {
+            serial::write_str("m12  : demand-zero va=0x");
+            print_hex(cr2);
+            serial::write_str(" -> phys=0x");
+            print_hex(phys);
+            serial::write_str(" (frames=");
+            print_dec(PF_COUNT);
+            serial::write_line(")");
+        }
+        true
+    }
+}
+
+/// #PF 处理 (asm 桩 fujo_pf_stub 调用; regs 布局见桩注释)。
+/// 用户堆区首写 -> 按需零页 -> 返回 (桩 iretq 重试原指令, 进程继续);
+/// 未处理 -> 诊断 + 停机 (与旧行为一致, 但带 cr2/err/rip)。
+#[no_mangle]
+pub extern "C" fn fujo_pf_handler(_vec: u64, regs: *const u64) {
+    unsafe {
+        let err = regs.add(9).read();
+        let rip = regs.add(10).read();
+        let mut cr2: u64;
+        core::arch::asm!(
+            "mov {}, cr2",
+            out(reg) cr2,
+            options(nomem, nostack, preserves_flags)
+        );
+        let user = (err >> 2) & 1 == 1;
+        let write = (err >> 1) & 1 == 1;
+        let present = err & 1 == 1;
+        if user && write && !present && demand_zero(cr2) {
+            return; // 桩: pop 寄存器 + iretq -> 重试原指令
+        }
+        serial::write_str("m12  : UNHANDLED #PF cr2=0x");
+        print_hex(cr2);
+        serial::write_str(" err=0x");
+        print_hex(err);
+        serial::write_str(" rip=0x");
+        print_hex(rip);
+        serial::write_line(" - kernel halted");
+        loop {
+            crate::hlt();
+        }
+    }
 }
