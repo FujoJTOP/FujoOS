@@ -1,0 +1,8 @@
+[package]
+name = "fujopack"
+version = "0.1.0"
+edition = "2021"
+description = "FujoOS packer: PE / ELF / Mach-O -> .run (FUJR container)"
+
+[dependencies]
+fujo-compat = { path = "../fujo-compat" }

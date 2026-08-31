@@ -1,0 +1,16 @@
+[package]
+name = "fujo-kernel"
+version = "0.1.0"
+edition = "2021"
+description = "FujoOS x86_64 kernel (multiboot v1 -> long mode, zero-dependency)"
+
+[dependencies]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+opt-level = 3
+lto = true
+codegen-units = 1

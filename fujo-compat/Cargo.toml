@@ -1,0 +1,7 @@
+[package]
+name = "fujo-compat"
+version = "0.1.0"
+edition = "2021"
+description = "FujoOS binary compatibility core: PE / ELF / Mach-O sniffer + FUJR .run container reader/writer"
+
+[dependencies]

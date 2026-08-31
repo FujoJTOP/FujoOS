@@ -1,0 +1,8 @@
+[package]
+name = "fujorun"
+version = "0.1.0"
+edition = "2021"
+description = "FujoOS runner: parse / validate / extract .run (FUJR container)"
+
+[dependencies]
+fujo-compat = { path = "../fujo-compat" }
