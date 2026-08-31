@@ -387,7 +387,14 @@
       白)/`blank=ff000000` → **M45 RESULT: PASS**;
       修复: 采样点曾落在字形空心(bit 位) → 选 bit6 必 on 位;
       回归: 矩阵 9/9
-- [ ] **M46** 桌面环境:任务栏/开始菜单雏形
+- [x] **M46** 桌面环境:任务栏/开始菜单雏形 —— **desk.rs 桌面合成 v0**
+      (backbuffer): **desk_init**(背景+40px 任务栏+开始按钮方框+
+      app 图标)、**taskbar(text)**(时钟位字体)、**start(x,y)**(开始
+      按钮命中)、**menu(on)**(200x180 菜单框: 边框+Programs/Files/
+      Terminal/Shut Down)、pixel 读回;
+      **m46_desk.elf 实测**: init+taskbar → `start-hit=1` → menu 渲染
+      → **`tb=ff1caa5e(任务栏绿) menu=ffe5e7eb(表面) bg=ff202020(背景)`**
+      → **M46 RESULT: PASS**; 回归: 矩阵 9/9
 - [ ] **M47** 多屏/分辨率切换(vbe 枚举)
 - [ ] **M48** 输入法候选窗+fujokit 集成
 - [ ] **M49** 无障碍:高对比/大字模式

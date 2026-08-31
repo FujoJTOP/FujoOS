@@ -378,6 +378,12 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5121 => crate::ipc::fujo_sigkill(a0, a1),
         // fujo_sigret() -> 0
         0x5122 => crate::ipc::fujo_sigret(),
+        // ---- M46: 桌面环境 ----
+        0x5B01 => crate::desk::fujo_desk_init(),
+        0x5B02 => crate::desk::fujo_desk_taskbar(a0),
+        0x5B03 => crate::desk::fujo_desk_start(a0, a1),
+        0x5B04 => crate::desk::fujo_desk_menu(a0),
+        0x5B05 => crate::desk::fujo_desk_pixel(a0, a1),
         // ---- M45: 终端窗口控件 ----
         0x5A01 => crate::term::fujo_term_put(a0, a1, a2, a3),
         0x5A02 => crate::term::fujo_term_draw(a0, a1, a2),

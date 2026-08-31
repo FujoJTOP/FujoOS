@@ -14,6 +14,7 @@
 mod ai;
 mod ata;
 mod clip;
+mod desk;
 mod elf_loader;
 mod fjfs;
 mod font;
