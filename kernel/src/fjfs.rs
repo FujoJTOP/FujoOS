@@ -34,7 +34,7 @@ static mut VOLUME_OK: bool = false;
 #[allow(static_mut_refs)]
 static mut SECTOR0: [u8; SECTOR] = [0; SECTOR];
 #[allow(static_mut_refs)]
-static mut BITMAP: [u8; 256] = [0; 256];
+static mut BITMAP: [u8; 512] = [0; 512]; // 512B (位图仅用前 256B; 512 防扇区读溢出)
 #[allow(static_mut_refs)]
 static mut ROOT: [DirEntry; 32] = [DirEntry {
     name: [0; 16],

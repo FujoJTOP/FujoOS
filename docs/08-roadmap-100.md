@@ -27,7 +27,12 @@
       实测: meminfo read=77 / ramdisk write+append readback=43 / module 32B=ELF 头 /
       ENOENT=-2; **修复: 镜像 1.18MB 超 0x120000 装载范围(尾部覆盖模块区/bss 损坏
       → bad magic + 切片恐慌) → load_end/bss_end=0x230000 + pad 0x130000
-- [ ] **M16 fujofs**:极简本地文件系统(FAT-like);重启持久化
+- [x] **M16 fujofs**: 极简 FAT-like 持久化文件系统 —— ATA PIO 驱动(IDE 主通道
+      IDENTIFY+LBA28)、FJFS(superblock/簇位图/根目录 32x32B/连续分配/写穿)、
+      VFS `/disk/<file>`(载入缓存/脏刷盘); **重启持久化实测通过**:
+      boot#1 写 `FJFS persistent data #1`(24B)→ 重启 → boot#2 读回 24B +
+      追加 `seen-boot2` → 读回 35B; 修复: BITMAP 256B 被扇区读溢出
+      (512B) -> 512B; 目录项 28B->32B
 - [ ] **M17 .run 升级**:资源节(图标/清单/权限声明)+ 多文件打包
 - [ ] **M18 IPC 原语**:管道/共享内存/信号;`ls | grep` 式管道
 - [ ] **M19 内核对象/句柄表**:统一资源抽象
