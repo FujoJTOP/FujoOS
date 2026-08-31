@@ -45,7 +45,23 @@ pub fn init() {
             }
         }
         serial::outb(0x64, 0x60);
-        serial::outb(0x60, cmd | 0x01); // bit0: kbd IRQ enable
+        serial::outb(0x60, cmd & !0x01); // 先禁键盘 IRQ (bit0=0)
+        // 清空 8042 输出缓冲 (丢弃 BAT/自检挂起字节)
+        for _ in 0..3 {
+            let mut w = 0u32;
+            while serial::inb(0x64) & 1 == 0 {
+                w += 1;
+                if w > 10000 {
+                    break;
+                }
+            }
+            if serial::inb(0x64) & 1 != 0 {
+                let _ = serial::inb(0x60);
+            }
+        }
+        // 数据清空后再使能键盘 IRQ
+        serial::outb(0x64, 0x60);
+        serial::outb(0x60, cmd | 0x01);
         // 8042 初始化完成后才开放 IRQ1 (避免初始化期间中断风暴)
         serial::outb(0x21, 0xFD); // PIC: IRQ0 + IRQ1 unmasked
     }
@@ -151,9 +167,20 @@ pub fn demo() {
     let mut line = [0u8; 80];
     let mut used = 0usize;
     let t0 = interrupts::ticks();
+    serial::write_str("kbd  : window start t0=");
+    print_dec_usize(t0 as usize);
+    serial::write_line("");
 
+    let mut last_mark = t0;
     while interrupts::ticks() - t0 < 300 {
         crate::hlt();
+        let now = interrupts::ticks();
+        if now - last_mark >= 100 {
+            last_mark = now;
+            serial::write_str("kbd  : tick keepalive=");
+            print_dec_usize(now as usize);
+            serial::write_line("");
+        }
         loop {
             let sc = unsafe {
                 if KBD_TAIL == KBD_HEAD {

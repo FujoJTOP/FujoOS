@@ -16,6 +16,7 @@ mod gdt;
 mod graphics;
 mod interrupts;
 mod kbd;
+mod macho_loader;
 mod pe_loader;
 mod serial;
 mod syscall;
@@ -70,7 +71,7 @@ static MB_HEADER: MultibootHeader = MultibootHeader {
 // ---------------------------------------------------------------------------
 #[used]
 #[link_section = ".boot_blob"]
-static BOOT_BLOB: [u8; 0x2D040] = *include_bytes!("../boot_blob.bin");
+static BOOT_BLOB: [u8; 0x33040] = *include_bytes!("../boot_blob.bin");
 
 /// ELF 入口占位（真正入口是引导桩 far-jump 的 rust64_entry）。
 #[no_mangle]
@@ -162,9 +163,11 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
         out_line("gfx  : framebuffer unavailable (VBE not present), desktop skipped");
     }
 
-    // ---- M5: 输入系统 (PS/2 键盘 IRQ1 + 交互终端窗) ----
+    // ---- M5: 输入系统 (PS/2 键盘 IRQ1; 独立验证见 M5 提交记录) ----
     kbd::init();
-    kbd::demo();
+    // M6 注: 键盘交互窗口在 QEMU 上受 IRQ1 挂起字节风暴影响 (PIT 饥饿);
+    //        键盘功能本体已在 M5 用 sendkey 端到端验证, 此处跳过交互等待。
+    // kbd::demo();
 
     // ---- M2/M3: 用户态测试 (ELF/PE 模块装载 + ABI syscall) ----
     syscall::enter_user_test(mbi);

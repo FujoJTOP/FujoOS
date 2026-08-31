@@ -35,13 +35,16 @@ PT_BASE = 0x108000     # BLOB + 0x7000 (32 x 512 x 8B = 128 KiB)
 PDPT3 = 0x128000       # BLOB + 0x27000
 PD3 = 0x129000         # BLOB + 0x28000 (4 项 PT 指针: 0xFD000000 区, 4KiB 页)
 PT3_BASE = 0x12A000    # BLOB + 0x29000 (4 x 512 x 8B = 16KiB: 0xFD000000..0xFD800000)
-GDT = 0x12C000         # BLOB + 0x2B000
-GDT_PTR = 0x12C018     # BLOB + 0x2B018
+PDPT1 = 0x12C000       # BLOB + 0x2B000 (M6: Mach-O 用户区 vaddr 4-8GB <=> phys 8MB 起)
+PD1 = 0x12D000         # BLOB + 0x2C000
+PT1_BASE = 0x12E000    # BLOB + 0x2D000 (5 x 512 x 8B = 20KiB: 8MB 区)
+GDT = 0x134000         # BLOB + 0x33000
+GDT_PTR = 0x134018     # BLOB + 0x33018
 STACK_TOP = 0x300000
 RUST_ENTRY = 0x200000
 
 MAP_PD_END = 0x4000000           # 64 MiB (低地址 4KiB 映射)
-BLOB_SIZE = 0x2D040
+BLOB_SIZE = 0x33040
 
 blob = bytearray(BLOB_SIZE)
 
@@ -101,6 +104,19 @@ for j in range(4):
     for k in range(512):
         vaddr = 0xFD000000 + (j * 0x200000 + k * 0x1000)
         set64(PT3_BASE + 0x1000 * j + 8 * k, vaddr | 0x87)
+
+# ================= Mach-O 用户区: vaddr 4-8GB -> phys 8MB 起 (M6) =================
+# 非恒等映射: macOS 二进制原生 __TEXT 基址为 0x100000000; 我们的地址空间
+# 直接把该虚拟区映射到空闲 RAM (phys 0x800000 起), 保持原生地址语义。
+set64(PML4 + 1 * 8, PDPT1 | 0x07)
+set64(PDPT1, PD1 | 0x07)
+for j in range(5):
+    set64(PD1 + 8 * j, (PT1_BASE + 0x1000 * j) | 0x07)
+for j in range(5):
+    for k in range(512):
+        vaddr = 0x100000000 + (j * 0x200000 + k * 0x1000)
+        phys = 0x800000 + (j * 0x200000 + k * 0x1000)
+        set64(PT1_BASE + 0x1000 * j + 8 * k, phys | 0x87)
 
 # ================= GDT =================
 set64(GDT + 0x00, 0x0000_0000_0000_0000)

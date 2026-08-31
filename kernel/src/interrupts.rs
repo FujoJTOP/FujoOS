@@ -100,15 +100,28 @@ fujo_pit_stub:
     iretq
 
     # ---- 键盘 (IRQ1) —— 调 C 处理 (读 0x60/入环/EOI) ----
+    # 必须保存全部 caller-saved 寄存器 (C 函数会破坏 rsi/r8-r11 等),
+    # 否则中断返回后主循环寄存器损坏 (M6 踩坑实录: kbd stub 只存
+    # rax/rcx/rdx/rdi -> demo 收尾卡死)。
     .p2align 4
     .global fujo_kbd_stub
 fujo_kbd_stub:
     push rax
     push rcx
     push rdx
+    push rsi
     push rdi
+    push r8
+    push r9
+    push r10
+    push r11
     call fujo_kbd_irq
+    pop r11
+    pop r10
+    pop r9
+    pop r8
     pop rdi
+    pop rsi
     pop rdx
     pop rcx
     pop rax

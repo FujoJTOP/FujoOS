@@ -183,12 +183,23 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         }
         // exit(code) / exit_group(code) -> 内核接管并停机
         60 | 231 => {
-            serial::write_line("user : sys_exit() — 内核接管, M2 验证完成");
+            serial::write_line("user : sys_exit() — 内核接管, M6 验证完成");
             serial::write_str("timer : pit ticks=");
             print_dec(interrupts::ticks());
             serial::write_line(" (~100 Hz since boot)");
             halt_forever();
         }
+        // ---- darwin BSD 空间 (0x2000000|nr, M6 darwinsubsys) ----
+        0x200_0001 => {
+            serial::write_line("user : darwin exit() — 内核接管, M6 验证完成");
+            serial::write_str("timer : pit ticks=");
+            print_dec(interrupts::ticks());
+            serial::write_line(" (~100 Hz since boot)");
+            halt_forever();
+        }
+        0x200_0004 => user_write(a0, a1, a2), // darwin write(fd, buf, len)
+        // darwin getpid (BSD: 0x2000014)
+        0x200_0014 => 2,
         _ => {
             // 未实现: 打印一次(带计数), 返回 -ENOSYS
             let c = unsafe {
@@ -231,8 +242,11 @@ pub fn log_hex(v: u64) {
 
 fn user_write(fd: u64, ptr: u64, len: u64) -> i64 {
     let _ = fd;
-    // 用户地址范围检查 (M1 单任务平坦空间: 用户程序 @0x400000, 栈 @0x600000)
-    if ptr < 0x400000 || ptr > 0x800000 {
+    // 用户地址范围检查: linux/win 低区 (0x400000..0x800000) 或 darwin 区
+    // (0x100000000..0x100800000, M6 Mach-O 原生地址)
+    let in_low = ptr >= 0x400000 && ptr <= 0x800000;
+    let in_darwin = ptr >= 0x100000000 && ptr <= 0x100800000;
+    if !in_low && !in_darwin {
         serial::write_line("syscall write: bad user pointer");
         return -14; // -EFAULT
     }
@@ -331,7 +345,17 @@ pub fn enter_user_test(mbi: u32) -> ! {
             print_dec(len as u64);
             serial::write_line(" bytes");
 
-            let is_pe = unsafe { (start as *const u8).read() == b'M' && (start as *const u8).add(1).read() == b'Z' };
+            let is_pe = unsafe {
+                (start as *const u8).read() == b'M'
+                    && (start as *const u8).add(1).read() == b'Z'
+            };
+            let is_macho = unsafe {
+                let m = (start as *const u8).read();
+                (m == 0xCF && (start as *const u8).add(1).read() == 0xFA)
+                    || (m == 0xFE
+                        && (start as *const u8).add(1).read() == 0xED
+                        && (start as *const u8).add(2).read() == 0xFA)
+            };
             if is_pe {
                 serial::write_line("fmt  : PE32+ -> winsubsys (M3)");
                 unsafe { crate::pe_loader::install_shims(); }
@@ -345,6 +369,22 @@ pub fn enter_user_test(mbi: u32) -> ! {
                     }
                     Err(e) => {
                         serial::write_str("pexc : FAILED (");
+                        serial::write_str(e);
+                        serial::write_line(") — fallback...");
+                    }
+                }
+            } else if is_macho {
+                serial::write_line("fmt  : Mach-O 64 -> darwinsubsys (M6)");
+                match crate::macho_loader::load_macho(start, len) {
+                    Ok(entry) => {
+                        serial::write_str("mach : LC_SEGMENT_64 mapped, entry=");
+                        print_hex(entry);
+                        serial::write_line("");
+                        load_addr = entry;
+                        used_module = true;
+                    }
+                    Err(e) => {
+                        serial::write_str("mach : FAILED (");
                         serial::write_str(e);
                         serial::write_line(") — fallback...");
                     }

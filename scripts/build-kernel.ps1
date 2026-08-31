@@ -15,7 +15,15 @@ if (Test-Path "$llvm\clang.exe") {
     exit 1
 }
 
-Write-Host "== [0b] build M3 win sample (PE32+ w/ kernel32 import table) =="
+Write-Host "== [0b] build M6 darwin sample (Mach-O, darwin bsd syscalls) =="
+if (Test-Path "$llvm\clang.exe") {
+    & "$llvm\clang.exe" --target=x86_64-apple-macos11 -O2 -nostdlib -fuse-ld=lld `
+        ..\sdk\mac\user_darwin.c -o ..\sdk\mac\user_darwin.macho
+} else {
+    Write-Host "  clang missing: darwin sample skipped"
+}
+
+Write-Host "== [0c] build M3 win sample (PE32+ w/ kernel32 import table) =="
 if (Test-Path "$llvm\llvm-dlltool.exe") {
     & "$llvm\llvm-dlltool.exe" -d ..\sdk\win\kernel32.def -l ..\sdk\win\kernel32.lib -D kernel32.dll
     & "$llvm\clang.exe" --target=x86_64-pc-windows-msvc -O2 -nostdlib -fuse-ld=lld `
