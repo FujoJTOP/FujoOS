@@ -64,7 +64,22 @@
       +手工 FILE(1) → 统计 file=1 pipe=2 shm=1 sig=1 (计数逐一断言) →
       free/close → 最终 file=0 pipe=2 shm=1 sig=1 → **PASS**;
       说明: 对象表为 M14b 每进程句柄表的前身, fd 与 kobj 并行走 VFS 路径
-- [ ] **M20 稳定性**:进程级异常恢复;24h 无泄漏运行
+- [x] **M20 稳定性**:进程级异常恢复;无泄漏运行 —— ① **异常桩重构**:
+      所有异常向量(0..14)经 trampoline 全寄存器保存(PIT/#PF 同布局:
+      regs[0..8]=r11..rax, [9]=栈内返回地址陷阱 → 帧头在 10+e) →
+      用户态异常(#GP/#UD/#DE...)走 M14 崩溃隔离转场,不再整机停机;
+      **实测**: B 任务 `ud2` → `EXC user vec=6 rip=0x40007d → task 1
+      terminated` → A 任务继续运行 → **M20 RESULT: PASS**
+      ② **无泄漏**: fd 槽扫描复用(取代恒增 NEXT_FD → EMFILE 泄漏)、
+      pipe 双端关闭回收(Pipe 槽+kobj, ends 引用计数)、kobj 登记偏移
+      (kslot=slot+1, 0=无登记与槽 0 冲突 → 首端永不释放的 M20 实证泄漏)、
+      kobj 日志节流(前 16 次); **实测**: 128 轮 pipe 创建/写读/双端关闭 +
+      512 轮 kobj 创建/释放 → 每 32 轮 pipe 计数回落 0 → **PASS (no leak)**;
+      ③ **回归修复**: demand-zero 现覆盖"用户读未分配页"(Linux 语义,
+      原仅 write; B 共享页先读 → 误判崩溃), M18/M19 回归 PASS;
+      ④ **装载范围**: 镜像 1.38MB>0x230000 → load/bss_end=0x260000 +
+      pad 0x160000(QEMU multiboot 精确读 load_end-load_addr,
+      超文件大小 → fread() failed); 约束: 两值必须同步改
 
 ## Wave 2 · 兼容层加深(M21–M35)
 

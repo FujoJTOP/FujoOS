@@ -27,33 +27,54 @@ pub struct File {
     pub data_ptr: *const u8,
     pub data_len: u64,
     pub pos: u64,
+    /// M20: 登记的内核对象槽 (pipe 端点; 0=none)
+    pub kslot: usize,
 }
 
 // 文件表: 0..=2 保留 (0=/dev/null, 1/2=/dev/tty 串口), 3.. 由 open 分配
 static mut FILES: [File; MAX_OPEN] = [
-    File { name: "/dev/null", kind: 0, data_ptr: core::ptr::null(), data_len: 0, pos: 0 };
+    File { name: "/dev/null", kind: 0, data_ptr: core::ptr::null(), data_len: 0, pos: 0, kslot: 0 };
     MAX_OPEN
 ];
 static mut NEXT_FD: usize = 3;
+
+/// M20: fd 槽分配 (扫描复用空闲槽, 取代只增的 NEXT_FD 计数器 -> 无泄漏)。
+fn alloc_fd_slot() -> Option<usize> {
+    unsafe {
+        for fd in 3..MAX_OPEN {
+            let f = &*core::ptr::addr_of!(FILES[fd]);
+            if f.kind == 0 && f.name == "/dev/null" {
+                return Some(fd);
+            }
+        }
+        None
+    }
+}
 
 // ---------------------------------------------------------------------------
 // M18 · IPC 管道 fd 登记 (vfs 表复用, kind=F_KIND_PIPE)
 // ---------------------------------------------------------------------------
 
-/// 分配一个指向 Pipe 的 fd (fd 表记录 data_ptr = Pipe*)。
+/// 分配一个指向 Pipe 的 fd (fd 表记录 data_ptr = Pipe*, kslot = kobj 槽)。
 pub fn alloc_pipe_fd(p: *mut crate::ipc::Pipe) -> Option<usize> {
     unsafe {
-        let fd = NEXT_FD;
-        if fd >= MAX_OPEN {
-            return None;
-        }
-        NEXT_FD += 1;
+        let fd = match alloc_fd_slot() {
+            Some(f) => f,
+            None => return None, // -EMFILE (槽复用: 关闭后由 free_fd 复位)
+        };
+        NEXT_FD = NEXT_FD.max(fd + 1);
+        // M19: 登记内核对象 (pipe 端点)。kslot 存 slot+1 (0=无登记哨兵,
+        // 与 kobj 槽 0 冲突 -> M20 首端泄漏实证: free_fd 跳过了 slot 0!)
+        let kslot = crate::kobj::alloc(crate::kobj::K_PIPE, fd as u64)
+            .map(|s| s + 1)
+            .unwrap_or(0);
         let f = &mut *core::ptr::addr_of_mut!(FILES[fd]);
         f.name = "/pipe";
         f.kind = F_KIND_PIPE;
         f.data_ptr = p as *const u8;
         f.data_len = crate::ipc::PIPE_SIZE as u64; // 容量提示 (read 走 pipe_read)
         f.pos = 0;
+        f.kslot = kslot;
         Some(fd)
     }
 }
@@ -63,6 +84,11 @@ pub fn free_fd(fd: usize) {
     unsafe {
         if fd >= 3 && fd < MAX_OPEN {
             let f = &mut *core::ptr::addr_of_mut!(FILES[fd]);
+            // M20: 回收登记的 kobj (kslot 编码 = slot+1; 0 = 无登记)
+            if f.kslot != 0 {
+                crate::kobj::free(f.kslot - 1);
+                f.kslot = 0;
+            }
             f.name = "/dev/null";
             f.kind = 0;
             f.data_ptr = core::ptr::null();
@@ -210,12 +236,12 @@ pub extern "C" fn fujo_open(ptr: u64, len: u64, flags: u64) -> i64 {
     let end = full.find('\0').unwrap_or(full.len());
     let name = &full[..end];
     unsafe {
-        // 分配 fd
-        let mut fd = NEXT_FD;
-        if fd >= MAX_OPEN {
-            return -24; // -EMFILE
-        }
-        NEXT_FD += 1;
+        // 分配 fd (M20: 槽复用)
+        let fd = match alloc_fd_slot() {
+            Some(f) => f,
+            None => return -24, // -EMFILE
+        };
+        NEXT_FD = NEXT_FD.max(fd + 1);
         let f = &mut *core::ptr::addr_of_mut!(FILES[fd]);
         if name == "/boot/module" {
             f.name = "/boot/module";
@@ -335,8 +361,14 @@ pub extern "C" fn fujo_close(fd: u64) -> i64 {
         unsafe {
             let f = &mut *core::ptr::addr_of_mut!(FILES[fd as usize]);
             if f.kind == F_KIND_PIPE {
-                // M18: 管道端点关闭 (v0 不回收 Pipe, fd 表复位即可)
+                // M18/M20: 管道端点关闭
+                let p = f.data_ptr as *mut crate::ipc::Pipe;
+                let pi = crate::ipc::pipe_end_close(p);
                 free_fd(fd as usize);
+                // M20: 双端全关 -> 回收 Pipe 槽 (防泄漏)
+                if let Some(idx) = pi {
+                    crate::ipc::pipe_recycle(idx);
+                }
                 return 0;
             }
             // M16: 磁盘文件脏刷盘 (写穿)

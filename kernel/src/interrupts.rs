@@ -115,16 +115,40 @@ fujo_exc_stub_table:
     call fujo_exc_c
     ud2
 
-    # ---- 异常帧捕获 trampoline: rdi=vec, 帧头 = rsp+8 ----
-    # 帧布局: 有错误码向量 [ERR][RIP][CS][RFLAGS][RSP][SS];
-    #         无错误码向量 [RIP][CS][RFLAGS][RSP][SS];
-    #         内核态(无特权切换) CPL0 不压 RSP/SS。
+    # ---- 异常帧捕获 trampoline (M20: 全寄存器保存 + 用户态可转场) ----
+    # 保存顺序必须与 PIT/#PF 桩一致: 栈顶=regs[0]=r11 ... regs[8]=rax,
+    # 其后 [ERR?][RIP][CS][RFLAGS][RSP?][SS?]。
+    # C 返回 1 => 转场 (sched_next_rsp 指向幸存任务帧; 与 #PF 桩同路径),
+    # 返回 0 => C 已停机 (不会返回)。
     .p2align 4
     .global fujo_exc_c
 fujo_exc_c:
+    push rax
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push r8
+    push r9
+    push r10
+    push r11
     mov rsi, rsp
-    add rsi, 8
-    jmp fujo_exc
+    call fujo_exc2
+    test rax, rax
+    jz 1f
+    mov rsp, [rip + sched_next_rsp]
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rax
+    iretq
+1:
+    ud2
 
     # ---- PIT (IRQ0) —— 计数 + EOI + 调度钩子 (M13: 时间片轮转) ----
     # 全程保存 caller-saved (C 调度器会破坏), 切任务时换 rsp 到新帧。
@@ -263,60 +287,75 @@ fujo_pf_stub:
     iretq
 "#);
 
-/// 异常处理（C 侧, 只打印并停机）— 带现场诊断 (M10: CS/RIP/CR2 定位)
-/// frame: 异常帧指针 (trampoline fujo_exc_c 捕获的 CPU 压栈头)。
-/// 有错误码向量 (8,10,11,12,13,14): [ERR][RIP][CS][RFLAGS][RSP][SS]
-/// 无错误码向量:                  [RIP][CS][RFLAGS][RSP][SS]   (用户态/内核态 CS 判据)
+/// 异常处理（C 侧, M20 版）— 多任务时用户态异常不停机, 崩溃隔离转场。
+/// 帧布局 (trampoline 传入 regs = 9 寄存器槽顶):
+///   regs[0..8]  = r11..rax
+///   regs[9]     = 返回地址 (IDT 桩 call fujo_exc_c 压入! 陷阱: CALL 在
+///                  CPU 帧与 9 寄存器之间)
+///   regs[10..]  = CPU 帧: 有错误码 (8,10,11,12,13,14,17):
+///                 [ERR][RIP][CS][RFLAGS][RSP?][SS?]
+///                 无错误码: [RIP][CS][RFLAGS][RSP?][SS?]
+/// 用户态 (特权切换) 才压 RSP/SS; 内核态无。
+/// 返回 1 = 已转场 (桩换 sched_next_rsp 恢复幸存任务), 0 = 停机 (不返回)。
 #[no_mangle]
-pub unsafe extern "C" fn fujo_exc(vec: u64, frame: u64) -> ! {
-    serial::write_str("EXCEPTION vec=");
-    // 十进制打印
+pub extern "C" fn fujo_exc2(vec: u64, regs: *mut u64) -> i64 {
+    let has_err = matches!(vec, 8 | 10 | 11 | 12 | 13 | 14 | 17);
+    let e = if has_err { 1 } else { 0 };
+    unsafe {
+        let cs = regs.add(10 + e + 1).read() as u16; // [9]=ret, [10+e]=RIP, [10+e+1]=CS
+        // 判定: 用户态 (CPL3) 且多任务 -> 崩溃隔离转场 (M14 路径)
+        if cs & 3 == 3 {
+            serial::write_str("EXC  user vec=");
+            print_exc_dec(vec);
+            serial::write_str(" cs=");
+            crate::syscall::log_hex(cs as u64 & 0xFF);
+            let rip = regs.add(10 + e).read();
+            serial::write_str(" rip=");
+            crate::syscall::log_hex(rip);
+            // M14: 终止当前任务 + 转场幸存者
+            if crate::sched::terminate_current_and_next() {
+                return 1;
+            }
+            // 单任务: 无幸存者 -> 停机诊断
+            serial::write_line("  -- no survivors, kernel halted");
+            loop {
+                crate::hlt();
+            }
+        }
+        // 内核态异常: 诊断 + 停机
+        serial::write_str("EXCEPTION vec=");
+        print_exc_dec(vec);
+        serial::write_str(" (kernel) rip=");
+        let rip = regs.add(10 + e).read();
+        crate::syscall::log_hex(rip);
+        serial::write_str(" cs=");
+        crate::syscall::log_hex(cs as u64 & 0xFF);
+        if vec == 14 {
+            let mut cr2: u64;
+            asm!("mov {}, cr2", out(reg) cr2, options(nomem, nostack, preserves_flags));
+            serial::write_str(" cr2=");
+            crate::syscall::log_hex(cr2);
+        }
+        serial::write_line("  -- kernel halted");
+        loop {
+            crate::hlt();
+        }
+    }
+}
+
+fn print_exc_dec(v: u64) {
     let mut buf = [0u8; 4];
-    let mut v = vec;
     let mut i = 4;
+    let mut x = v;
     loop {
         i -= 1;
-        buf[i] = b'0' + (v % 10) as u8;
-        v /= 10;
-        if v == 0 {
+        buf[i] = b'0' + (x % 10) as u8;
+        x /= 10;
+        if x == 0 {
             break;
         }
     }
     serial::write_str(core::str::from_utf8(&buf[i..]).unwrap());
-    // 解码: 判断是否有错误码 / 是否用户态 (CS RPL)
-    let has_err = matches!(vec, 8 | 10 | 11 | 12 | 13 | 14 | 17);
-    if has_err {
-        serial::write_str(" err=");
-        crate::syscall::log_hex(core::ptr::read((frame as *const u64).add(0)));
-    }
-    let rip = core::ptr::read((frame as *const u64).add(if has_err { 1 } else { 0 }));
-    let cs = core::ptr::read((frame as *const u64).add(if has_err { 2 } else { 1 }));
-    let rflags = core::ptr::read((frame as *const u64).add(if has_err { 3 } else { 2 }));
-    serial::write_str(" rip=");
-    crate::syscall::log_hex(rip);
-    serial::write_str(" cs=");
-    crate::syscall::log_hex(cs & 0xFF);
-    serial::write_str(" rflags=");
-    crate::syscall::log_hex(rflags);
-    if cs & 3 == 3 {
-        // 用户态: 帧含 RSP/SS
-        let ursp = core::ptr::read((frame as *const u64).add(if has_err { 4 } else { 3 }));
-        let uss = core::ptr::read((frame as *const u64).add(if has_err { 5 } else { 4 }));
-        serial::write_str(" usp=");
-        crate::syscall::log_hex(ursp);
-        serial::write_str(" uss=");
-        crate::syscall::log_hex(uss & 0xFF);
-    }
-    if vec == 14 {
-        let mut cr2: u64;
-        asm!("mov {}, cr2", out(reg) cr2, options(nomem, nostack, preserves_flags));
-        serial::write_str(" cr2=");
-        crate::syscall::log_hex(cr2);
-    }
-    serial::write_line("  -- kernel halted");
-    loop {
-        crate::hlt();
-    }
 }
 
 fn pic_remap() {

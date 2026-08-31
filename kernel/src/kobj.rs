@@ -31,6 +31,8 @@ pub struct KObj {
 
 static mut KOBJS: [KObj; KOBJ_MAX] = [KObj { kind: 0, epoch: 0, payload: 0 }; KOBJ_MAX];
 static mut NEXT_EPOCH: [u16; KOBJ_MAX] = [0; KOBJ_MAX];
+static mut ALLOC_LOG: u64 = 0; // M20: 噪音抑制 (仅记录前 16 次)
+static mut FREE_LOG: u64 = 0;
 
 fn print_dec(v: u64) {
     let mut buf = [0u8; 24];
@@ -58,11 +60,14 @@ pub fn alloc(kind: u8, payload: u64) -> Option<usize> {
                 KOBJS[i].kind = kind;
                 KOBJS[i].epoch = NEXT_EPOCH[i];
                 KOBJS[i].payload = payload;
-                serial::write_str("kobj : alloc kind=");
-                print_dec(kind as u64);
-                serial::write_str(" slot=");
-                print_dec(i as u64);
-                serial::write_line("");
+                if ALLOC_LOG < 16 {
+                    ALLOC_LOG += 1;
+                    serial::write_str("kobj : alloc kind=");
+                    print_dec(kind as u64);
+                    serial::write_str(" slot=");
+                    print_dec(i as u64);
+                    serial::write_line("");
+                }
                 return Some(i);
             }
         }
@@ -76,11 +81,14 @@ pub fn free(slot: usize) -> bool {
         if slot >= KOBJ_MAX || KOBJS[slot].kind == 0 {
             return false;
         }
-        serial::write_str("kobj : free slot=");
-        print_dec(slot as u64);
-        serial::write_str(" (kind ");
-        print_dec(KOBJS[slot].kind as u64);
-        serial::write_line(")");
+        if FREE_LOG < 16 {
+            FREE_LOG += 1;
+            serial::write_str("kobj : free slot=");
+            print_dec(slot as u64);
+            serial::write_str(" (kind ");
+            print_dec(KOBJS[slot].kind as u64);
+            serial::write_line(")");
+        }
         KOBJS[slot].kind = 0;
         KOBJS[slot].payload = 0;
         true

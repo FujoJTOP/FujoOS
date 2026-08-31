@@ -27,9 +27,11 @@ pub struct Pipe {
     pub data: [u8; PIPE_SIZE],
     pub head: usize,
     pub len: usize,
+    /// 存活端点计数 (两端关闭 -> 回收槽)
+    pub ends: u8,
 }
 
-static mut PIPES: [Pipe; PIPE_MAX] = [Pipe { used: false, data: [0; PIPE_SIZE], head: 0, len: 0 }; PIPE_MAX];
+static mut PIPES: [Pipe; PIPE_MAX] = [Pipe { used: false, data: [0; PIPE_SIZE], head: 0, len: 0, ends: 0 }; PIPE_MAX];
 
 fn print_dec(v: u64) {
     let mut buf = [0u8; 24];
@@ -93,9 +95,7 @@ pub fn fujo_pipe(ptr: u64) -> i64 {
         PIPES[pi].used = true;
         PIPES[pi].head = 0;
         PIPES[pi].len = 0;
-        // M19: 双端登记为内核对象 (统计/审计; fd 路径不变)
-        let _ = crate::kobj::alloc(crate::kobj::K_PIPE, (pi as u64) << 32 | (rfd as u64));
-        let _ = crate::kobj::alloc(crate::kobj::K_PIPE, (pi as u64) << 32 | (wfd as u64));
+        PIPES[pi].ends = 2; // 读写两端
         // 写入用户数组 [rfd, wfd]
         (ptr as *mut u32).write(rfd as u32);
         (ptr as *mut u32).add(1).write(wfd as u32);
@@ -105,6 +105,40 @@ pub fn fujo_pipe(ptr: u64) -> i64 {
         print_dec(wfd as u64);
         serial::write_line("");
         0
+    }
+}
+
+/// 管道端点关闭: 递减 ends, 返回是否两端全关 (Some(pi) 需要回收)。
+pub fn pipe_end_close(p: *const Pipe) -> Option<usize> {
+    unsafe {
+        let pp = p as *mut Pipe;
+        if (*pp).ends > 0 {
+            (*pp).ends -= 1;
+        }
+        if (*pp).ends == 0 {
+            // 需要回收: 从 PIPES 找槽索引
+            for i in 0..PIPE_MAX {
+                if core::ptr::eq(core::ptr::addr_of!(PIPES[i]) as *const u8, p as *const u8) {
+                    return Some(i);
+                }
+            }
+        }
+        None
+    }
+}
+
+/// 回收 Pipe 槽 (双端关闭后): 清空数据 + used=false。
+pub fn pipe_recycle(idx: usize) {
+    unsafe {
+        if idx < PIPE_MAX && PIPES[idx].used {
+            PIPES[idx].used = false;
+            PIPES[idx].head = 0;
+            PIPES[idx].len = 0;
+            PIPES[idx].ends = 0;
+            serial::write_str("ipc  : pipe slot ");
+            print_dec(idx as u64);
+            serial::write_line(" recycled (both ends closed)");
+        }
     }
 }
 

@@ -109,6 +109,24 @@ if (Test-Path "$llvm\clang.exe") {
     Write-Host "  clang missing: kobj_test skipped"
 }
 
+Write-Host "== [0l] build M20 crash/isolation test (ring3, user exc -> survivor) =="
+if (Test-Path "$llvm\clang.exe") {
+    & "$llvm\clang.exe" --target=x86_64-unknown-linux-gnu -O2 -nostdlib -static -fno-pie -no-pie `
+        -fuse-ld=lld -fno-builtin "-Wl,-e,_start" "-Wl,-T,$root\sdk\user\user.ld" `
+        ..\sdk\user\m20_crash.c -o ..\sdk\user\m20_crash.elf
+} else {
+    Write-Host "  clang missing: m20_crash skipped"
+}
+
+Write-Host "== [0m] build M20 leak-stress test (ring3, pipe/kobj churn) =="
+if (Test-Path "$llvm\clang.exe") {
+    & "$llvm\clang.exe" --target=x86_64-unknown-linux-gnu -O2 -nostdlib -static -fno-pie -no-pie `
+        -fuse-ld=lld -fno-builtin "-Wl,-e,_start" "-Wl,-T,$root\sdk\user\user.ld" `
+        ..\sdk\user\m20_stress.c -o ..\sdk\user\m20_stress.elf
+} else {
+    Write-Host "  clang missing: m20_stress skipped"
+}
+
 Write-Host "== [1/4] generate boot stub (32-bit stub + page tables + GDT) =="
 python boot\gen_stub32.py
 

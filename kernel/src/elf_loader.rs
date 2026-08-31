@@ -25,6 +25,14 @@ pub fn load_elf(base: u32, len: u32) -> Result<u64, &'static str> {
         let e_type = (buf.add(0x10) as *const u16).read();
         let e_machine = (buf.add(0x12) as *const u16).read();
         if e_type != 2 {
+            // M20 debug: dump 模块首 16B (e_type 不符, 定位模块区是否被覆盖)
+            crate::serial::write_str("elfx : bad e_type=");
+            crate::syscall::log_hex(e_type as u64);
+            crate::serial::write_str(" bytes:");
+            for i in 0..16usize {
+                crate::syscall::log_hex(buf.add(i).read() as u64);
+            }
+            crate::serial::write_line("");
             return Err("elf: not ET_EXEC (static)");
         }
         if e_machine != 0x3E {

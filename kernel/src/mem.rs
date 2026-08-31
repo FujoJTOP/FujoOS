@@ -309,7 +309,11 @@ pub extern "C" fn fujo_pf_handler(_vec: u64, regs: *const u64) {
         let user = (err >> 2) & 1 == 1;
         let write = (err >> 1) & 1 == 1;
         let present = err & 1 == 1;
-        if user && write && !present && demand_zero(cr2) {
+        // M20 fix: demand-zero 也处理"读未分配页" (err=present=0, user, read)
+        // —— Linux 语义: 匿名映射未写页被读也应返回零页; 原实现仅覆盖 write,
+        // 导致 B 在 A 写共享页之前读 -> 误判致命崩溃 (M18 回归实证)。
+        let _ = write;
+        if user && !present && demand_zero(cr2) {
             return; // 桩: pop 寄存器 + iretq -> 重试原指令
         }
         // M14: 用户态进程级崩溃隔离 —— 多任务时终止当前任务并切换幸存者

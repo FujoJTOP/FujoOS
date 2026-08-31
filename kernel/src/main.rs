@@ -70,9 +70,14 @@ static MB_HEADER: MultibootHeader = MultibootHeader {
     load_addr: 0x0010_0000,
     // 注意: 必须覆盖整个镜像(rodata/data/bss)。内核增长时要同步扩大,
     // 否则尾部段不被加载 -> 字符串/内嵌二进制为垃圾 RAM (M1 踩坑实录);
-    // M15 又踩: 镜像 1.18MB 已超 0x120000 -> 尾部覆盖引导模块区 (bad magic)。
-    load_end_addr: 0x0023_0000,
-    bss_end_addr: 0x0023_0000,
+    // M15 又踩: 镜像 1.18MB 已超 0x120000 -> 尾部覆盖引导模块区 (bad magic);
+    // M20 再踩: 镜像 1.38MB=0x151D18, 0x100000+0x151D18=0x251D18 > 0x230000
+    //   -> 模块区(load_end 之后)与内核尾部重叠, ELF 头被部分覆盖。
+    // 当前覆盖到 0x260000 (镜像尾 0x251D18 + 4K 对齐余量)。
+    // 约束: 必须是 0x100000 + flatten --pad 值 (QEMU multiboot 精确读
+    // load_end-load_addr 字节; 超出文件大小 -> fread() failed)。
+    load_end_addr: 0x0026_0000,
+    bss_end_addr: 0x0026_0000,
     entry_addr: 0x0010_1000,
 };
 
