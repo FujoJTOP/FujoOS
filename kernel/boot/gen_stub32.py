@@ -1,9 +1,9 @@
 #! /usr/bin/env python3
-"""gen_stub32.py — 生成 FujoOS 32 位引导桩 + 前 1 GiB 恒等页表 (kernel/boot_blob.bin)
+"""gen_stub32.py — 生成 FujoOS 32 位引导桩 + 恒等页表 (kernel/boot_blob.bin)
 
-本脚本把下列汇编手写为机器码并输出：
+本脚本把下列汇编手写为机器码并输出 (纯 Python 标准库, 无外部工具):
   .stub32  (blob 偏移 0x0000, 物理 0x101000)  可执行代码
-  .tables  (blob 偏移 0x1000..0x6000, 物理 0x102000..0x107FFF)  页表数据
+  .tables  (blob 偏移 0x1000.., 物理 0x102000..)  页表数据
 
 流程: 32 位保护模式 (QEMU multiboot v1 入口)
   cli
@@ -13,13 +13,20 @@
   mov eax, PML4 / mov cr3, eax
   cr4.PAE = 1                        ; bts eax,5
   EFER.LME = 1                       ; rdmsr 0xC0000080 / bts eax,8 / wrmsr
+  lgdt [GDT_PTR]                     ; 自建 GDT: 0x08=64位码段, 0x10=64位数据段
   cr0.PG|PE = 1                      ; 最后开启分页+长模式
   ljmp 0x08:0x00200000               ; 进入长模式 Rust 入口 (rust64_entry)
 
-页表: 0..1 GiB 恒等映射, 2 MiB 大页
-  PML4[0] -> PDPT, PDPT[0..3] -> PD0..PD3, PDk[j] = (j*2MiB) | 0x83
+页表 (4 KiB 页, 16 MiB 恒等映射 — M1 用 4KB 页, 与主流内核一致):
+  PML4[0] -> PDPT
+  PDPT[0] -> PD
+  PD[0]   -> PT0..PT7  (16 MiB / 2 MiB = 8 个页表)
+  PTi[j]  = (i*2MiB + j*4KiB) | flags
+  用户区 0x400000..0x900000: flags=0x87 (P|RW|U|...)
+  其余:                      flags=0x83 (P|RW)
 
-常量必须与 kernel/kernel.ld 严格一致（M0 开发环；M1 换 Limine + 高半区）。
+说明: 不再使用 2MiB 大页 (PS=1) —— 在 QEMU TCG 上出现不可解释的
+     注入模式保护故障; 4KB 页是最稳的公共路径。常量与 kernel.ld 一致。
 """
 
 import os
@@ -29,31 +36,35 @@ import struct
 BLOB_BASE = 0x101000   # .boot_blob 段基址
 PML4 = 0x102000        # BLOB + 0x1000
 PDPT = 0x103000        # BLOB + 0x2000
-PD_BASE = 0x104000     # BLOB + 0x3000 .. +0x6000 (4 x 512 x 8B)
-GDT = 0x107000         # BLOB + 0x6000 (自建 GDT: 0x08=64位码段, 0x10=64位数据段)
-GDT_PTR = 0x107018     # BLOB + 0x6018 (lgdt 操作数)
+PD_BASE = 0x104000     # BLOB + 0x3000
+PT_BASE = 0x108000     # BLOB + 0x7000 (8 x 512 x 8B = 32 KiB)
+GDT = 0x110000         # BLOB + 0xF000 (位于 8 个页表之后)
+GDT_PTR = 0x110018     # BLOB + 0xF018
 STACK_TOP = 0x300000
 RUST_ENTRY = 0x200000
-BLOB_SIZE = 0x8000
+
+# 16 MiB 恒等映射, 用户区 4..9 MiB
+MAP_PD_END = 0x1000000          # 16 MiB
+USER_LO = 0x400000
+USER_HI = 0x900000
+BLOB_SIZE = 0xF030             # 覆盖 stub+所有表+GDT
 
 blob = bytearray(BLOB_SIZE)
 
 
 def emit(code: bytes, addr: int) -> None:
-    """把代码字节写进 blob（用切片赋值, 恰好等长）。"""
     o = addr - BLOB_BASE
     assert o + len(code) <= BLOB_SIZE, "emit overflow"
     blob[o:o + len(code)] = code
 
 
 def set64(addr: int, val: int) -> None:
-    """页表项数据 (8 字节, 小端)。"""
     o = addr - BLOB_BASE
     assert o + 8 <= BLOB_SIZE, "table overflow"
     blob[o:o + 8] = struct.pack("<Q", val)
 
 
-# ================= 引导桩（顺序发射，全部位于 blob 偏移 0） =================
+# ================= 引导桩（顺序发射, blob 偏移 0） =================
 p = BLOB_BASE
 emit(b"\xfa", p); p += 1                                        # cli
 emit(b"\xbc" + struct.pack("<I", STACK_TOP), p); p += 5         # mov esp, STACK_TOP
@@ -76,22 +87,26 @@ emit(b"\x0f\x22\xc0", p); p += 3                                # mov cr0, eax
 emit(b"\xea" + struct.pack("<I", RUST_ENTRY) + struct.pack("<H", 0x08), p); p += 7  # ljmp 0x08:0x200000
 assert p <= BLOB_BASE + 0x1000, "stub too long"
 
-# ================= 页表数据（0..1 GiB 恒等映射） =================
+# ================= 页表数据（4 KiB 页, 16 MiB 恒等映射） =================
 set64(PML4, PDPT | 3)
-for i in range(4):
-    set64(PDPT + 8 * i, (PD_BASE + 0x1000 * i) | 3)
-for k in range(4):
+set64(PDPT, PD_BASE | 3)
+# PD[0] = PT0 (2 MiB 区); 共 8 个页表覆盖 16 MiB
+for i in range(8):
+    set64(PD_BASE + 8 * i, (PT_BASE + 0x1000 * i) | 3)
+# 页表内容
+for i in range(8):
     for j in range(512):
-        set64(PD_BASE + 0x1000 * k + 8 * j, 0x83 | (j << 21))   # 2 MiB 大页, RW|PS|P
+        vaddr = i * 0x200000 + j * 0x1000
+        flags = 0x83                               # P|RW
+        if USER_LO <= vaddr < USER_HI:
+            flags |= 0x04                          # U: 用户区 (M1)
+        set64(PT_BASE + 0x1000 * i + 8 * j, vaddr | flags)  # 恒等映射: 物理 = 虚拟
 
-# ================= GDT 数据（长模式必需） =================
-# 0x00: null
-# 0x08: 64-bit code  base=0 limit=0xFFFFF G=1 L=1 DPL0 access 0x9B
-# 0x10: 64-bit data   base=0 limit=0xFFFFF G=1 DPL0 access 0x93
+# ================= GDT 数据 =================
+# 0x00: null / 0x08: 64-bit code / 0x10: 64-bit data
 set64(GDT + 0x00, 0x0000_0000_0000_0000)
 set64(GDT + 0x08, 0x00AF_9B00_0000_FFFF)
 set64(GDT + 0x10, 0x00CF_9300_0000_FFFF)
-# lgdt 操作数: limit(16) = 0x17, base(32) = GDT
 o = GDT_PTR - BLOB_BASE
 blob[o:o + 6] = struct.pack("<HI", 0x17, GDT)
 
@@ -100,4 +115,4 @@ out = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "boot_blob.
 with open(out, "wb") as f:
     f.write(blob)
 print(f"wrote {out}: {len(blob)} bytes  (stub {BLOB_BASE:#x}+{p - BLOB_BASE:#x}, "
-      f"rust entry {RUST_ENTRY:#x}, pml4 {PML4:#x})")
+      f"rust entry {RUST_ENTRY:#x}, 4KiB pages 0..{MAP_PD_END:#x})")

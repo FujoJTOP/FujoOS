@@ -11,6 +11,8 @@
 #![no_main]
 #![allow(static_mut_refs)]
 
+mod gdt;
+mod interrupts;
 mod serial;
 mod syscall;
 mod vga;
@@ -18,6 +20,14 @@ mod vga;
 use core::arch::asm;
 
 const MB_MAGIC: u32 = 0x2BAD_B002;
+
+/// 停机等待中断。
+/// 注意: 不能声明 nomem —— 否则 LLVM 会把循环内的静态读提升出循环,
+/// 导致 "while ticks==0 {hlt}" 变成永不重读的死循环 (M1 实际踩过的坑)。
+#[inline]
+pub fn hlt() {
+    unsafe { asm!("hlt", options(nostack, preserves_flags)) }
+}
 
 // ---------------------------------------------------------------------------
 // 多引导 v1 头：必须位于镜像文件前 8 KiB。
@@ -44,8 +54,10 @@ static MB_HEADER: MultibootHeader = MultibootHeader {
     checksum: 0xE451_4FFB,
     header_addr: 0x0010_0000,
     load_addr: 0x0010_0000,
-    load_end_addr: 0x0020_7000,
-    bss_end_addr: 0x0020_7000,
+    // 注意: 必须覆盖整个镜像(rodata/data/bss)。内核增长时要同步扩大,
+    // 否则尾部段不被加载 -> 字符串/内嵌二进制为垃圾 RAM (M1 踩坑实录)。
+    load_end_addr: 0x0021_0000,
+    bss_end_addr: 0x0021_0000,
     entry_addr: 0x0010_1000,
 };
 
@@ -54,7 +66,7 @@ static MB_HEADER: MultibootHeader = MultibootHeader {
 // ---------------------------------------------------------------------------
 #[used]
 #[link_section = ".boot_blob"]
-static BOOT_BLOB: [u8; 0x8000] = *include_bytes!("../boot_blob.bin");
+static BOOT_BLOB: [u8; 0xF030] = *include_bytes!("../boot_blob.bin");
 
 /// ELF 入口占位（真正入口是引导桩 far-jump 的 rust64_entry）。
 #[no_mangle]
@@ -106,7 +118,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     let mut w = SerialWriter;
     let _ = core::write!(w, "        message: {msg}\n");
     loop {
-        unsafe { asm!("hlt", options(nomem, nostack, preserves_flags)) }
+        crate::hlt();
     }
 }
 
@@ -119,9 +131,59 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     vga::init();
     serial::init();
     banner(magic, mbi);
-    loop {
-        unsafe { asm!("hlt", options(nomem, nostack, preserves_flags)) }
+
+    // ---- M1: 内核芯 ----
+    gdt::init();
+    interrupts::init();
+    syscall::setup();
+    out_line("m1   : gdt(user segs+tss) / idt(15 exc + irq0) / syscall gate armed");
+    out_raw("m1   : sti, waiting first PIT tick...");
+    unsafe { asm!("sti", options(nomem, nostack, preserves_flags)); }
+    while interrupts::ticks() == 0 {
+        hlt();
     }
+    out_line(" timer IRQ0 alive (tick=1)");
+
+    // 证明定时器稳定: 再等 100 tick (~1s)
+    let t0 = interrupts::ticks();
+    while interrupts::ticks() - t0 < 100 {
+        hlt();
+    }
+    out_line("timer : 100 ticks = 1.0 s elapsed (PIT @100 Hz)");
+
+    // ---- M1: 用户态测试程序 (linux-x64 ABI, 原生 syscall) ----
+    // 诊断: 进入用户态前打印实际页表与 TSS (调试用, 展示后保留)
+    unsafe {
+        let pd2: u64 = core::ptr::read((0x104000usize as *const u64).add(2));
+        let pte: u64 = core::ptr::read(0x10A000usize as *const u64);
+        out_raw("test : PD[2]=");
+        out_hex_u32(pd2 as u32);
+        out_raw(" PT2[0]=");
+        out_hex_u32(pte as u32);
+        out_raw(" tss.rsp0=");
+        out_hex_u32(gdt::debug_tss_rsp0() as u32);
+        out_raw(" cr3=");
+        let mut cr3: u64 = 0;
+        asm!("mov {}, cr3", out(reg) cr3, options(nomem, nostack));
+        out_hex_u32(cr3 as u32);
+        out_line("");
+        // 内存 0x27 (被 CPU 当作执行区) 的内容
+        out_raw("test : bytes@0x27   : ");
+        for i in 0..8usize {
+            let b = core::ptr::read((0x27usize as *const u8).add(i));
+            out_hex_u32(b as u32);
+            out_raw(" ");
+        }
+        out_line("");
+        let full: &[u8] = include_bytes!("user_test.bin");
+        out_raw("test : bytes@bin    : ");
+        for i in 0..8usize {
+            out_hex_u32(full[i] as u32);
+            out_raw(" ");
+        }
+        out_line("");
+    }
+    syscall::enter_user_test();
 }
 
 // ---------------------------------------------------------------------------
@@ -196,10 +258,10 @@ fn out_line(s: &str) {
 
 fn out_hex_u32(v: u32) {
     out_raw("0x");
-    const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut buf = [0u8; 8];
     for i in 0..8 {
-        buf[7 - i] = HEX[((v >> (4 * i)) & 0xF) as usize];
+        let d = ((v >> (4 * i)) & 0xF) as u8;
+        buf[7 - i] = if d < 10 { b'0' + d } else { b'a' + d - 10 };
     }
     out_raw(core::str::from_utf8(&buf).unwrap());
 }
