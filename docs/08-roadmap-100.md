@@ -424,7 +424,14 @@
 
 ## Wave 4 · 游戏与性能(M51–M70)
 
-- [ ] **M51** 显示驱动抽象:QEMU virtio-gpu 接入
+- [x] **M51** 显示驱动抽象:QEMU virtio-gpu 接入 —— **display.rs 显示后端
+      抽象 v0**: PCI 枚举(0xCF8/0xCFC)后端标识 **0=Bochs VBE
+      (std-vga 0x1234:0x1111)/1=virtio-gpu-pci(0x1AF4:0x1050)**
+      + 分辨率回填; 0x5E01 disp_info(ptr→u32×5) / 0x5E02 set_backend
+      (偏好, M61 实际切换);
+      **m51_disp.elf 实测**: `backend=0 vendor=00001234 device=00001111
+      mode=1024x768`(virtio-gpu 未装配时探测确认 absent) →
+      **M51 RESULT: PASS**; 回归: 矩阵 9/9
 - [ ] **M52** 音频:AC97/HDA 驱动 + 播放入口
 - [ ] **M53** XInput 式输入抽象(手柄/键鼠统一)
 - [ ] **M54** 定时器:高精度/帧同步(rdtsc 基)

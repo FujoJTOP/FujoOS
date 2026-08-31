@@ -16,6 +16,7 @@ mod a11y;
 mod ata;
 mod clip;
 mod desk;
+mod display;
 mod elf_loader;
 mod fjfs;
 mod font;
