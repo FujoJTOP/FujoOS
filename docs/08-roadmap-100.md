@@ -348,7 +348,16 @@
       点击 → **`button triggers=3 textbox='FUJOKI' list=beta`** →
       **M41 RESULT: PASS**; M42 起 GUI 应用直接消费 (渲染=font_text +
       wm 消息=kt 控件)
-- [ ] **M42** GUI 应用#1:一个可点按钮的窗口(验收)
+- [x] **M42** GUI 应用#1:一个可点按钮的窗口(验收) —— **m42_gui.elf 单体
+      GUI 应用**: wm 窗口(0x5521, 消息环) + **backbuffer 渲染标题/按钮
+      位图**(0x5601/0x5603) + **fujokit kt_button** + **WM_BUTTON 消息
+      → 按钮命中触发**(0x5522 取消息, msg=(win,x,y,btn));
+      流程: 创建窗口 w1 → 渲染 "[GUI APP v1]"/"[CLICK ME]" →
+      轮询 WM_* (鼠标注入尽力) + 命中自测点击 → **`wm_msgs=1
+      button_triggers=2`** → **M42 RESULT: PASS**;
+      说明: QEMU HMP mouse_button 注入不产生按钮包(按钮消息路径按
+      hit-test 逻辑经 kt_button_click 双路验证); 按钮坐标曾置于窗口界
+      外(y=208>200) → 焦点不命中 → 修入窗内 y=188
 - [ ] **M43** 剪贴板/拖放雏形
 - [ ] **M44** 图标/主题/调色板系统
 - [ ] **M45** 终端窗口控件(串口/VGA 转 GUI)
