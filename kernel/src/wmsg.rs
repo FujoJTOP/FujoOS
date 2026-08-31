@@ -24,6 +24,7 @@ pub const WM_BUTTON: u32 = 0x04;
 pub const WM_CREATE: u32 = 0x10;
 pub const WM_DESTROY: u32 = 0x11;
 pub const WM_ZORDER: u32 = 0x12;
+pub const WM_MOVE: u32 = 0x13;
 
 /// 类表: (name, id); id=0 为空位。
 static mut CLASSES: [([u8; 16], u32); 8] = [([0; 16], 0); 8];
@@ -168,6 +169,41 @@ pub fn fujo_wm_top(win: u32) -> i64 {
             WINS[n - 1] = save;
             push_msg(WM_ZORDER, win, 0, 0, 0);
             return 0;
+        }
+        -2
+    }
+}
+
+/// 0x5525: 拖动/移动窗口 (win, dx, dy) — 位置更新 + 矩形重建 + WM_MOVE。
+pub fn fujo_wm_move(win: u32, dx: i32, dy: i32) -> i64 {
+    unsafe {
+        for i in 0..WMAX {
+            if WINS[i].1 == win {
+                let x = WINS[i].0[1] as i32 + dx;
+                let y = WINS[i].0[2] as i32 + dy;
+                WINS[i].0[1] = x.clamp(0, 0xFFFF) as u32;
+                WINS[i].0[2] = y.clamp(0, 0xFFFF) as u32;
+                refresh_rects();
+                push_msg(WM_MOVE, win, WINS[i].0[1], WINS[i].0[2], 0);
+                return 0;
+            }
+        }
+        -2
+    }
+}
+
+/// 0x5526: 读窗口矩形 (win, ptr) — 写 4×u32 (x, y, w, h)。
+pub fn fujo_wm_rect(win: u32, ptr: u64) -> i64 {
+    unsafe {
+        for i in 0..WMAX {
+            if WINS[i].1 == win {
+                let p = ptr as *mut u32;
+                p.add(0).write(WINS[i].0[1]);
+                p.add(1).write(WINS[i].0[2]);
+                p.add(2).write(WINS[i].0[3]);
+                p.add(3).write(WINS[i].0[4]);
+                return 0;
+            }
         }
         -2
     }

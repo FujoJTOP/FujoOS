@@ -384,6 +384,8 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5522 => crate::wmsg::fujo_wm_getmsg(a0),
         0x5523 => crate::wmsg::fujo_wm_top(a0 as u32),
         0x5524 => crate::wmsg::fujo_wm_remove(a0 as u32),
+        0x5525 => crate::wmsg::fujo_wm_move(a0 as u32, a1 as i32, a2 as i32),
+        0x5526 => crate::wmsg::fujo_wm_rect(a0 as u32, a1),
         // ---- M36: PS/2 鼠标 (位置/按键/命中测试/焦点) ----
         0x5410 => crate::mouse::fujo_mouse_info(a0),
         0x5411 => crate::mouse::fujo_mouse_rects(a0, a1),
