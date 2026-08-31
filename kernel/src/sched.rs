@@ -134,20 +134,17 @@ pub extern "C" fn fujo_tick_sched(_vec: u64, regs: *const u64) -> i64 {
             guard += 1;
         }
         if next != CUR && TASKS[next].state == TASK_RUNNABLE {
-            let n_rsp = TASKS[next].saved_rsp;
-            let n_rip = *((n_rsp as *const u64).add(9));
-            let n_cs = *((n_rsp as *const u64).add(10));
-            serial::write_str("sched: sw#->task ");
-            print_dec(next as u64);
-            serial::write_str(" rip=0x");
-            print_hex(n_rip);
-            serial::write_str(" cs=0x");
-            print_hex(n_cs);
-            serial::write_line("");
             CUR = next;
-            sched_next_rsp = n_rsp;
+            sched_next_rsp = TASKS[next].saved_rsp;
             gdt::set_rsp0(TASKS[next].kstack_top);
             SWITCHES += 1;
+            if SWITCHES <= 8 || SWITCHES % 1000 == 0 {
+                serial::write_str("sched: ctx-switch #");
+                print_dec(SWITCHES);
+                serial::write_str(" -> task ");
+                print_dec(next as u64);
+                serial::write_line("");
+            }
             return 1;
         }
         0
