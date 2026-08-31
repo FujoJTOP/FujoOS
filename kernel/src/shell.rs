@@ -64,6 +64,7 @@ pub fn shell(mbi: u32) -> ! {
     out_line("os   :   os run kobj      launch kobj table demo (M19)");
     out_line("os   :   os run crash     launch exc-isolation demo (M20)");
     out_line("os   :   os run stress    launch leak-stress demo (M20)");
+    out_line("os   :   os run m21      launch syscall-surface demo (M21)");
     out_line("os   :   help             show this list");
     let mut line = [0u8; 64];
     loop {
@@ -100,6 +101,10 @@ pub fn shell(mbi: u32) -> ! {
                 } else if t1 == "run" && t2 == "stress" {
                     // M20: 资源压力/泄漏检测 (管道×128 + kobj×512)
                     out_line("os   : launching leak-stress demo ...");
+                    syscall::enter_user_test(mbi); // > !: 不再返回
+                } else if t1 == "run" && t2 == "m21" {
+                    // M21: linuxsubsys syscall 面 (~20 个)
+                    out_line("os   : launching syscall-surface demo ...");
                     syscall::enter_user_test(mbi); // > !: 不再返回
                 } else {
                     // TEMP-DEBUG

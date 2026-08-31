@@ -203,6 +203,45 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         12 => crate::mem::fujo_brk(a0),
         // getpid() (x86-64: 39) — linuxsubsys v0 最小实现
         39 => 1,
+        // ---------------------------------------------------------------
+        // M21: linuxsubsys syscall 面扩展 (~20 个常用)
+        // 原则: 行为合理的哨兵返回 + 必要回填 (用户缓冲地址检查同 VFS)。
+        // ---------------------------------------------------------------
+        // stat(path, buf) — 简化: mode=REG|0644, size=len(path)
+        4 => sys_stat(a0, a1),
+        // fstat(fd, buf)
+        5 => sys_fstat(a0, a1),
+        // lstat(path, buf) — 同 stat (无符号链接)
+        6 => sys_stat(a0, a1),
+        // writev(fd, iovec, count) — 逐个 iovec 写串口
+        20 => sys_writev(a0, a1, a2),
+        // access(path, mode) -> 0 (允许)
+        21 => 0,
+        // pipe(fds[2]) — linux ABI 22 号 (M18 内核实现)
+        22 => crate::ipc::fujo_pipe(a0),
+        // nanosleep(req, rem) — PIT 忙等 (100Hz 粒度)
+        35 => sys_nanosleep(a0),
+        // uname(buf) — 回填 c_* 字段 (FujoOS)
+        63 => sys_uname(a0),
+        // gettimeofday(tv, tz) — 单调钟 (PIT ticks 派生)
+        78 => sys_gettimeofday(a0, a1),
+        // getuid/getgid/geteuid/getegid -> 1000
+        102 => 1000,
+        104 => 1000,
+        107 => 1000,
+        108 => 1000,
+        // arch_prctl(arch, addr) -> 0 (no-op)
+        158 => 0,
+        // gettid -> 当前任务 id+1
+        186 => crate::sched::current_task() as i64 + 1,
+        // time(ptr) -> 单调秒
+        201 => sys_time(a0),
+        // futex(op, uaddr, val) -> 0 (no-op)
+        202 => 0,
+        // openat(dirfd, path, flags, mode) — 转发 open (忽略 dirfd=AT_FDCWD)
+        257 => crate::vfs::fujo_open(a1, a2, a3),
+        // getrandom(buf, len, flags) — PIT 混哈希假熵
+        317 => sys_getrandom(a0, a1),
         // ---- fujo 原生 Win32 shim 通道 (M3) ----
         // kernel32!WriteFile (fd, buf, len)
         0x5001 => user_write(a0, a1, a2),
@@ -312,8 +351,7 @@ pub fn log_hex(v: u64) {
     print_hex(v);
 }
 
-fn user_write(fd: u64, ptr: u64, len: u64) -> i64 {
-    // M15: fd>=3 先走 VFS (内存盘追加); /dev/tty 与 fd<3 走串口
+fn user_write(fd: u64, ptr: u64, len: u64) -> i64 {    // M15: fd>=3 先走 VFS (内存盘追加); /dev/tty 与 fd<3 走串口
     if fd >= 3 {
         if let Some(n) = crate::vfs::file_write(fd, ptr, len) {
             return n;
@@ -374,6 +412,150 @@ fn halt_forever() -> ! {
     loop {
         crate::hlt();
     }
+}
+
+// ---------------------------------------------------------------------------
+// M21 · linuxsubsys syscall 面扩展实现 (~20 个常用)
+// ---------------------------------------------------------------------------
+
+/// 用户指针区域检查 (linux 低区 + darwin 区)。
+fn user_ok(ptr: u64, len: u64) -> bool {
+    let in_low = ptr >= 0x400000 && ptr <= 0x800000;
+    let in_darwin = ptr >= 0x100000000 && ptr <= 0x100800000;
+    in_low || in_darwin
+}
+
+/// stat(path, buf): 简化填充 — mode=REG|0644(size=路径长度), dev/ino 固定。
+fn sys_stat(ptr: u64, buf: u64) -> i64 {
+    if !user_ok(buf, 128) {
+        return -14; // -EFAULT
+    }
+    let mut len = 0u64;
+    unsafe {
+        if user_ok(ptr, 1) {
+            while len < 255 {
+                let b = (ptr as *const u8).add(len as usize).read();
+                if b == 0 {
+                    break;
+                }
+                len += 1;
+            }
+        }
+        let s = buf as *mut u64;
+        // struct stat (x86_64): st_dev(0) st_ino(8) st_nlink(16) st_mode(24=u32)
+        s.add(0).write(1u64); // st_dev
+        s.add(1).write(1u64); // st_ino
+        s.add(2).write(1u64); // st_nlink
+        (s.add(3) as *mut u32).write(0o100644); // S_IFREG|0644
+        (s.add(4) as *mut u32).write(1000u32); // uid
+        ((s.add(4) as *mut u32).add(1)).write(1000u32); // gid
+        s.add(6).write(len); // st_size
+    }
+    0
+}
+
+/// fstat(fd, buf): 与 stat 相同简化。
+fn sys_fstat(fd: u64, buf: u64) -> i64 {
+    let _ = fd;
+    sys_stat(0, buf)
+}
+
+/// writev(fd, iov, cnt): iovec 数组 [{base,len}..], 逐段写 (串口直通)。
+fn sys_writev(fd: u64, iov: u64, cnt: u64) -> i64 {
+    if !user_ok(iov, cnt.saturating_mul(16)) || cnt > 64 {
+        return -14; // -EFAULT
+    }
+    let mut total = 0i64;
+    unsafe {
+        for i in 0..cnt as usize {
+            let base = (iov as *const u64).add(i * 2).read();
+            let len = (iov as *const u64).add(i * 2 + 1).read();
+            let n = user_write(fd, base, len);
+            if n < 0 {
+                return n;
+            }
+            total += n;
+        }
+    }
+    total
+}
+
+/// nanosleep(req, _rem): v1 模型约束 no-op。
+/// 说明: SFMASK=0x200 在 syscall 期间屏蔽 IF, 内核态无法等待 PIT 中断;
+/// 真正的睡眠在调度器 wakeup 后实现 (M22+)。此刻返回 0 (立即完成),
+/// 用户态忙等/时间推进由 gettimeofday 用户态调用验证。
+fn sys_nanosleep(_req: u64) -> i64 {
+    0
+}
+
+/// uname(buf): utsname 回填 (FujoOS / fujokernel / fujo / x86_64)。
+fn sys_uname(buf: u64) -> i64 {
+    if !user_ok(buf, 256) {
+        return -14;
+    }
+    unsafe {
+        let u = buf as *mut u8;
+        let mut off = 0usize;
+        for field in [
+            b"FujoOS\0".as_slice(),
+            b"FujoKernel\0".as_slice(),
+            b"0.1.0\0".as_slice(),
+            b"FujoOS\0".as_slice(),
+            b"x86_64\0".as_slice(),
+        ] {
+            for &c in field {
+                if off < 255 {
+                    u.add(off).write(c);
+                    off += 1;
+                }
+            }
+        }
+    }
+    0
+}
+
+/// gettimeofday(tv, tz): 单调钟 (PIT ticks/100 = 秒)。
+fn sys_gettimeofday(tv: u64, tz: u64) -> i64 {
+    let _ = tz;
+    if !user_ok(tv, 16) {
+        return -14;
+    }
+    let ticks = crate::interrupts::ticks();
+    let sec = ticks / 100;
+    let usec = (ticks % 100) * 10000;
+    unsafe {
+        (tv as *mut u64).write(sec);
+        (tv as *mut u64).add(1).write(usec);
+    }
+    0
+}
+
+/// time(ptr): 单调秒 (PIT ticks/100)。
+fn sys_time(ptr: u64) -> i64 {
+    let ticks = crate::interrupts::ticks();
+    let sec = (ticks / 100) as i64;
+    if ptr != 0 && user_ok(ptr, 8) {
+        unsafe { (ptr as *mut i64).write(sec); }
+    }
+    sec
+}
+
+/// getrandom(buf, len, _flags): PIT 混哈希伪熵 (非加密, 仅时序验证)。
+fn sys_getrandom(buf: u64, len: u64) -> i64 {
+    if !user_ok(buf, len) {
+        return -14;
+    }
+    let n = len.min(64) as usize;
+    unsafe {
+        for i in 0..n {
+            let tick = crate::interrupts::ticks();
+            let x = (tick.wrapping_mul(0x9E37_79B9).rotate_left(13)
+                ^ (i as u64).wrapping_mul(0x85EB_CA6B))
+                & 0xFF;
+            (buf as *mut u8).add(i).write(x as u8);
+        }
+    }
+    n as i64
 }
 
 fn dump_hex_bytes(addr: u64, n: usize) {

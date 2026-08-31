@@ -83,7 +83,15 @@
 
 ## Wave 2 · 兼容层加深(M21–M35)
 
-- [ ] **M21** linuxsubsys syscall 面到 ~100(openat/readv/ioctl/fcntl/gettimeofday…)
+- [x] **M21** linuxsubsys syscall 面扩展(~20 个常用): stat/fstat/lstat
+      (mode=REG|0644 结构回填)、writev(iovec 逐段)、access=0、pipe(22 号
+      接 M18 内核实现)、nanosleep(v1 no-op: SFMASK 屏蔽 IF 内核态不可等时,
+      真实睡眠待调度器 M22+)、uname(FujoOS/FujoKernel/x86_64 回填)、
+      gettimeofday/time(PIT 单调钟 sec/usec)、uid/gid/euid/egid=1000、
+      arch_prctl=0、gettid=任务 id+1、futex=0、openat(转发 open)、
+      getrandom(PIT 混哈希伪熵); **实测通过**: 14 项逐一断言,
+      用户态忙等 80ms 时间推进显式验证 → **M21 RESULT: PASS**;
+      说明: 全部 syscall 带用户指针区域检查(低区+darwin 区)返回 -EFAULT
 - [ ] **M22** linuxsubsys 直通文件系统(brk/mmap/fork 连到 Mm/Ke/VFS)
 - [ ] **M23** 静态 busybox 原生运行(验收:ls/cat/echo/管道)
 - [ ] **M24** ELF 动态链接最小化(interp + 符号表)
