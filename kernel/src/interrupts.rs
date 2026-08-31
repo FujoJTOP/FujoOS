@@ -49,7 +49,7 @@ struct IdtPtr {
 
 static mut IDT_PTR: IdtPtr = IdtPtr { limit: 0, base: 0 };
 
-const IDT_SIZE: usize = 0x22; // 0..0x21 (异常 + IRQ0 timer + IRQ1 keyboard)
+const IDT_SIZE: usize = 0x25; // 0..0x24 (异常 + IRQ0/1 键盘 + IRQ3 COM2 模型链路)
 
 static mut IDT: [IdtEntry; IDT_SIZE] = [IdtEntry::empty(); IDT_SIZE];
 
@@ -57,6 +57,7 @@ extern "C" {
     fn fujo_exc_stub_table();
     fn fujo_pit_stub();
     fn fujo_kbd_stub();
+    fn fujo_ser2_stub();
 }
 
 core::arch::global_asm!(r#"
@@ -151,9 +152,35 @@ fujo_kbd_stub:
     pop rcx
     pop rax
     iretq
+
+    # ---- COM2 (IRQ3) —— 模型链路 RX: C 排空入环 (M10) ----
+    # 与键盘桩同一原则: 保存全部 caller-saved (C 会破坏 rsi/r8-r11)。
+    .p2align 4
+    .global fujo_ser2_stub
+fujo_ser2_stub:
+    push rax
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push r8
+    push r9
+    push r10
+    push r11
+    call fujo_ser2_irq
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rax
+    iretq
 "#);
 
-/// 异常处理（C 侧, 只打印并停机）
+/// 异常处理（C 侧, 只打印并停机）— 带现场诊断 (M10: CS/RIP/CR2 定位)
 #[no_mangle]
 pub extern "C" fn fujo_exc(vec: u64) -> ! {
     serial::write_str("EXCEPTION vec=");
@@ -170,6 +197,23 @@ pub extern "C" fn fujo_exc(vec: u64) -> ! {
         }
     }
     serial::write_str(core::str::from_utf8(&buf[i..]).unwrap());
+    // 现场: 从当前 rsp 起, 调用返回地址之后为异常帧; 直接 dump 8 个 qword
+    unsafe {
+        let sp: u64;
+        asm!("mov {}, rsp", out(reg) sp, options(nomem, nostack, preserves_flags));
+        serial::write_str(" sp=");
+        crate::syscall::log_hex(sp);
+        for k in 1..=8u64 {
+            let v = core::ptr::read((sp as *const u64).add(k as usize));
+            crate::syscall::log_hex(v);
+        }
+        if vec == 14 {
+            let mut cr2: u64;
+            asm!("mov {}, cr2", out(reg) cr2, options(nomem, nostack, preserves_flags));
+            serial::write_str(" cr2=");
+            crate::syscall::log_hex(cr2);
+        }
+    }
     serial::write_line("  -- kernel halted");
     loop {
         crate::hlt();
@@ -239,9 +283,18 @@ pub fn init() {
         core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_mid), (kbd_addr >> 16) as u16);
         core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_hi), (kbd_addr >> 32) as u32);
         core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).zero), 0u32);
-        // 注: mask 保持 IRQ0+IRQ1 开放 (0xFD)。
-        #[cfg(debug_assertions)]
-        let _ = kbd_addr;
+
+        // ---- IRQ3 (COM2 模型链路, M10) ----
+        let ser2_addr = fujo_ser2_stub as usize as u64;
+        let e = (core::ptr::addr_of_mut!(IDT) as *mut IdtEntry).add(0x23);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_lo), ser2_addr as u16);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).sel), 0x08u16);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).ist), 0u8);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).attr), 0x8Eu8);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_mid), (ser2_addr >> 16) as u16);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_hi), (ser2_addr >> 32) as u32);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).zero), 0u32);
+        // IRQ3 的 PIC 掩码在 serial::uart2_init() 末尾开放 (0x21=0xF5)。
 
         core::ptr::write_volatile(core::ptr::addr_of_mut!(IDT_PTR.limit), (IDT_SIZE * 16 - 1) as u16);
         core::ptr::write_volatile(core::ptr::addr_of_mut!(IDT_PTR.base), &raw mut IDT as u64);

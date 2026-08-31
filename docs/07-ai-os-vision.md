@@ -90,6 +90,13 @@ agent 启动
 > ④ 实测链路（QEMU）：`m9 : agent cmd='run'` → `ai : classify('run') -> RUN [engine=rules]` → `agent: fujo-agent up / model_call / context[...] = fmt=pe;win=2;mod=agent;keys=1` → exit 内核接管；
 > ⑤ **已知实现项（低优）**：ring3 侧对 0x5101 返回值的接收存在偏移（内核侧返回值已验证 1）；接口契约与调用链已验证，问题在实现的接收侧，接入微型神经引擎前优先修正。
 
+**M10 切片（Hermes CLI — 小模型通道，v0.1 已落地）**：
+> ① **引擎从规则换成真模型** —— `qwen2.5:0.5b`（用户明确指定 Qwen 小模型）：`fujo_ai_classify` → 内核 COM2 模型链路（IRQ3/115200，`FJAI:REQ <seq> <hex>` / `FJAI:RSP <seq> INTENT=k TAG=...` 行协议）→ 宿主 `tools/qwen_model_server.py` → **本地 Ollama qwen2.5:0.5b**；链路失败自动降级规则引擎（调用方无感知）;
+> ② **Hermes CLI = agent 前端一等进程** —— `sdk/hermes/hermes.c`（ring3, linux ABI）：REPL 读键盘（新原语 0x5103）逐命令走 分类→fujoctx→工具路由 管线，`exit/quit` 退出；
+> ③ **根因修复（重要）**：syscall 入口此前只弹 rcx/r11，破坏用户 rdi/rsi/rdx/r8/r9/r10 —— 用户编译器认为这些寄存器跨 syscall 存活（clang 把跨调用基址放 r9），造成 M9 的 intent=3 / context[1883] 漂移与 M10 的 `cr2=-3` #PF（r9 残留 0 → slot-3 地址）。入口现保存/恢复全部 caller-saved 寄存器；
+> ④ **实测链路（QEMU+宿主）**：`classify('run') -> RUN [engine=qwen; model=qwen2.5:0.5b; t=64ms]` → `intent=0x1 RUN` → fujoctx `31 bytes` → `tool=module(user_test) planned`；REPL 键入 `open file` / `exit` 经 sendkey 逐条走 Qwen 分类 → 退出接管；`dbg : nr=20737 -> 1` 与用户侧 `intent=0x1` 完全一致（M9 ⑤ 已闭环）；
+> ⑤ **已知项（调参）**：qwen2.5:0.5b 单模型分类准确率偏低（`open file`→RUN、`exit`→RUN 的样例），属提示微调/蒸馏/换 qwen3:0.6b 的后续工作，链路稳定不变；丢字节场景（IRQ3+轮询并读时的突发丢失 29/36B）已通过纯轮询 RX + 最多 3 次重发吸收。
+
 ## 6. 开放问题（邀请回答）
 
 - 四件套中哪一件可以被替代？替代品是什么？

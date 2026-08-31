@@ -62,6 +62,11 @@ extern "C" {
 core::arch::global_asm!(r#"
     .text
     # ---- syscall 入口 (LSTAR) ----
+    # M10 修复 (根因): 入口只恢复 rcx/r11 会破坏用户的 rdi/rsi/rdx/r8/r9/r10 ——
+    # C 分发是 caller-saved 契约, 用户编译器认为这些寄存器跨 syscall 存活
+    # (clang 会把跨调用基址放 r9 等), 实际被内核吃光, 造成 M9 的 "intent=3 /
+    # context[1883]" 漂移与 M10 的 cr2=-3 #PF (r9 残留 0 -> slot-3 地址)。
+    # 因此: 保存全部通用寄存器并在返回前原样恢复; rcx/r11 例外处理 (sysretq 需用)。
     .p2align 4
     .global fujo_syscall_entry
 fujo_syscall_entry:
@@ -79,7 +84,12 @@ fujo_syscall_entry:
     mov rsi, rsp
     mov rdx, rcx
     call fujo_syscall_dispatch
-    add rsp, 48
+    pop rdi
+    pop rsi
+    pop rdx
+    pop r10
+    pop r8
+    pop r9
     pop rcx
     pop r11
     mov rsp, [rip + user_rsp_tmp]
@@ -165,7 +175,7 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
     let _a4 = unsafe { args.add(4).read() };
     let _a5 = unsafe { args.add(5).read() };
 
-    match nr {
+    let res = match nr {
         // write(fd, buf, len)
         1 => user_write(a0, a1, a2),
         // getpid() (x86-64: 39) — linuxsubsys v0 最小实现
@@ -189,11 +199,15 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
             serial::write_line(" (~100 Hz since boot)");
             halt_forever();
         }
-        // ---- M9: fujonn 模型调用原语 (fujoos-ai-dev) ----
-        // fujo_ai_classify(ptr, len) -> intent
+        // ---- M9/M10: fujonn 模型调用原语 (fujoos-ai-dev) ----
+        // fujo_ai_classify(ptr, len) -> intent (engine=qwen COM2 链路 / 规则降级)
         0x5101 => crate::ai::fujo_ai_classify(a0, a1),
         // fujo_ai_fetch(ptr, len) -> n (fujoctx 上下文注入)
         0x5102 => crate::ai::fujo_ai_fetch(a0, a1),
+        // fujo_read_kbd() -> char | 0 (M10 · Hermes CLI 交互输入)
+        0x5103 => crate::kbd::try_poll().map(|c| c as i64).unwrap_or(0),
+        // fujo_ai_info(ptr, len) -> n (引擎/模型/链路信息)
+        0x5104 => crate::ai::fujo_ai_info(a0, a1),
         // ---- darwin BSD 空间 (0x2000000|nr, M6 darwinsubsys) ----
         0x200_0001 => {
             serial::write_line("user : darwin exit() — 内核接管, M6 验证完成");
@@ -221,7 +235,17 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
             }
             -38 // -ENOSYS
         }
+    };
+    // 返回探针: M9 曾发现 ring3 收到 0x5101/0x5102 返回值与内核不一致 (DEV 项),
+    // 此处如实记录内核侧返回值, 便于与用户侧对照。
+    if nr == 0x5101 || nr == 0x5102 {
+        serial::write_str("dbg  : nr=");
+        print_dec(nr);
+        serial::write_str(" -> ");
+        print_dec(res as u64);
+        serial::write_line("");
     }
+    res
 }
 
 /// 从 LINUX_X64_SUBSET 中查 syscall 名 (M2: 日志可读性)

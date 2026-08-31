@@ -1,4 +1,8 @@
-# FujoOS build-kernel.ps1 — 构建用户测试程序 -> 内核 -> 扁平化 -> QEMU 启动验证
+# FujoOS build-kernel.ps1 — 构建用户程序 (agents) -> 内核 -> 扁平化 -> QEMU 启动验证
+param(
+    # 启动模块: 默认 M10 Hermes CLI; M3 回归用 ..\sdk\win\hello_win.exe
+    [string]$Initrd = '..\sdk\hermes\hermes.elf'
+)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location "$root\kernel"
@@ -42,12 +46,23 @@ if (Test-Path "$llvm\clang.exe") {
     Write-Host "  clang missing: agent skipped"
 }
 
+Write-Host "== [0e] build M10 Hermes CLI (ring3, agent frontend + qwen model call) =="
+if (Test-Path "$llvm\clang.exe") {
+    & "$llvm\clang.exe" --target=x86_64-unknown-linux-gnu -O2 -nostdlib -static -fno-pie -no-pie `
+        -fuse-ld=lld -fno-builtin "-Wl,-e,_start" "-Wl,-T,$root\sdk\user\user.ld" `
+        ..\sdk\hermes\hermes.c -o ..\sdk\hermes\hermes.elf
+} else {
+    Write-Host "  clang missing: hermes skipped"
+}
+
 Write-Host "== [1/4] generate boot stub (32-bit stub + page tables + GDT) =="
 python boot\gen_stub32.py
 
 Write-Host "== [2/4] cargo build (x86_64-unknown-none) =="
 cargo build --release
 
-Write-Host "== [3/4] flatten + QEMU boot (module = PE win sample; ELF 回归: 换 -initrd user_test.elf) =="
+Write-Host "== [3/4] flatten + QEMU boot (COM1=日志 stdio, COM2=模型链路 tcp:4000) =="
 python ..\tools\flatten_elf.py target\x86_64-unknown-none\release\fujo-kernel fujo-kernel.bin --pad 0x120000
-qemu-system-x86_64 -m 128M -kernel fujo-kernel.bin -initrd ..\sdk\win\hello_win.exe -display none -serial stdio -monitor none -no-reboot
+qemu-system-x86_64 -m 128M -kernel fujo-kernel.bin -initrd $Initrd `
+    -serial stdio -serial tcp:127.0.0.1:4000,server=on,wait=off `
+    -display none -monitor none -no-reboot

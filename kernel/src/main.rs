@@ -166,6 +166,10 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     kbd::init();
     kbd::demo();
 
+    // ---- M10: COM2 模型链路 (IRQ3, fujonn engine=qwen) ----
+    serial::uart2_init();
+    out_line("m10  : com2 model-link up (irq3 @115200) — engine=qwen waits host server");
+
     // ---- M9 (fujoos-ai-dev): Agent 宿主 —— 命令捕获 -> 意图槽 ----
     let mut cmd = [0u8; 32];
     let mut used = 0usize;
