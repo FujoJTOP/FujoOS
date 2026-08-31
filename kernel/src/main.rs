@@ -168,14 +168,14 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
 
     // ---- M10: COM2 模型链路 (IRQ3, fujonn engine=qwen) ----
     serial::uart2_init();
-    out_line("m10  : com2 model-link up (irq3 @115200) — engine=qwen waits host server");
+    out_line("m10  : com2 model-link up (irq3 @115200) - engine=qwen waits host server");
 
     // ---- M9 (fujoos-ai-dev): Agent 宿主 —— 命令捕获 -> 意图槽 ----
     let mut cmd = [0u8; 32];
     let mut used = 0usize;
     let mut done = false;
     let mut iter: u64 = 0;
-    out_line("m9   : agent host up — type a command (sendkey: r u n + enter)");
+    out_line("m9   : agent host up - type a command (sendkey: r u n + enter)");
     while !done && iter < 30_000_000 {
         iter += 1;
         while let Some(c) = kbd::try_poll() {
@@ -210,7 +210,7 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     }
     out_raw("m9   : agent cmd='");
     out_raw(core::str::from_utf8(&cmd[..used]).unwrap_or("?"));
-    out_raw("' — launching agent (ring3)\n");
+    out_raw("' - launching agent (ring3)\n");
 
     // ---- M2/M3/M6: 用户态测试 (ELF/PE/Mach-O 模块装载 + ABI syscall) ----
     syscall::enter_user_test(mbi);

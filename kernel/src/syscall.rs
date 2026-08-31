@@ -185,7 +185,7 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5001 => user_write(a0, a1, a2),
         // kernel32!ExitProcess (code)
         0x5002 => {
-            serial::write_line("user : ExitProcess(0) — 内核接管, M3 验证完成");
+            serial::write_line("user : ExitProcess(0) - kernel takeover, M3 verified");
             serial::write_str("timer : pit ticks=");
             print_dec(interrupts::ticks());
             serial::write_line(" (~100 Hz since boot)");
@@ -193,7 +193,7 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         }
         // exit(code) / exit_group(code) -> 内核接管并停机
         60 | 231 => {
-            serial::write_line("user : sys_exit() — 内核接管, M6 验证完成");
+            serial::write_line("user : sys_exit() - kernel takeover, M6 verified");
             serial::write_str("timer : pit ticks=");
             print_dec(interrupts::ticks());
             serial::write_line(" (~100 Hz since boot)");
@@ -210,7 +210,7 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5104 => crate::ai::fujo_ai_info(a0, a1),
         // ---- darwin BSD 空间 (0x2000000|nr, M6 darwinsubsys) ----
         0x200_0001 => {
-            serial::write_line("user : darwin exit() — 内核接管, M6 验证完成");
+            serial::write_line("user : darwin exit() - kernel takeover, M6 verified");
             serial::write_str("timer : pit ticks=");
             print_dec(interrupts::ticks());
             serial::write_line(" (~100 Hz since boot)");
@@ -399,7 +399,7 @@ pub fn enter_user_test(mbi: u32) -> ! {
                     Err(e) => {
                         serial::write_str("pexc : FAILED (");
                         serial::write_str(e);
-                        serial::write_line(") — fallback...");
+                        serial::write_line(") - fallback...");
                     }
                 }
             } else if is_macho {
@@ -415,7 +415,7 @@ pub fn enter_user_test(mbi: u32) -> ! {
                     Err(e) => {
                         serial::write_str("mach : FAILED (");
                         serial::write_str(e);
-                        serial::write_line(") — fallback...");
+                        serial::write_line(") - fallback...");
                     }
                 }
             } else {
@@ -431,13 +431,13 @@ pub fn enter_user_test(mbi: u32) -> ! {
                     Err(e) => {
                         serial::write_str("elfx : FAILED (");
                         serial::write_str(e);
-                        serial::write_line(") — fallback...");
+                        serial::write_line(") - fallback...");
                     }
                 }
             }
         }
         None => {
-            serial::write_line("fmod : no boot module (use -initrd) — embedded bin fallback");
+            serial::write_line("fmod : no boot module (use -initrd) - embedded bin fallback");
         }
     }
 
