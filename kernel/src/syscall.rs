@@ -250,15 +250,42 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         104 => 1000,
         107 => 1000,
         108 => 1000,
-        // arch_prctl(arch, addr) -> 0 (no-op; ARCH_SET_FS=0x1002/GET_FS=0x1003)
+        // arch_prctl(arch, addr) — ARCH_SET_FS=0x1002 写 FS_BASE (glibc TLS);
+        // ARCH_GET_FS=0x1003 读回。M23: busybox glibc %fs 寻址必需。
+        // v0: 写 MSR_FS_BASE; 多任务切换保存/恢复由 sched::save/restore 处理。
         158 => {
-            if a0 == 0x1003 {
-                // ARCH_GET_FS: *addr = fs 基址 (0x0)
-                if user_ok(a1, 8) {
-                    unsafe { (a1 as *mut u64).write(0u64); }
+            match a0 {
+                0x1002 => {
+                    unsafe {
+                        core::arch::asm!(
+                            "wrmsr",
+                            in("ecx") 0xC000_0100u32,
+                            in("eax") a1 as u32,
+                            in("edx") (a1 >> 32) as u32,
+                            options(nomem, nostack, preserves_flags)
+                        );
+                    }
+                    0
                 }
+                0x1003 => {
+                    if user_ok(a1, 8) {
+                        let lo: u32;
+                        let hi: u32;
+                        unsafe {
+                            core::arch::asm!(
+                                "rdmsr",
+                                in("ecx") 0xC000_0100u32,
+                                out("eax") lo,
+                                out("edx") hi,
+                                options(nomem, nostack, preserves_flags)
+                            );
+                            (a1 as *mut u64).write((lo as u64) | ((hi as u64) << 32));
+                        }
+                    }
+                    0
+                }
+                _ => 0,
             }
-            0
         }
         // prctl(option, ...) -> 0 (no-op)
         157 => 0,
