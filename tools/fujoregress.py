@@ -56,6 +56,10 @@ def run_case(kernel, case, timeout_s):
     initrd = os.path.join(ROOT, rel)
     if not os.path.exists(initrd):
         return ("MISS", f"initrd not found: {initrd}", "")
+    # 每用例前清扫残留 qemu (端口独占; M39 起内核变大, 旧实例退出慢)
+    subprocess.run(["taskkill", "/F", "/IM", "qemu-system-x86_64.exe"],
+                   capture_output=True)
+    time.sleep(0.8)
     tmpd = tempfile.mkdtemp(prefix="fujoregress-")
     log = os.path.join(tmpd, "qemu.log")
     # 独占端口: 用例间释放
@@ -66,14 +70,14 @@ def run_case(kernel, case, timeout_s):
         "-monitor", f"telnet:127.0.0.1:{MON_PORT},server,nowait",
         "-display", "none", "-no-reboot",
     ])
-    time.sleep(7.5)
+    time.sleep(9.0)
     try:
         s = socket.create_connection(("127.0.0.1", MON_PORT), timeout=3)
         f = s.makefile("w")
         for k in KEYS:
             f.write(f"sendkey {k}\n")
             f.flush()
-            time.sleep(0.05)
+            time.sleep(0.10)
         s.close()
     except OSError:
         pass
@@ -95,7 +99,8 @@ def run_case(kernel, case, timeout_s):
         log_txt = open(log, errors="replace").read()
     if needle in log_txt:
         return ("PASS", "", log_txt)
-    return ("FAIL", f"needle '{needle}' not found", log_txt)
+    tail = "\n".join(log_txt.splitlines()[-8:])
+    return ("FAIL", f"needle '{needle}' not found", tail)
 
 
 def main():
@@ -116,6 +121,8 @@ def main():
         print(f":: {label} ...", flush=True)
         st, err, logtxt = run_case(a.kernel, case, a.timeout)
         print(f":: {label} {st} {err}")
+        if st != "PASS":
+            print(logtxt)
         results.append({"case": case[0], "label": case[1], "status": st, "needle": case[3]})
     ok = sum(1 for r in results if r["status"] == "PASS")
     print("-" * 60)

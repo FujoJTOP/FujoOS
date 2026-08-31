@@ -378,6 +378,10 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5121 => crate::ipc::fujo_sigkill(a0, a1),
         // fujo_sigret() -> 0
         0x5122 => crate::ipc::fujo_sigret(),
+        // ---- M39: 位图字体 (缩放/字形/backbuffer) ----
+        0x5601 => crate::font::fujo_font_text(a0, a1, a2, a3, a4),
+        0x5602 => crate::font::fujo_font_pixel(a0, a1),
+        0x5603 => crate::font::fujo_font_clear(a0),
         // ---- M37: 消息环 (win32k 等价: 窗口类/窗口/消息队列/z-order) ----
         0x5520 => crate::wmsg::fujo_wm_class(a0),
         0x5521 => crate::wmsg::fujo_wm_create(a0 as u32, a1 as u32, a2 as u32, a3 as u32, a4 as u32),

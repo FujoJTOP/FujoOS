@@ -315,7 +315,22 @@
       **`WM_MOVE win=1 (110,60)`** → 关闭 ×2 →
       **`WM_DESTROY win=1/win=2`** → move=1 destroy=2 zorder=1 →
       **M38 RESULT: PASS**; 回归: 兼容矩阵 9/9
-- [ ] **M39** 字体升级:更多字形/缩放/抗锯齿
+- [x] **M39** 字体升级:更多字形/缩放/抗锯齿 —— **font.rs 位图字体系统**:
+      **5x7 全 ASCII 96 字形**(0x20..0x7F, 经典 5x7 字模)渲染到
+      RAM backbuffer(0xC00000, 3MiB), **scale 1..=4 整数缩放**
+      (7x5·scale, 字符间距 8·scale), 超采样 AA 预留(像素块级);
+      fujo 原语: 0x5601 font_text(x,y,scale,color,str) / 0x5602
+      font_pixel(x,y 读回) / 0x5603 clear;
+      **m39_font.elf 实测**: 三行 "M39" scale 1/2/3 → 采样
+      (px=ff00ff00 前景 / ff101010 背景, 亮度对比判定) →
+      **M39 RESULT: PASS**;
+      **修复链**: 字形方向(7x5 行模式)、silent 误用不画图、亮度权重
+      (>>12 边界差 1);
+      **★关键(全局)**: 内核 BSS 尾 0x261B30 超出旧 pad
+      (0x160000 → 0x260000) 与 initrd 模块区(0x261000)重叠
+      → sched TASKS/CUR 等尾静态被模块字节覆盖 → 全矩阵 PANIC;
+      **修: pad 0x170000 + MB_HEADER load_end/bss_end 0x0027_0000**
+      → 回归 9/9; 回归(新内核): M39 PASS
 - [ ] **M40** IME 预留(中文输入框架骨架)
 - [ ] **M41** fujokit v0:按钮/文本框/列表控件
 - [ ] **M42** GUI 应用#1:一个可点按钮的窗口(验收)

@@ -124,6 +124,10 @@ pub fn clear_sig_active(tid: usize) {
 /// 返回 true = 已投递 (帧被改写)。
 fn maybe_deliver_signal(regs: *mut u64) -> bool {
     unsafe {
+        if CUR >= TASK_COUNT {
+            return false; // M39 防护: CUR 越界直接跳过 (根因: 内核 BSS 与模块区
+                          // 边界的写穿, 见 M39 记录)
+        }
         let t = &mut TASKS[CUR];
         if !t.sig_pending || t.sig_active || t.sig_handler == 0 {
             return false;
