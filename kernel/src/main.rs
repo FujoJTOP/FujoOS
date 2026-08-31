@@ -19,6 +19,7 @@ mod fujr;
 mod gdt;
 mod graphics;
 mod interrupts;
+mod ipc;
 mod kbd;
 mod macho_loader;
 mod mem;

@@ -45,7 +45,17 @@
       (桩经 trampoline 传帧指针, 解码 RIP/CS/RFLAGS/RSP 定位) →
       实证 **用户栈初始 RSP 需 %16==8**(clang `_start` 按 SysV call 约定布局,
       `movaps` 16 对齐访问, 0x600000(%16==0) 错位 → #GP; STACK=0x5FFFF8)
-- [ ] **M18 IPC 原语**:管道/共享内存/信号;`ls | grep` 式管道
+- [x] **M18 IPC 原语**:管道/共享内存/信号 —— 内核 `ipc.rs` 三件套:
+      `fujo_pipe`(环形缓冲 512B, fd 表 F_KIND_PIPE 登记, read/write/close 统一路径)、
+      `fujo_shm`(固定共享窗口 0xA00000/64KiB)、`fujo_sigset/sigkill/sigret`;
+      信号投递 = PIT 用户态中断帧上构造 iretq 帧([RIP][CS][RFLAGS][RSP][SS])
+      + RIP 改写为 handler(裸 asm, push/pop 保存现场 + `iretq` 恢复被中断点);
+      **双任务集成实测通过**: `os run ipc` → A 建管道写 30B 消息 → B 读回全文
+      ("ipc: hello through pipe (M18)") → A 写 32B 模式入共享窗口 → B 校验 OK →
+      B 发信号 → 内核投递(A handler 计数=1) → A/B 均 **PASS**;
+      修复: 用户 fd 数组须 int(内核写 2×u32, long 读成 0x400000003)、
+      信号握手时序(shm[5] 完成栅栏); 桩表全向量改走 trampoline
+      捕获精确异常帧(见 M17 记录)
 - [ ] **M19 内核对象/句柄表**:统一资源抽象
 - [ ] **M20 稳定性**:进程级异常恢复;24h 无泄漏运行
 

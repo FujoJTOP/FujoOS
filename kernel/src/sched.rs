@@ -19,10 +19,14 @@ pub struct Task {
     pub saved_rsp: u64,
     pub kstack_top: u64,
     pub state: u8,
+    /// M18 信号: 处理函数 (0=未注册), pending (待投递), active (处理中)
+    pub sig_handler: u64,
+    pub sig_pending: bool,
+    pub sig_active: bool,
 }
 
 static mut TASKS: [Task; MAX_TASKS] = [
-    Task { saved_rsp: 0, kstack_top: 0, state: 0 };
+    Task { saved_rsp: 0, kstack_top: 0, state: 0, sig_handler: 0, sig_pending: false, sig_active: false };
     MAX_TASKS
 ];
 static mut TASK_COUNT: usize = 0;
@@ -82,6 +86,72 @@ pub fn current_task() -> usize {
     unsafe { CUR }
 }
 
+// ---------------------------------------------------------------------------
+// M18 · 信号原语: 注册/投递/复位
+// ---------------------------------------------------------------------------
+
+pub fn set_sig_handler(tid: usize, handler: u64) {
+    unsafe {
+        if tid < TASK_COUNT {
+            TASKS[tid].sig_handler = handler;
+        }
+    }
+}
+
+/// 置目标任务 pending (返回是否有效 tid)。
+pub fn sig_pending(tid: usize) -> bool {
+    unsafe {
+        if tid < TASK_COUNT && TASKS[tid].state == TASK_RUNNABLE {
+            TASKS[tid].sig_pending = true;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+pub fn clear_sig_active(tid: usize) {
+    unsafe {
+        if tid < TASK_COUNT {
+            TASKS[tid].sig_active = false;
+        }
+    }
+}
+
+/// 信号投递: 当前任务 (中断于用户态) 有 pending 且注册 handler 且未在处理中时,
+/// 在用户栈上构造 iretq 帧 [RIP][CS][RFLAGS][RSP][SS] (5×8B), 将中断保存帧的
+/// RIP 改为 handler、RSP 指向新帧 —— handler 以 `iretq` 返回被中断点。
+/// 返回 true = 已投递 (帧被改写)。
+fn maybe_deliver_signal(regs: *mut u64) -> bool {
+    unsafe {
+        let t = &mut TASKS[CUR];
+        if !t.sig_pending || t.sig_active || t.sig_handler == 0 {
+            return false;
+        }
+        let old_rsp = regs.add(12).read();
+        if old_rsp < 0x80 {
+            return false;
+        }
+        // handler 入口 RSP%16==8 (SysV); 帧头在其上方 40B 不重叠
+        let new_rsp = (old_rsp & !0xF) - 8;
+        let frame = new_rsp as *mut u64;
+        frame.add(0).write(regs.add(9).read()); // 被中断 RIP
+        frame.add(1).write(0x23u64); // CS
+        frame.add(2).write(regs.add(11).read()); // RFLAGS
+        frame.add(3).write(old_rsp); // 复原 RSP
+        frame.add(4).write(0x1Bu64); // SS
+        // 改写中断保存帧: 恢复位置 = handler
+        regs.add(9).write(t.sig_handler);
+        regs.add(12).write(new_rsp);
+        t.sig_pending = false;
+        t.sig_active = true;
+        serial::write_str("ipc  : signal -> task ");
+        print_dec(CUR as u64);
+        serial::write_line("");
+        true
+    }
+}
+
 fn print_dec(v: u64) {
     let mut buf = [0u8; 24];
     let mut i = 24;
@@ -131,6 +201,9 @@ fn spawn(kstack_top: u64, user_stack: u64, entry: u64) -> usize {
             saved_rsp: frame as u64 - 72,
             kstack_top,
             state: TASK_RUNNABLE,
+            sig_handler: 0,
+            sig_pending: false,
+            sig_active: false,
         };
         TASK_COUNT += 1;
         idx
@@ -161,9 +234,15 @@ pub extern "C" fn fujo_tick_sched(_vec: u64, regs: *const u64) -> i64 {
         // 中断帧 (9 寄存器之后, 栈顶->下): [RIP][CS][RFLAGS][RSP_user][SS]
         // —— CPU 先压 SS/RSP/RFLAGS/CS/RIP, RIP 在栈顶 (M13 现场确证 +10=CS)。
         let cs = regs.add(10).read() as u16;
-        if cs != 0x23 || TASK_COUNT < 2 {
-            return 0; // 内核态 (0x08) 或未启用多任务: 不切换
+        if cs != 0x23 {
+            return 0; // 内核态 (0x08): 不切换不投递
         }
+        // M18: 用户态中断点检查信号 (仅当前任务)
+        let delivered = maybe_deliver_signal(regs as *mut u64);
+        if TASK_COUNT < 2 {
+            return 0; // 单任务: 无切换 (信号已投递则帧已改写返回)
+        }
+        let _ = delivered;
         TASKS[CUR].saved_rsp = regs as u64;
         let mut next = (CUR + 1) % TASK_COUNT;
         let mut guard = 0usize;

@@ -16,6 +16,7 @@ pub const F_KIND_BLOB: u8 = 0; // 静态内存 (模块)
 pub const F_KIND_GEN: u8 = 1; // 生成内容 (proc)
 pub const F_KIND_RAM: u8 = 2; // 内存盘读写
 pub const F_KIND_DISK: u8 = 3; // fujofs 磁盘文件 (M16)
+pub const F_KIND_PIPE: u8 = 4; // IPC 管道 (M18; data_ptr=Pipe*)
 
 pub const MAX_OPEN: usize = 16;
 
@@ -34,6 +35,42 @@ static mut FILES: [File; MAX_OPEN] = [
     MAX_OPEN
 ];
 static mut NEXT_FD: usize = 3;
+
+// ---------------------------------------------------------------------------
+// M18 · IPC 管道 fd 登记 (vfs 表复用, kind=F_KIND_PIPE)
+// ---------------------------------------------------------------------------
+
+/// 分配一个指向 Pipe 的 fd (fd 表记录 data_ptr = Pipe*)。
+pub fn alloc_pipe_fd(p: *mut crate::ipc::Pipe) -> Option<usize> {
+    unsafe {
+        let fd = NEXT_FD;
+        if fd >= MAX_OPEN {
+            return None;
+        }
+        NEXT_FD += 1;
+        let f = &mut *core::ptr::addr_of_mut!(FILES[fd]);
+        f.name = "/pipe";
+        f.kind = F_KIND_PIPE;
+        f.data_ptr = p as *const u8;
+        f.data_len = crate::ipc::PIPE_SIZE as u64; // 容量提示 (read 走 pipe_read)
+        f.pos = 0;
+        Some(fd)
+    }
+}
+
+/// 释放 fd (回滚路径 / close 复用)。
+pub fn free_fd(fd: usize) {
+    unsafe {
+        if fd >= 3 && fd < MAX_OPEN {
+            let f = &mut *core::ptr::addr_of_mut!(FILES[fd]);
+            f.name = "/dev/null";
+            f.kind = 0;
+            f.data_ptr = core::ptr::null();
+            f.data_len = 0;
+            f.pos = 0;
+        }
+    }
+}
 
 static mut BOOT_MODULE: (u64, u64) = (0, 0); // (addr, len)
 static mut MODULE_COPY: [u8; 4096] = [0; 4096];
@@ -269,6 +306,10 @@ pub extern "C" fn fujo_read(fd: u64, buf: u64, len: u64) -> i64 {
             return -9; // -EBADF
         }
         let f = &mut *core::ptr::addr_of_mut!(FILES[fd as usize]);
+        if f.kind == F_KIND_PIPE {
+            // M18: 管道读 (data_ptr = Pipe*)
+            return crate::ipc::pipe_read(f.data_ptr as *const crate::ipc::Pipe, buf, len);
+        }
         if f.data_ptr as u64 == 0 {
             return 0;
         }
@@ -293,6 +334,11 @@ pub extern "C" fn fujo_close(fd: u64) -> i64 {
     if fd >= 3 && (fd as usize) < MAX_OPEN {
         unsafe {
             let f = &mut *core::ptr::addr_of_mut!(FILES[fd as usize]);
+            if f.kind == F_KIND_PIPE {
+                // M18: 管道端点关闭 (v0 不回收 Pipe, fd 表复位即可)
+                free_fd(fd as usize);
+                return 0;
+            }
             // M16: 磁盘文件脏刷盘 (写穿)
             if f.kind == F_KIND_DISK && DISK_DIRTY {
                 if crate::fjfs::write_file(b"hello.txt", core::ptr::addr_of!(DISK_CACHE).cast::<u8>(), DISK_CACHE_LEN) {
@@ -322,6 +368,17 @@ pub fn file_write(fd: u64, ptr: u64, len: u64) -> Option<i64> {
         }
         if name == "/dev/tty" {
             return None; // 调用方串口回退
+        }
+        if FILES[fd as usize].kind == F_KIND_PIPE {
+            // M18: 管道写
+            let p = FILES[fd as usize].data_ptr as *mut crate::ipc::Pipe;
+            let n = crate::ipc::pipe_write(p, ptr, len);
+            serial::write_str("ipc  : pipe write fd=");
+            print_dec(fd);
+            serial::write_str(" +");
+            print_dec(n as u64);
+            serial::write_line(" bytes");
+            return Some(n);
         }
         if FILES[fd as usize].kind == F_KIND_DISK {
             // fujofs 缓存追加 (close 刷盘)

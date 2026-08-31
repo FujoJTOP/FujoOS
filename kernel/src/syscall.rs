@@ -233,6 +233,17 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5104 => crate::ai::fujo_ai_info(a0, a1),
         // fujo_get_task_id() -> tid (M14: 进程/任务标识原语)
         0x5105 => crate::sched::current_task() as i64,
+        // ---- M18: IPC 原语 (管道/共享内存/信号) ----
+        // fujo_pipe(ptr) -> 0 (ptr 处写 [rfd, wfd])
+        0x5110 => crate::ipc::fujo_pipe(a0),
+        // fujo_shm() -> 共享窗口基址 0xA00000
+        0x5111 => crate::ipc::fujo_shm(),
+        // fujo_sigset(handler) -> 0
+        0x5120 => crate::ipc::fujo_sigset(a0),
+        // fujo_sigkill(tid, sig) -> 0
+        0x5121 => crate::ipc::fujo_sigkill(a0, a1),
+        // fujo_sigret() -> 0
+        0x5122 => crate::ipc::fujo_sigret(),
         // ---- darwin BSD 空间 (0x2000000|nr, M6 darwinsubsys) ----
         0x200_0001 => {
             serial::write_line("user : darwin exit() - kernel takeover, M6 verified");
