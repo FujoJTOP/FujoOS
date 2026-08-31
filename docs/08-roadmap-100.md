@@ -104,7 +104,18 @@
       父帧被子 syscall 覆盖(iretq 目标帧垃圾 → #GP tRIP=0x2fffd8;
       修: 父 set_rsp0 到独立栈 0x380000)、子栈 0x240000 与内核 BSS 重叠
       (BSS 到 0x24BCA8; 修: 0x340000); execve 留 M23
-- [ ] **M23** 静态 busybox 原生运行(验收:ls/cat/echo/管道)
+- [x] **M23a** 静态 busybox 装载+argv/auxv 栈帧(完整运行=M23b): ——
+      下载 ubuntu busybox-static 1.30.1(2.1MB 静态 ELF, 段 0x400000..0x620000);
+      内核: `os run busybox`(argv 模式) + 用户栈构造完整 Linux 进程栈
+      [argc][argv][0][envp][0][auxv: AT_PHDR/PHENT/PHNUM/ENTRY/SECURE/RANDOM/
+      PAGESZ][0] (0x5F0000 区) + `fujo_enter_user` 用户入口通用寄存器清零
+      (glibc _start 契约: rdx=rtld_fini=0) + 启动 syscall 面补齐
+      (arch_prctl GET_FS/157/218 set_tid/273 robust/274 get_robust/334 rseq/
+      10 mprotect); **验证**: busybox ELF 装载 entry=0x40b300, 段复制逐段确认,
+      argv 帧 demo(argc=1, argv[0]="busybox") **PASS**, 用户态执行流进入
+      glibc init(用户 RIP 推进); **未完项(M23b)**: glibc 静态 init 深链路
+      (TLS/更多 syscall 直通) 使 busybox 达 usage 输出 —— 待 M24/M25 输入
+- [ ] **M23b** busybox 完整原生运行(验收: ls/cat/echo/管道)
 - [ ] **M24** ELF 动态链接最小化(interp + 符号表)
 - [ ] **M25** musl/glibc hello 直跑
 - [ ] **M26** winsubsys:kernel32 文件 IO/堆/线程垫片家族

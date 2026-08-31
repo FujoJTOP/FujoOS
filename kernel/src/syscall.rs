@@ -106,19 +106,35 @@ fujo_syscall_entry:
 
     # ---- iretq 进入用户态 ----
     # rdi=entry, rsi=user_stack; 先 cli: 构造帧期间不允许中断 (M1 现场验证)
+    # M23: 用户入口寄存器清零 (Linux _start 契约: rsp=argc 帧, 其他未定义但
+    # glibc _start 用 rdx=rtld_fini; 清零保证 rtld_fini=NULL)。保留 rsp 语义。
     .p2align 4
     .global fujo_enter_user
 fujo_enter_user:
     cli
     mov rax, cr3
-    mov cr3, rax
-    mov r10, 60
+    mov cr3, rax          # TLB flush (M2 原有; 幂等)
+    mov r8, rdi
+    mov r10, rsi
+    xor rax, rax
+    xor rbx, rbx
+    xor rcx, rcx
+    xor rdx, rdx
+    xor rsi, rsi
+    xor rdi, rdi
+    xor r9, r9
+    xor r11, r11
+    xor r12, r12
+    xor r13, r13
+    xor r14, r14
+    xor r15, r15
+    mov r9, 60            # spare (未用)
     push 0x1b
-    push rsi
+    push r10
     push 0x202
     push 0x23
-    push rdi
-    mov rax, r10
+    push r8
+    mov rax, r9
     iretq
 "#);
 
@@ -234,8 +250,28 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         104 => 1000,
         107 => 1000,
         108 => 1000,
-        // arch_prctl(arch, addr) -> 0 (no-op)
-        158 => 0,
+        // arch_prctl(arch, addr) -> 0 (no-op; ARCH_SET_FS=0x1002/GET_FS=0x1003)
+        158 => {
+            if a0 == 0x1003 {
+                // ARCH_GET_FS: *addr = fs 基址 (0x0)
+                if user_ok(a1, 8) {
+                    unsafe { (a1 as *mut u64).write(0u64); }
+                }
+            }
+            0
+        }
+        // prctl(option, ...) -> 0 (no-op)
+        157 => 0,
+        // mprotect(addr, len, prot) -> 0 (直通; busybox 除 exec 区外全 RWX)
+        10 => 0,
+        // set_tid_address(ptr) -> tid
+        218 => crate::sched::current_task() as i64 + 1,
+        // set_robust_list(ptr, len) -> 0
+        273 => 0,
+        // rseq(ptr, len, flags, sig) -> -ENOSYS (glibc 可回退)
+        334 => -38,
+        // get_robust_list -> 0
+        274 => 0,
         // gettid -> 当前任务 id+1
         186 => crate::sched::current_task() as i64 + 1,
         // time(ptr) -> 单调秒
@@ -617,6 +653,8 @@ pub fn enter_user_test(mbi: u32) -> ! {
 
     let mut load_addr: u64 = LOAD_DEFAULT;
     let mut used_module = false;
+    // M23: argv 模式 (busybox 等真 libc 程序需要 argc/argv/envp 栈帧)
+    let argv_mode = crate::shell::argv_mode();
 
     // ---- M2/M3: 模块装载路径 (ELF 或 PE, 格式嗅探统一路由) ----
     match unsafe { module_snapshot().or_else(|| find_module(mbi)) } {
@@ -739,7 +777,62 @@ pub fn enter_user_test(mbi: u32) -> ! {
     if crate::sched::multi_task() {
         crate::sched::spawn_tasks(load_addr);
     }
-    unsafe { fujo_enter_user(load_addr, STACK) };
+    // M23: argv 模式 —— 用户栈顶构造 [argc][argv…][0][envp…][0][auxv…][0]
+    // 静态 glibc busybox 初始化需要 auxv (AT_PHDR/AT_PHNUM/AT_ENTRY/AT_RANDOM
+    // /AT_SECURE/AT_NULL) 用于 TLS 与 libc 早期状态 (M23 现场: 缺 auxv ->
+    // __libc_start_main 读垃圾指针 #PF cr2=rip=0x56198468)。
+    let mut user_rsp = STACK;
+    if argv_mode {
+        // 帧区选 0x5F0000 起 (与 STACK=0x5FFFF8 不冲突的独立区域)
+        let sp0 = 0x5F0000u64;
+        unsafe {
+            // 字符串: argv0="busybox" 逆序放 (栈向低生长)
+            let mut cur = sp0;
+            let argv0 = b"busybox\0";
+            for &b in argv0.iter().rev() {
+                cur -= 1;
+                (cur as *mut u8).write(b);
+            }
+            let mut ptrs = [0u64; 8];
+            ptrs[0] = cur; // argv[0]
+            // 指针区放 0x5F0400: [argc][argv0][0][envp][0(空envp)][auxv...][0]
+            let argp = 0x5F0400u64;
+            let n = 1usize;
+            (argp as *mut u64).write(n as u64); // argc=1
+            (argp as *mut u64).add(1).write(ptrs[0]);
+            (argp as *mut u64).add(2).write(0u64); // argv 结束
+            (argp as *mut u64).add(3).write(0u64); // envp 结束 (无环境)
+            // auxv (起始于 argp+4*8): 至少 AT_PHDR/AT_PHNUM/AT_ENTRY/AT_SECURE/AT_NULL
+            // 注意 AT_PHDR 必须指向 ELF program header —— busybox 的入口已知
+            // 0x40b300, ELF 头在 0x400000, 段表在 0x400040 (e_phoff=64)
+            let aux = argp + 32;
+            (aux as *mut u64).add(0).write(3u64); // AT_PHDR
+            (aux as *mut u64).add(1).write(0x400040u64);
+            (aux as *mut u64).add(2).write(4u64); // AT_PHENT
+            (aux as *mut u64).add(3).write(56u64);
+            (aux as *mut u64).add(4).write(5u64); // AT_PHNUM
+            (aux as *mut u64).add(5).write(5u64);
+            (aux as *mut u64).add(6).write(9u64); // AT_ENTRY
+            (aux as *mut u64).add(7).write(0x40b300u64);
+            (aux as *mut u64).add(8).write(23u64); // AT_SECURE
+            (aux as *mut u64).add(9).write(0u64);
+            (aux as *mut u64).add(10).write(25u64); // AT_RANDOM
+            let rnd = 0x5F0300u64;
+            for k in 0..16usize {
+                ((rnd + k as u64) as *mut u8).write((0x41 + k) as u8);
+            }
+            (aux as *mut u64).add(11).write(rnd);
+            (aux as *mut u64).add(12).write(6u64); // AT_PAGESZ
+            (aux as *mut u64).add(13).write(0x1000u64);
+            (aux as *mut u64).add(14).write(0u64); // AT_NULL
+            (aux as *mut u64).add(15).write(0u64);
+            user_rsp = argp;
+            serial::write_str("argv : argc=1 stack @");
+            print_hex(argp);
+            serial::write_line("");
+        }
+    }
+    unsafe { fujo_enter_user(load_addr, user_rsp) };
     unreachable!()
 }
 

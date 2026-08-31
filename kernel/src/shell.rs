@@ -54,6 +54,20 @@ fn read_line(buf: &mut [u8]) -> usize {
     }
 }
 
+/// M23: argv 模式标志 (shell 设置, enter_user_test 读取 —— 真 libc 程序
+/// 需要 argc/argv 栈帧; 关闭则保持演示程序的裸栈约定)。
+static mut ARGV_MODE: bool = false;
+
+pub fn set_argv_mode(on: bool) {
+    unsafe {
+        ARGV_MODE = on;
+    }
+}
+
+pub fn argv_mode() -> bool {
+    unsafe { ARGV_MODE }
+}
+
 pub fn shell(mbi: u32) -> ! {
     vga::set_color(0x07);
     out_line("");
@@ -66,6 +80,7 @@ pub fn shell(mbi: u32) -> ! {
     out_line("os   :   os run stress    launch leak-stress demo (M20)");
     out_line("os   :   os run m21      launch syscall-surface demo (M21)");
     out_line("os   :   os run fork      launch fork demo (M22)");
+    out_line("os   :   os run busybox   launch static busybox (M23)");
     out_line("os   :   help             show this list");
     let mut line = [0u8; 64];
     loop {
@@ -110,6 +125,11 @@ pub fn shell(mbi: u32) -> ! {
                 } else if t1 == "run" && t2 == "fork" {
                     // M22: fork 克隆 (父/子共享地址空间, 用户栈物理拷贝)
                     out_line("os   : launching fork demo ...");
+                    syscall::enter_user_test(mbi); // > !: 不再返回
+                } else if t1 == "run" && t2 == "busybox" {
+                    // M23: 静态 busybox (argc/argv 栈帧)
+                    set_argv_mode(true);
+                    out_line("os   : launching busybox (argv mode) ...");
                     syscall::enter_user_test(mbi); // > !: 不再返回
                 } else {
                     // TEMP-DEBUG
