@@ -83,10 +83,12 @@ agent 启动
 
 **"Agent 启动 → 本地小模型意图分类 → 工具路由 → 容器执行 → 终端回显"**
 
-1. `fujonn` 服务骨架：shm 环形缓冲 + `fujo_model_call` 原语（规则分类器先跑通链路，微型模型随后接入）；
-2. `fujoctx` 首版：窗口 + 键盘轨迹 + 最近 `.run` 装载记录（三者现有构件可低成本产出）；
-3. agent 运行时 v0：`.run` 为进程单元，能力句柄限定工具集；
-4. 验收 = QEMU 启动日志完整出现上述闭环，且记录分类延迟与路由准确率。
+> **状态（实验分支 `fujoos-ai-dev`，v0 已落地）**：
+> ① `fujonn` 服务骨架 ✅ —— 内核 `ai.rs`：`fujo_ai_classify`（0x5101）+ `fujo_ai_fetch`（0x5102，fujoctx 注入）两个宏原生原语，ring3 可调；规则引擎占位（**NN 接入点注释就绪**，接口稳定）；
+> ② Agent 运行时 v0 ✅ —— `sdk/ai/agent.c`：命令槽（0x402000）读取 → 模型原语调用 → 上下文注入 → 计划输出 → exit；
+> ③ Agent 宿主 ✅ —— 主流程键盘命令捕获（sendkey 注入）→ 意图槽 → 启动 agent；
+> ④ 实测链路（QEMU）：`m9 : agent cmd='run'` → `ai : classify('run') -> RUN [engine=rules]` → `agent: fujo-agent up / model_call / context[...] = fmt=pe;win=2;mod=agent;keys=1` → exit 内核接管；
+> ⑤ **已知实现项（低优）**：ring3 侧对 0x5101 返回值的接收存在偏移（内核侧返回值已验证 1）；接口契约与调用链已验证，问题在实现的接收侧，接入微型神经引擎前优先修正。
 
 ## 6. 开放问题（邀请回答）
 

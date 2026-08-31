@@ -62,31 +62,56 @@ extern "C" {
 core::arch::global_asm!(r#"
     .text
     # ---- 异常桩: 每个桩固定 14 字节: mov rdi,N(7B) + call rel32(5B) + ud2(2B) ----
-    # ⚠️ jmp 会被汇编器优化为 rel8 短跳(桩变 4 字节); call 恒为 rel32,
-    # 定长版本才是可用的定址表 (M4 踩坑实录)。
+    # (M4 踩坑: jmp 会优化成 rel8 短跳; 不用宏展开 —— 宏+完整重建在工具链上
+    #  偶发装配瞬态 (M9 DEV 记录), 手写定长桩为确定性方案)
     .p2align 4
     .global fujo_exc_stub_table
 fujo_exc_stub_table:
-    .macro EXCN n
-    mov rdi, \n
+    mov rdi, 0
     call fujo_exc
     ud2
-    .endm
-    EXCN 0
-    EXCN 1
-    EXCN 2
-    EXCN 3
-    EXCN 4
-    EXCN 5
-    EXCN 6
-    EXCN 7
-    EXCN 8
-    EXCN 9
-    EXCN 10
-    EXCN 11
-    EXCN 12
-    EXCN 13
-    EXCN 14
+    mov rdi, 1
+    call fujo_exc
+    ud2
+    mov rdi, 2
+    call fujo_exc
+    ud2
+    mov rdi, 3
+    call fujo_exc
+    ud2
+    mov rdi, 4
+    call fujo_exc
+    ud2
+    mov rdi, 5
+    call fujo_exc
+    ud2
+    mov rdi, 6
+    call fujo_exc
+    ud2
+    mov rdi, 7
+    call fujo_exc
+    ud2
+    mov rdi, 8
+    call fujo_exc
+    ud2
+    mov rdi, 9
+    call fujo_exc
+    ud2
+    mov rdi, 10
+    call fujo_exc
+    ud2
+    mov rdi, 11
+    call fujo_exc
+    ud2
+    mov rdi, 12
+    call fujo_exc
+    ud2
+    mov rdi, 13
+    call fujo_exc
+    ud2
+    mov rdi, 14
+    call fujo_exc
+    ud2
 
     # ---- PIT (IRQ0) —— 计数 + EOI + 返回 ----
     .p2align 4
