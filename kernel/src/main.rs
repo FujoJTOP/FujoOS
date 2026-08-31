@@ -22,6 +22,7 @@ mod gdt;
 mod graphics;
 mod interrupts;
 mod ipc;
+mod icon;
 mod ime;
 mod kbd;
 mod kobj;

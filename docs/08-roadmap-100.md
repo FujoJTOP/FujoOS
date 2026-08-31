@@ -368,7 +368,15 @@
       **`wm_dropfiles=1 win=1 payload=0xbeef`** → **M43 RESULT: PASS**;
       **修复链**: refresh_rects 误把 w/h 当 x1/y1 注册(历史躲过 —
       M37/M38 命中恰好 w>=x) → 修 x+w/y+h; 回归: 矩阵 9/9
-- [ ] **M44** 图标/主题/调色板系统
+- [x] **M44** 图标/主题/调色板系统 —— **icon.rs**: 16 槽 ARGB 调色板
+      (0x5901 get / 0x5902 set)、**主题 apply**(0x5903: LIGHT=0 /
+      DARK=1 重载 fg/bg/dim/surface/ink 槽)、**内置 8x8 图标**
+      (file/folder/app, 0x5904 draw x,y,id,scale 1..=4 → backbuffer,
+      0x5905 像素读回);
+      **m44_icon.elf 实测**: DARK 主题(fg=ffe5e7eb/bg=ff0b0f1a)→ 三图标
+      绘制 → 图标内=ink 边=黑 → LIGHT 重画 → 采样 →
+      **M44 RESULT: PASS**; 修复: 判定含 alpha 位(0xFF…) → 按 RGB 比较;
+      回归: 矩阵 9/9
 - [ ] **M45** 终端窗口控件(串口/VGA 转 GUI)
 - [ ] **M46** 桌面环境:任务栏/开始菜单雏形
 - [ ] **M47** 多屏/分辨率切换(vbe 枚举)

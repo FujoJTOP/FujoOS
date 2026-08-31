@@ -378,6 +378,12 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5121 => crate::ipc::fujo_sigkill(a0, a1),
         // fujo_sigret() -> 0
         0x5122 => crate::ipc::fujo_sigret(),
+        // ---- M44: 调色板/主题/图标 ----
+        0x5901 => crate::icon::fujo_pal_get(a0),
+        0x5902 => crate::icon::fujo_pal_set(a0, a1),
+        0x5903 => crate::icon::fujo_theme_apply(a0),
+        0x5904 => crate::icon::fujo_icon_draw(a0, a1, a2, a3),
+        0x5905 => crate::icon::fujo_icon_pixel(a0, a1),
         // ---- M43: 剪贴板/拖放 ----
         0x5801 => crate::clip::fujo_clip_set(a0, a1),
         0x5802 => crate::clip::fujo_clip_get(a0, a1),
