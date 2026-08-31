@@ -213,7 +213,17 @@
       回读, LE) → `lseek pos=0` → `mmap=8388608` + 写验证 →
       `getpid=2` → `close=0` → **`M29 RESULT: PASS`** → `darwin exit(7)`;
       回归: M27 全绿
-- [ ] **M30** 三子系统一致化(统一内核对象映射)
+- [x] **M30** 三子系统一致化(统一内核对象映射) —— **三 ABI 同一 VFS
+      对象路径**(/boot/module): win(darwin/linux 同源流程)各以
+      **open→read 32B→校验自身魔数→close**, 全部走 `vfs::fujo_open_name`
+      (linux fd、darwin fd、win32 句柄 = 同一 fd 表):
+      **win**(m30_win.exe, clang MSVC: **CreateFileA("\\boot\\module")**
+      垫片反斜杠归一→fd, `ReadFile`→`4d5a78…`(自身 PE MZ)) **PASS**;
+      **linux**(m30_linux.elf 零 libc, open→fd3→`7f454c46`(ELF 魔数))
+      **PASS**; **darwin**(m29 回归: open→fd3→`cffaedfe`(Mach-O 魔数))
+      **PASS**; 三程序同里程碑同一对象语义 → **M30 达成**;
+      架构: kernel32!CreateFileA(0x5018) 垫片(路径 7 参只有 name 用,
+      反斜杠→正斜杠)+ vfs 重构 `fujo_open_name(name)` 公共入口
 - [ ] **M31** fujopack 资源化 .run 命令行工具链
 - [ ] **M32** fujorun 支持多模块/库目录
 - [ ] **M33** 系统调用追踪(trace 工具 + 计数)

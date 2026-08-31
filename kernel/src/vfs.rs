@@ -258,6 +258,11 @@ pub extern "C" fn fujo_open(ptr: u64, len: u64, flags: u64) -> i64 {
     let full = core::str::from_utf8(&p).unwrap_or("");
     let end = full.find('\0').unwrap_or(full.len());
     let name = &full[..end];
+    fujo_open_name(name, flags)
+}
+
+/// M30: 统一对象路径打开 (linux/darwin/win32 垫片共用)。
+pub fn fujo_open_name(name: &str, _flags: u64) -> i64 {
     unsafe {
         // 分配 fd (M20: 槽复用)
         let fd = match alloc_fd_slot() {
@@ -335,7 +340,6 @@ pub extern "C" fn fujo_open(ptr: u64, len: u64, flags: u64) -> i64 {
             serial::write_line(" bytes)");
             return fd as i64;
         }
-        let _ = flags;
         NEXT_FD -= 1; // 回滚
         serial::write_str("vfs  : open unknown '");
         serial::write_str(name);

@@ -321,8 +321,8 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         257 => crate::vfs::fujo_open(a1, a2, a3),
         // getrandom(buf, len, flags) — PIT 混哈希假熵
         317 => sys_getrandom(a0, a1),
-        // ---- fujo 原生 Win32 shim 通道 (M3/M26 基础 + M27 mingw CRT + M28 vcruntime) ----
-        0x5001..=0x5017 | 0x5201..=0x522B => shim_dispatch(nr, args),
+        // ---- fujo 原生 Win32 shim 通道 (M3/M26 基础 + M27 mingw CRT + M28/M30) ----
+        0x5001..=0x5018 | 0x5201..=0x522B => shim_dispatch(nr, args),
         // exit(code) / exit_group(code) -> 内核接管并停机
         60 | 231 => {
             serial::write_line("user : sys_exit() - kernel takeover, M6 verified");
@@ -632,6 +632,26 @@ fn shim_dispatch(nr: u64, args: *const u64) -> i64 {
                 // GetCPInfo(cp, buf) — CPINFO.MaxCharSize=1
                 (a2 as *mut u8).write(1);
                 1
+            }
+            0x5018 => {
+                // CreateFileA(name, access, share, sec, disp, flags, tmpl)
+                // M30: 统一对象路径 — 反斜杠归一后走 vfs open; 句柄=fd。
+                let mut path = [0u8; 64];
+                let mut nn = 0usize;
+                while nn < 63 {
+                    let b = (a1 as *const u8).add(nn).read();
+                    if b == 0 {
+                        break;
+                    }
+                    path[nn] = if b == b'\\' { b'/' } else { b };
+                    nn += 1;
+                }
+                path[nn] = 0;
+                let ps = core::str::from_utf8(&path[..nn]).unwrap_or("");
+                if ps.is_empty() {
+                    return -1;
+                }
+                crate::vfs::fujo_open_name(ps, 0)
             }
             // ---------- msvcrt ----------
             0x5201 => 0, // __C_specific_handler (无 SEH 会走这里)

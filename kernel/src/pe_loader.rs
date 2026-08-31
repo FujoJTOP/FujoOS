@@ -42,6 +42,8 @@ pub const SHIM_TABLE: &[(&str, &str, u64)] = &[
     ("kernel32.dll", "MultiByteToWideChar", 0x5015),
     ("kernel32.dll", "WideCharToMultiByte", 0x5016),
     ("kernel32.dll", "GetCPInfo", 0x5017),
+    // ---- M30: 统一对象路径 ----
+    ("kernel32.dll", "CreateFileA", 0x5018),
     // ---------- msvcrt.dll (0x5201..0x5221, M27 mingw CRT) ----------
     ("msvcrt.dll", "__C_specific_handler", 0x5201),
     ("msvcrt.dll", "___lc_codepage_func", 0x5202),
