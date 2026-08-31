@@ -474,7 +474,13 @@
       矩阵 → `center=ffff0000 orig=00000000 corner=00000000`
       (变换后中心红/放大三角外黑) → **M56 RESULT: PASS**
 - [ ] **M57** KVM 加速支持 + TCG/KVM 基准对照
-- [ ] **M58** 2D 游戏#1 原生运行(开源 2D 引擎选择)
+- [x] **M58** 2D 游戏#1 原生运行(开源 2D 引擎选择) ——
+      **docs/10-2d-engine.md**(SDL2/LÖVE/自研 fujogl+fujokit 比较 →
+      **v0 引擎 = fujogl 光栅+fujokit+XInput, SDK 闭环零依赖**, 打包经
+      fujopack/fujorun); **验证游戏 m58_pong.elf**(60 帧: 球 12x12 +
+      拍 20x60, 回弹物理, 拍跟球, gl_rect/gl_pixel 纯原语):
+      **`track x=100..395 y=200..377 sampled=11`**(运动+回弹+首尾帧
+      采样) → **M58 RESULT: PASS**
 - [ ] **M59** 游戏模式:前台调度/资源预留/全屏
 - [ ] **M60** 存档沙箱(权限目录+版本化)
 - [ ] **M61** 图形加速:blit/缩放硬件路径
