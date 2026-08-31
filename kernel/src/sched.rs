@@ -145,8 +145,8 @@ pub fn spawn_tasks(entry: u64) {
         if TASK_COUNT != 0 {
             return;
         }
-        spawn(0x2C0000, 0x600000, entry);
-        spawn(0x280000, 0x640000, entry);
+        spawn(0x2C0000, 0x5FFFF8, entry);
+        spawn(0x280000, 0x63FFF8, entry);
         CUR = 0; // A 先跑 (enter_user_test iretq 进入)
         gdt::set_rsp0(0x2C0000);
         serial::write_line("sched: 2 tasks (A user=0x600000 / B user=0x640000) - timeslice armed");

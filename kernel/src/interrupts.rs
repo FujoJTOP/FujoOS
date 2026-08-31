@@ -70,50 +70,61 @@ core::arch::global_asm!(r#"
     .global fujo_exc_stub_table
 fujo_exc_stub_table:
     mov rdi, 0
-    call fujo_exc
+    call fujo_exc_c
     ud2
     mov rdi, 1
-    call fujo_exc
+    call fujo_exc_c
     ud2
     mov rdi, 2
-    call fujo_exc
+    call fujo_exc_c
     ud2
     mov rdi, 3
-    call fujo_exc
+    call fujo_exc_c
     ud2
     mov rdi, 4
-    call fujo_exc
+    call fujo_exc_c
     ud2
     mov rdi, 5
-    call fujo_exc
+    call fujo_exc_c
     ud2
     mov rdi, 6
-    call fujo_exc
+    call fujo_exc_c
     ud2
     mov rdi, 7
-    call fujo_exc
+    call fujo_exc_c
     ud2
     mov rdi, 8
-    call fujo_exc
+    call fujo_exc_c
     ud2
     mov rdi, 9
-    call fujo_exc
+    call fujo_exc_c
     ud2
     mov rdi, 10
-    call fujo_exc
+    call fujo_exc_c
     ud2
     mov rdi, 11
-    call fujo_exc
+    call fujo_exc_c
     ud2
     mov rdi, 12
-    call fujo_exc
+    call fujo_exc_c
     ud2
     mov rdi, 13
-    call fujo_exc
+    call fujo_exc_c
     ud2
     mov rdi, 14
-    call fujo_exc
+    call fujo_exc_c
     ud2
+
+    # ---- 异常帧捕获 trampoline: rdi=vec, 帧头 = rsp+8 ----
+    # 帧布局: 有错误码向量 [ERR][RIP][CS][RFLAGS][RSP][SS];
+    #         无错误码向量 [RIP][CS][RFLAGS][RSP][SS];
+    #         内核态(无特权切换) CPL0 不压 RSP/SS。
+    .p2align 4
+    .global fujo_exc_c
+fujo_exc_c:
+    mov rsi, rsp
+    add rsi, 8
+    jmp fujo_exc
 
     # ---- PIT (IRQ0) —— 计数 + EOI + 调度钩子 (M13: 时间片轮转) ----
     # 全程保存 caller-saved (C 调度器会破坏), 切任务时换 rsp 到新帧。
@@ -253,8 +264,11 @@ fujo_pf_stub:
 "#);
 
 /// 异常处理（C 侧, 只打印并停机）— 带现场诊断 (M10: CS/RIP/CR2 定位)
+/// frame: 异常帧指针 (trampoline fujo_exc_c 捕获的 CPU 压栈头)。
+/// 有错误码向量 (8,10,11,12,13,14): [ERR][RIP][CS][RFLAGS][RSP][SS]
+/// 无错误码向量:                  [RIP][CS][RFLAGS][RSP][SS]   (用户态/内核态 CS 判据)
 #[no_mangle]
-pub extern "C" fn fujo_exc(vec: u64) -> ! {
+pub unsafe extern "C" fn fujo_exc(vec: u64, frame: u64) -> ! {
     serial::write_str("EXCEPTION vec=");
     // 十进制打印
     let mut buf = [0u8; 4];
@@ -269,22 +283,35 @@ pub extern "C" fn fujo_exc(vec: u64) -> ! {
         }
     }
     serial::write_str(core::str::from_utf8(&buf[i..]).unwrap());
-    // 现场: 从当前 rsp 起, 调用返回地址之后为异常帧; 直接 dump 8 个 qword
-    unsafe {
-        let sp: u64;
-        asm!("mov {}, rsp", out(reg) sp, options(nomem, nostack, preserves_flags));
-        serial::write_str(" sp=");
-        crate::syscall::log_hex(sp);
-        for k in 1..=8u64 {
-            let v = core::ptr::read((sp as *const u64).add(k as usize));
-            crate::syscall::log_hex(v);
-        }
-        if vec == 14 {
-            let mut cr2: u64;
-            asm!("mov {}, cr2", out(reg) cr2, options(nomem, nostack, preserves_flags));
-            serial::write_str(" cr2=");
-            crate::syscall::log_hex(cr2);
-        }
+    // 解码: 判断是否有错误码 / 是否用户态 (CS RPL)
+    let has_err = matches!(vec, 8 | 10 | 11 | 12 | 13 | 14 | 17);
+    if has_err {
+        serial::write_str(" err=");
+        crate::syscall::log_hex(core::ptr::read((frame as *const u64).add(0)));
+    }
+    let rip = core::ptr::read((frame as *const u64).add(if has_err { 1 } else { 0 }));
+    let cs = core::ptr::read((frame as *const u64).add(if has_err { 2 } else { 1 }));
+    let rflags = core::ptr::read((frame as *const u64).add(if has_err { 3 } else { 2 }));
+    serial::write_str(" rip=");
+    crate::syscall::log_hex(rip);
+    serial::write_str(" cs=");
+    crate::syscall::log_hex(cs & 0xFF);
+    serial::write_str(" rflags=");
+    crate::syscall::log_hex(rflags);
+    if cs & 3 == 3 {
+        // 用户态: 帧含 RSP/SS
+        let ursp = core::ptr::read((frame as *const u64).add(if has_err { 4 } else { 3 }));
+        let uss = core::ptr::read((frame as *const u64).add(if has_err { 5 } else { 4 }));
+        serial::write_str(" usp=");
+        crate::syscall::log_hex(ursp);
+        serial::write_str(" uss=");
+        crate::syscall::log_hex(uss & 0xFF);
+    }
+    if vec == 14 {
+        let mut cr2: u64;
+        asm!("mov {}, cr2", out(reg) cr2, options(nomem, nostack, preserves_flags));
+        serial::write_str(" cr2=");
+        crate::syscall::log_hex(cr2);
     }
     serial::write_line("  -- kernel halted");
     loop {

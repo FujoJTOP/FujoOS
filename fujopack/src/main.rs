@@ -15,7 +15,7 @@ use std::fs;
 use std::process::exit;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use fujo_compat::run::{self, RunMeta, RunPart, TAG_EMBED, TAG_ICON, TAG_MANIFEST};
+use fujo_compat::run::{self, RunMeta, RunPart, TAG_DATA, TAG_EMBED, TAG_ICON, TAG_MANIFEST};
 use fujo_compat::{Arch, BinaryInfo, Format};
 
 fn main() {
@@ -39,6 +39,9 @@ fn main() {
     let mut arch_hint = None::<Arch>;
     let mut raw = false;
     let mut icon: Option<String> = None;
+    // M17: 资源节 + 权限声明
+    let mut resources: Vec<(String, String)> = Vec::new(); // (name, path)
+    let mut perms: Vec<String> = Vec::new();
 
     let mut i = 0;
     while i < args.len() {
@@ -49,6 +52,14 @@ fn main() {
             "--arch" => { i += 1; arch_hint = args.get(i).and_then(|s| Some(Arch::from_str(s))); }
             "--raw" => raw = true,
             "--icon" => { i += 1; icon = args.get(i).cloned(); }
+            "--res" => { i += 1; if let Some(spec) = args.get(i) {
+                if let Some((n, p)) = spec.split_once(':') {
+                    resources.push((n.to_string(), p.to_string()));
+                } else {
+                    eprintln!("fujopack: --res expects NAME:PATH"); exit(1);
+                }
+            } }
+            "--perm" => { i += 1; if let Some(p) = args.get(i) { perms.push(p.clone()); } }
             "-h" | "--help" => { usage(); }
             a if a.starts_with('-') => { eprintln!("fujopack: unknown flag {a}"); exit(1); }
             _ => input = Some(args[i].clone()),
@@ -104,19 +115,30 @@ fn main() {
     };
 
     // --- 清单 ---
-    let manifest = build_manifest(&name, &detected, format, arch, bits, entry, pie);
-    let manifest_bytes = manifest.into_bytes();
-    let mut parts: Vec<RunPart> = vec![RunPart {
-        tag: TAG_MANIFEST,
-        flags: 0,
-        data: manifest_bytes,
-    }];
+    // --- 组装 section 顺序: [manifest(占位)] [icon?] [embed] [res...] ---
+    // --- 再按最终 section 编号生成 manifest 并回填 -------------------------
+    let mut res_blobs: Vec<(String, Vec<u8>)> = Vec::new();
+    for (rname, rpath) in &resources {
+        match fs::read(rpath) {
+            Ok(rdata) => res_blobs.push((rname.clone(), rdata)),
+            Err(_) => { eprintln!("fujopack: resource {rpath} not readable"); exit(1); }
+        }
+    }
+    let mut parts: Vec<RunPart> = Vec::new();
+    parts.push(RunPart { tag: TAG_MANIFEST, flags: 0, data: Vec::new() }); // 占位, 稍后回填
     if let Some(icon_path) = &icon {
         if let Ok(icon_data) = fs::read(icon_path) {
             parts.push(RunPart { tag: TAG_ICON, flags: 0, data: icon_data });
         }
     }
     parts.push(RunPart { tag: TAG_EMBED, flags: 0, data: bytes });
+    let mut res_sections: Vec<(String, usize)> = Vec::new();
+    for (rn, rb) in &res_blobs {
+        parts.push(RunPart { tag: TAG_DATA, flags: 0, data: rb.clone() });
+        res_sections.push((rn.clone(), parts.len() - 1));
+    }
+    let manifest = build_manifest(&name, &detected, format, arch, bits, entry, pie, &res_sections, &perms);
+    parts[0].data = manifest.into_bytes();
 
     let meta = RunMeta {
         uid: make_uid(),
@@ -225,6 +247,8 @@ fn build_manifest(
     bits: u8,
     entry: u64,
     pie: bool,
+    res_sections: &[(String, usize)],
+    perms: &[String],
 ) -> String {
     let src_fmt = match format {
         1 => "pe",
@@ -246,14 +270,26 @@ fn build_manifest(
         3 => r#"["darwin"]"#,
         _ => r#"["raw"]"#,
     };
+    // M17: 资源节引用 (section 号指向 TAG_DATA 段) + 权限声明
+    let mut res_json = String::from("[");
+    for (i, (rn, sec)) in res_sections.iter().enumerate() {
+        if i > 0 {
+            res_json.push_str(", ");
+        }
+        res_json.push_str(&format!(r#"{{"name":"{}","sec":{}}}"#, json_escape(rn), sec));
+    }
+    res_json.push(']');
+    let perms_json = perms.iter().map(|p| format!("\"{}\"", json_escape(p))).collect::<Vec<_>>().join(", ");
     format!(
-        "{{\n  \"manifest\": \"fujo.os.run/v1\",\n  \"name\": \"{}\",\n  \"source\": {{\n    \"format\": \"{}\",\n    \"arch\": \"{}\",\n    \"bits\": {},\n    \"entry\": \"{:#x}\",\n    \"pie\": {}\n  }},\n  \"target\": {{\n    \"arch\": \"x86_64\",\n    \"abi\": \"fujo\"\n  }},\n  \"exec\": \"embed\",\n  \"api\": {{\n    \"subsystems\": {},\n    \"shim_modules\": []\n  }},\n  \"libs\": [],\n  \"env\": {{}},\n  \"signature\": {{\n    \"alg\": \"none\",\n    \"note\": \"M8: ed25519\"\n  }}\n}}\n",
+        "{{\n  \"manifest\": \"fujo.os.run/v1\",\n  \"name\": \"{}\",\n  \"source\": {{\n    \"format\": \"{}\",\n    \"arch\": \"{}\",\n    \"bits\": {},\n    \"entry\": \"{:#x}\",\n    \"pie\": {}\n  }},\n  \"target\": {{\n    \"arch\": \"x86_64\",\n    \"abi\": \"fujo\"\n  }},\n  \"exec\": \"embed\",\n  \"resources\": {},\n  \"perms\": [{}],\n  \"api\": {{\n    \"subsystems\": {},\n    \"shim_modules\": []\n  }},\n  \"libs\": [],\n  \"env\": {{}},\n  \"signature\": {{\n    \"alg\": \"none\",\n    \"note\": \"M8: ed25519\"\n  }}\n}}\n",
         json_escape(name),
         src_fmt,
         src_arch,
         bits,
         entry,
         pie,
+        res_json,
+        perms_json,
         subsys,
     )
 }

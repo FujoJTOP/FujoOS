@@ -15,6 +15,7 @@ mod ai;
 mod ata;
 mod elf_loader;
 mod fjfs;
+mod fujr;
 mod gdt;
 mod graphics;
 mod interrupts;

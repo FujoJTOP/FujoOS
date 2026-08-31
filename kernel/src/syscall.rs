@@ -377,14 +377,31 @@ fn dump_hex_bytes(addr: u64, n: usize) {
 /// 进入用户态 (M2: 优先装载 multiboot 模块中的 ELF 文件; 回退内嵌二进制)。
 pub fn enter_user_test(mbi: u32) -> ! {
     const LOAD_DEFAULT: u64 = 0x400000;
-    const STACK: u64 = 0x600000;
+    // 用户栈初始 RSP: %16==8 (SysV 函数入口约定: clang 生成的 _start 按
+    // "call 之后 rsp%16==8" 布局, 若给 0x600000(%16==0) 则 movaps 类 16 对齐
+    // 访问错位 -> #GP; M17 res_test 现场 0x400156 movaps 实证)
+    const STACK: u64 = 0x5FFFF8;
 
     let mut load_addr: u64 = LOAD_DEFAULT;
     let mut used_module = false;
 
     // ---- M2/M3: 模块装载路径 (ELF 或 PE, 格式嗅探统一路由) ----
     match unsafe { module_snapshot().or_else(|| find_module(mbi)) } {
-        Some((start, len, name_ptr)) => {
+        Some((mut start, mut len, name_ptr)) => {
+            // M17: FUJR 容器嗅探 -> 提取 EMBED 可执行体
+            let is_run = unsafe {
+                (start as *const u8).read() == b'F'
+                    && (start as *const u8).add(1).read() == b'U'
+                    && (start as *const u8).add(2).read() == b'J'
+                    && (start as *const u8).add(3).read() == b'R'
+            };
+            if is_run {
+                if let Some((eaddr, elen)) = crate::fujr::load(start as u64, len as u64) {
+                    start = eaddr as u32;
+                    len = elen as u32;
+                    serial::write_line("run  : exec extracted -> format sniff");
+                }
+            }
             // 模块名 (bootloader 提供零终止字符串)
             let mut name = [0u8; 64];
             let mut n = 0usize;

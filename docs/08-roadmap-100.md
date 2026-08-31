@@ -33,7 +33,18 @@
       boot#1 写 `FJFS persistent data #1`(24B)→ 重启 → boot#2 读回 24B +
       追加 `seen-boot2` → 读回 35B; 修复: BITMAP 256B 被扇区读溢出
       (512B) -> 512B; 目录项 28B->32B
-- [ ] **M17 .run 升级**:资源节(图标/清单/权限声明)+ 多文件打包
+- [x] **M17 .run 升级**:资源节(图标/清单/权限声明)+ 多文件打包 —— fujopack
+      `--res NAME:PATH` / `--perm X` 多资源打包(TAG_DATA 节),内核 `fujr.rs`
+      装载器(FNV-1a 逐节校验/MANIFEST 行扫描/EMBED 提取/DATA 拷内核静态),
+      VFS `/runres/<name>` 只读后端;**容器集成实测通过**: `os run hermes`
+      装载 res_test.run(4 节: MANIFEST/EMBED/DATA×2)→ 权限声明 `read:disk`
+      审计 → `/runres/icon.bin` 64B 逐字节回读(0x01..0x10) →
+      `/runres/hello.txt` 全文 `resource hello from .run (M17)` → **PASS**;
+      **修复链**: 资源名解析误取应用名(改为只扫 `"resources":[` 段内 `"name"` 键)
+      + 键闭引号偏移(值起始 = i2+6 → 冒号被当名字)+ 新增异常帧精确解码
+      (桩经 trampoline 传帧指针, 解码 RIP/CS/RFLAGS/RSP 定位) →
+      实证 **用户栈初始 RSP 需 %16==8**(clang `_start` 按 SysV call 约定布局,
+      `movaps` 16 对齐访问, 0x600000(%16==0) 错位 → #GP; STACK=0x5FFFF8)
 - [ ] **M18 IPC 原语**:管道/共享内存/信号;`ls | grep` 式管道
 - [ ] **M19 内核对象/句柄表**:统一资源抽象
 - [ ] **M20 稳定性**:进程级异常恢复;24h 无泄漏运行

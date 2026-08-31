@@ -211,6 +211,24 @@ pub extern "C" fn fujo_open(ptr: u64, len: u64, flags: u64) -> i64 {
             f.pos = 0;
             serial::write_line("vfs  : open /dev/tty (serial)");
             return fd as i64;
+        } else if let Some(rname) = name.strip_prefix("/runres/") {
+            // M17: FUJR 容器资源 (已由 fujr::load 拷入内核静态)
+            if let Some((ptr, len)) = crate::fujr::resource(rname.as_bytes()) {
+                f.name = "/runres/";
+                f.kind = F_KIND_BLOB;
+                f.data_ptr = ptr;
+                f.data_len = len as u64;
+                f.pos = 0;
+                serial::write_str("vfs  : open /runres/");
+                serial::write_str(rname);
+                serial::write_line("");
+                return fd as i64;
+            }
+            serial::write_str("vfs  : open /runres/");
+            serial::write_str(rname);
+            serial::write_line(" not found -ENOENT");
+            NEXT_FD -= 1;
+            return -2;
         } else if let Some(fname) = name.strip_prefix("/disk/") {
             // M16: fujofs 磁盘文件 (打开时载入缓存; 写穿在 close 刷盘)
             let fname_bytes = fname.as_bytes();
