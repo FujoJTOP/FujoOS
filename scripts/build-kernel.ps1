@@ -55,6 +55,15 @@ if (Test-Path "$llvm\clang.exe") {
     Write-Host "  clang missing: hermes skipped"
 }
 
+Write-Host "== [0f] build M11 alloc test (ring3, brk/mmap verification) =="
+if (Test-Path "$llvm\clang.exe") {
+    & "$llvm\clang.exe" --target=x86_64-unknown-linux-gnu -O2 -nostdlib -static -fno-pie -no-pie `
+        -fuse-ld=lld -fno-builtin "-Wl,-e,_start" "-Wl,-T,$root\sdk\user\user.ld" `
+        ..\sdk\user\alloc_test.c -o ..\sdk\user\alloc_test.elf
+} else {
+    Write-Host "  clang missing: alloc_test skipped"
+}
+
 Write-Host "== [1/4] generate boot stub (32-bit stub + page tables + GDT) =="
 python boot\gen_stub32.py
 

@@ -18,6 +18,7 @@ mod graphics;
 mod interrupts;
 mod kbd;
 mod macho_loader;
+mod mem;
 mod pe_loader;
 mod serial;
 mod shell;
@@ -141,6 +142,14 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     gdt::init();
     interrupts::init();
     syscall::setup();
+    // M11: 开启 SSE (CR4.OSFXSR|OSXMMEXCPT = 0x600) —— 引导桩仅设 PAE (0x20),
+    // 用户/内核 -O2 向量化指令 (movups 等) 缺 OSFXSR 直接 #UD (实测 vec=6)。
+    unsafe {
+        let mut cr4: u64;
+        asm!("mov {}, cr4", out(reg) cr4, options(nomem, nostack, preserves_flags));
+        asm!("mov cr4, {}", in(reg) cr4 | 0x600, options(nomem, nostack, preserves_flags));
+    }
+    out_line("m1   : cr4=0x600 (sse/fxsave enabled)");
     out_line("m1   : gdt(user segs+tss) / idt(15 exc + irq0) / syscall gate armed");
     out_raw("m1   : sti, waiting first PIT tick...");
     unsafe { asm!("sti", options(nomem, nostack, preserves_flags)); }
@@ -163,6 +172,11 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     // ---- M10: COM2 模型链路 (IRQ3, fujonn engine=qwen) ----
     serial::uart2_init();
     out_line("m10  : com2 model-link up (irq3 @115200) - engine=qwen waits host server");
+
+    // ---- M11: 虚拟内存/堆 (U 位硬化 + brk/mmap 原语) ----
+    mem::init();
+    mem::harden_user_guard();
+    out_line("mem  : virtual memory v0 - user heap 0x800000..0xC00000 (brk/mmap ready)");
 
     // ---- M10.1: 启动 Logo (自绘徽章) -> os shell ----
     // 品牌展示分两段: ① 文本模式徽章 (任何显示/截屏可见, 保持 VGA 文本模式);

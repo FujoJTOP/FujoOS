@@ -53,6 +53,13 @@ pub static mut user_rsp_tmp: u64 = 0;
 pub static mut sys_kernel_rsp: u64 = 0x300000;
 #[no_mangle]
 pub static mut spam_count: u64 = 0;
+/// M11: 用户 FPU/SIMD 状态 (syscall 进出保存恢复; 16 对齐 —— fxsave 要求)。
+#[repr(C, align(16))]
+pub struct FpuSave {
+    data: [u8; 512],
+}
+#[no_mangle]
+pub static mut fpu_saved: FpuSave = FpuSave { data: [0; 512] };
 
 extern "C" {
     fn fujo_syscall_entry();
@@ -70,6 +77,7 @@ core::arch::global_asm!(r#"
     .p2align 4
     .global fujo_syscall_entry
 fujo_syscall_entry:
+    fxsave [rip + fpu_saved]
     mov [rip + user_rsp_tmp], rsp
     mov rsp, [rip + sys_kernel_rsp]
     push r11
@@ -92,6 +100,7 @@ fujo_syscall_entry:
     pop r9
     pop rcx
     pop r11
+    fxrstor [rip + fpu_saved]
     mov rsp, [rip + user_rsp_tmp]
     sysretq
 
@@ -172,12 +181,18 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
     let a1 = unsafe { args.add(1).read() };
     let a2 = unsafe { args.add(2).read() };
     let a3 = unsafe { args.add(3).read() };
-    let _a4 = unsafe { args.add(4).read() };
-    let _a5 = unsafe { args.add(5).read() };
+    let a4 = unsafe { args.add(4).read() };
+    let a5 = unsafe { args.add(5).read() };
 
     let res = match nr {
         // write(fd, buf, len)
-        1 => user_write(a0, a1, a2),
+        1 => user_write(a0, a1, a2),        // ---- M11: 内存原语 (linux ABI 直通) ----
+        // mmap(addr, len, prot, flags, fd, off) — 匿名私有子集
+        9 => crate::mem::fujo_mmap(a0, a1, a2, a3, a4, a5),
+        // munmap(addr, len) — v0 no-op
+        11 => crate::mem::fujo_munmap(a0, a1),
+        // brk(ptr) — 堆尾, 恒等 heap 区 bump
+        12 => crate::mem::fujo_brk(a0),
         // getpid() (x86-64: 39) — linuxsubsys v0 最小实现
         39 => 1,
         // ---- fujo 原生 Win32 shim 通道 (M3) ----
