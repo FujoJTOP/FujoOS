@@ -378,6 +378,13 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5121 => crate::ipc::fujo_sigkill(a0, a1),
         // fujo_sigret() -> 0
         0x5122 => crate::ipc::fujo_sigret(),
+        // ---- M54: 高精度定时器
+        0x6100 => crate::timer::fujo_timer_arm(),
+        0x6101 => crate::timer::fujo_timer_us(),
+        0x6102 => crate::timer::fujo_timer_ms(),
+        0x6103 => crate::timer::fujo_timer_sleep_us(a0),
+        0x6104 => crate::timer::fujo_timer_frame_wait(a0),
+        0x6105 => crate::timer::fujo_timer_info(a0),
         // ---- M53: XInput 输入抽象 ----
         0x6001 => crate::xinput::fujo_xin_get(a0),
         0x6002 => crate::xinput::fujo_xin_reset(),

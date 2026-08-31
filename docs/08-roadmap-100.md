@@ -449,7 +449,14 @@
       0x6003 press(自测注入);
       **m53_xin.elf 实测**: reset→全 0 → press(1|4)→ buttons=5 →
       **M53 RESULT: PASS**
-- [ ] **M54** 定时器:高精度/帧同步(rdtsc 基)
+- [x] **M54** 定时器:高精度/帧同步(rdtsc 基) —— **timer.rs**: rdtsc 单调
+      时钟 + **两阶段校准**(0x6100 arm 后 PIT 在用户态推进, 跨中断期
+      差值 cyc/µs —— 内核 syscall 期 IF 被 SFMASK 屏蔽, 单调用内不能
+      等 tick, 实证), 0x6101 us / 0x6102 ms / 0x6103 sleep_us(忙等) /
+      0x6104 frame_wait(µs 帧边界同步) / 0x6105 info;
+      **m54_timer.elf 实测**: `calibrated cyc/us=1849` →
+      `sleep(200000) took=200136 us` → `frame gap=49980 us (~50000)` →
+      **M54 RESULT: PASS**
 - [ ] **M55** 原生 fujogl v0(OpenGL 1.x 子集, 软件后端)
 - [ ] **M56** DXVK 式翻译可行性评估(方案+原型)
 - [ ] **M57** KVM 加速支持 + TCG/KVM 基准对照

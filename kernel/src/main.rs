@@ -41,6 +41,7 @@ mod serial;
 mod shell;
 mod syscall;
 mod term;
+mod timer;
 mod vfs;
 mod vga;
 
