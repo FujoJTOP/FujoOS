@@ -60,7 +60,8 @@ Start-Sleep -Milliseconds 500
 Write-Host "  model server PID=$($srv.Id) waiting for QEMU COM2 (127.0.0.1:4000)"
 
 Write-Host '== [3] QEMU boot (COM1=log, COM2=model link) =='
-Write-Host '  expect hermes: ... and classify ... [engine=qwen] within ~5s'
+Write-Host '  boot: logo ~2.5s -> os shell; type "os run hermes" (or wait 10s auto-run)'
+Write-Host '  expect hermes banner + classify ... [engine=qwen] within ~20s'
 Write-Host '  Ctrl+C exits QEMU and recycles the model server process'
 $qargs = @('-m', '128M',
            '-kernel', "$root\kernel\fujo-kernel.bin",

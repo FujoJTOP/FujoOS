@@ -15,6 +15,7 @@
 """
 
 import json
+import os
 import re
 import socket
 import sys
@@ -22,7 +23,10 @@ import time
 import urllib.request
 
 HOST = "127.0.0.1"
-PORT = 4000
+# 端口可经 argv[1] 或 FUJO_LINK_PORT 覆盖 (默认 4000; 并行验证时避开占用)
+PORT = int(os.environ.get("FUJO_LINK_PORT", "4000"))
+if len(sys.argv) > 1:
+    PORT = int(sys.argv[1])
 OLLAMA = "http://127.0.0.1:11434"
 MODEL = "qwen2.5:0.5b"
 

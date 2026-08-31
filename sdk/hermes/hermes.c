@@ -125,18 +125,31 @@ static long do_command(const char *cmd, long len, int is_reply) {
 }
 
 void _start(void) {
-    puts("hermes: v0.1 up - agent frontend (M10)\n");
+    /* ---- M10.1 启动画面: 与 Windows Hermes CLI 起始信息同构 (ASCII 版) ---- */
+    puts("+---------------------------------------------------------+\n");
+    puts("|              Hermes Agent (FujoOS edition)             |\n");
+    puts("|   autonomous AI-native OS - model-call channel CLI     |\n");
+    puts("+---------------------------------------------------------+\n");
+    puts("* Environment\n");
+    puts("  Project:     fujo://hermes (ring3 process)\n");
+    puts("  CPU:         x86_64 - linux ABI (linuxsubsys)\n");
+    puts("  Provider:    qwen - com2 model link (fujonn primitive)\n");
 
     /* 模型信息 (0x5104) */
     char info[72];
     long n = sys3(0x5104, (long)info, 71, 0);
     if (n > 0 && n < 72) info[n] = 0;
-    puts("hermes: model=");
+    puts("* Model\n");
+    puts("  Model:  ");
     if (n > 0) puts(info);
     else puts("(none)\n");
-    putc('\n');
+    puts("* Session\n");
+    puts("  Boot cmd:  os run hermes\n");
+    puts("  Tools:     module(user_test) - v0\n");
+    puts("");
+    puts("hermes> type a command (e.g. run / open file / help / exit)\n");
 
-    /* 首命令: 内核捕获槽 (默认 'run') */
+    /* 首命令: 内核槽 (默认 'run') */
     const char *slot = (const char *)0x402000;
     long slen = strnlen(slot, 64);
     if (slen > 0) {

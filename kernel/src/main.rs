@@ -20,6 +20,7 @@ mod kbd;
 mod macho_loader;
 mod pe_loader;
 mod serial;
+mod shell;
 mod syscall;
 mod vga;
 
@@ -156,64 +157,37 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     out_line("timer : 100 ticks = 1.0 s elapsed (PIT @100 Hz)");
 
     // ---- M4: fujocom 显示栈 (Bochs VBE 1024x768x32 LFB + 双缓冲合成器) ----
-    if graphics::init() {
-        graphics::demo();
-    } else {
-        out_line("gfx  : framebuffer unavailable (VBE not present), desktop skipped");
-    }
-
-    // ---- M5: 输入系统 (PS/2 键盘 IRQ1 + 交互终端窗; 集成验证) ----
+    // ---- M5: 输入系统 (PS/2 键盘 IRQ1; 服务就绪, 演示延后到图形层之后) ----
     kbd::init();
-    kbd::demo();
 
     // ---- M10: COM2 模型链路 (IRQ3, fujonn engine=qwen) ----
     serial::uart2_init();
     out_line("m10  : com2 model-link up (irq3 @115200) - engine=qwen waits host server");
 
-    // ---- M9 (fujoos-ai-dev): Agent 宿主 —— 命令捕获 -> 意图槽 ----
-    let mut cmd = [0u8; 32];
-    let mut used = 0usize;
-    let mut done = false;
-    let mut iter: u64 = 0;
-    out_line("m9   : agent host up - type a command (sendkey: r u n + enter)");
-    while !done && iter < 30_000_000 {
-        iter += 1;
-        while let Some(c) = kbd::try_poll() {
-            if c == '\n' {
-                done = true;
-            } else if c == '\x08' {
-                if used > 0 {
-                    used -= 1;
-                }
-            } else if used < 30 {
-                cmd[used] = c as u8;
-                used += 1;
-            }
-        }
+    // ---- M10.1: 启动 Logo (自绘徽章) -> os shell ----
+    // 品牌展示分两段: ① 文本模式徽章 (任何显示/截屏可见, 保持 VGA 文本模式);
+    //              ② 几何版徽章 (shadow; 真机/KVM present 投映, TCG 下验证于
+    //                 像素回读/校验和 —— LFB 高阶区 TCG 拒绝访问为已知限制)。
+    vga::clear();
+    vga::logo();
+    serial::write_line("logo : fujos emblem rendered (vga text blocks, self-drawn)");
+    // 展示 ~2.5s (轮询等待, 无 hlt —— TCG 安全)
+    let t0 = interrupts::ticks();
+    while interrupts::ticks().wrapping_sub(t0) < 250 {}
+    // 文本徽章展示完毕 -> 切图形层画几何徽章
+    let gfx_ok = graphics::init();
+    if !gfx_ok {
+        out_line("gfx  : framebuffer unavailable (VBE not present), geometry logo skipped");
+    } else {
+        graphics::logo_hex();
+        kbd::demo(); // 依赖 fb() 的 M5 演示在此执行
     }
-    if used == 0 {
-        let d = b"run";
-        for (i, &b) in d.iter().enumerate() {
-            cmd[i] = b;
-        }
-        used = d.len();
-        out_line("m9   : no input, default cmd='run'");
-    }
-    unsafe {
-        let slot = 0x402000 as *mut u8;
-        for i in 0..64 {
-            slot.add(i).write(0);
-        }
-        for i in 0..used {
-            slot.add(i).write(cmd[i]);
-        }
-    }
-    out_raw("m9   : agent cmd='");
-    out_raw(core::str::from_utf8(&cmd[..used]).unwrap_or("?"));
-    out_raw("' - launching agent (ring3)\n");
+    serial::write_line("");
 
-    // ---- M2/M3/M6: 用户态测试 (ELF/PE/Mach-O 模块装载 + ABI syscall) ----
-    syscall::enter_user_test(mbi);
+    // ---- M10.1: os shell (命令: os run hermes) ----
+    crate::shell::shell(mbi); // > ! (shell 内 enter_user_test 接管)
+
+    // ---- 不可达: M2/M3/M6 用户态测试 (shell 之前的直启路径已废止) ----
 }
 
 // ---------------------------------------------------------------------------

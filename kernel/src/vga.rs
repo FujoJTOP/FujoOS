@@ -79,3 +79,100 @@ pub fn write_line(s: &str) {
     write_str(s);
     put_char(b'\n');
 }
+
+// ---------------------------------------------------------------------------
+// M10.1 启动 Logo: 几何徽章 (CP437 块字符绘制, 非纯文字) —— 直接写文本显存。
+// 六边形盾形(蓝底白块) + 黄色 F 单字母(块拼) + 标题 + 提示行。
+// 纯 ASCII 源(块字符用 \x 转义), 保证任何工具链/控制台无编码问题。
+// ---------------------------------------------------------------------------
+
+#[inline]
+fn cell(row: usize, col: usize, ch: u8, attr: u8) {
+    unsafe {
+        VGA_BUF.add(row * WIDTH + col).write(((attr as u16) << 8) | ch as u16);
+    }
+}
+
+/// 徽章行形状: (start_col, width) —— 六边形 15 行 (CP437 块 = 真实绘制的像素徽章)。
+const HEX_ROWS: &[(usize, usize)] = &[
+    (16, 8),
+    (13, 14),
+    (10, 20),
+    (8, 24),
+    (7, 26),
+    (6, 28),
+    (6, 28),
+    (6, 28),
+    (6, 28),
+    (6, 28),
+    (6, 28),
+    (7, 26),
+    (8, 24),
+    (10, 20),
+    (13, 14),
+    (16, 8),
+];
+
+pub fn logo() {
+    clear();
+    let row0 = 3usize;
+    // 六边形徽章: 蓝底白块 (attr 0x1F = 白字/蓝底, 块字符着色)
+    for (r, &(col, w)) in HEX_ROWS.iter().enumerate() {
+        let row = row0 + r;
+        for k in col..col + w {
+            cell(row, k, b'\xDB', 0x1F);
+        }
+    }
+    // 黄色 F 单字母 (█ 块拼装, 徽章内部; attr 0x1E = 黄字/蓝底)
+    let fx = 40usize; // 居中: col 40
+    let fy = row0 + 4; // 徽章内顶部
+    // 竖干 2 宽 x 9 高
+    for r in 0..9 {
+        for c in 0..2 {
+            cell(fy + r, fx + c + 0, b'\xDB', 0x1E);
+            cell(fy + r, fx + c + 1, b'\xDB', 0x1E);
+        }
+    }
+    // 顶横 18 宽 x 2 高
+    for r in 0..2 {
+        for c in 0..18 {
+            cell(fy + r, fx + c, b'\xDB', 0x1E);
+        }
+    }
+    // 中横 14 宽 x 2 高
+    for r in 0..2 {
+        for c in 0..14 {
+            cell(fy + 3 + r, fx + c, b'\xDB', 0x1E);
+        }
+    }
+    // 徽章右下角: 白色高亮点
+    cell(row0 + 9, 66, b'\xDB', 0x0F);
+    cell(row0 + 10, 55, b'\xDB', 0x0F);
+    // 标题 (自绘块之后, 作为补充说明文字)
+    let title = "F U J O S";
+    let mut c = 36usize;
+    for ch in title.bytes() {
+        cell(row0 + 17, c, ch, 0x1F);
+        c += 1;
+    }
+    let ver = "0.1.0-dev  CPU x86_64  AI-native";
+    let mut c = 30usize;
+    for ch in ver.bytes() {
+        cell(row0 + 19, c, ch, 0x07);
+        c += 1;
+    }
+    // 提示行 (os shell 命令)
+    let hint = "type: os run hermes   (launch Hermes agent CLI)";
+    let mut c = 22usize;
+    for ch in hint.bytes() {
+        cell(row0 + 22, c, ch, 0x0F);
+        c += 1;
+    }
+    // 副提示
+    let hint2 = "[10s idle auto-run]  [help] [os run hermes]";
+    let mut c = 26usize;
+    for ch in hint2.bytes() {
+        cell(row0 + 23, c, ch, 0x08);
+        c += 1;
+    }
+}

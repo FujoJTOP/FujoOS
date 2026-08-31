@@ -351,3 +351,106 @@ pub fn demo() {
     print_hex(sum);
     serial::write_line("(fujocom v0 demo rendered)");
 }
+
+// ---------------------------------------------------------------------------
+// M10.1 启动徽章 (shadow 合成路径; 真机/KVM 由 present() 投映到 LFB):
+// 深空渐变底 + 双六边形环 + 内旋转六边形 + 对角光掠 + 三段黄色 F 单字母 + 标题。
+// 纯整数绘制 (无浮点/无库), 与文本徽章同构但为 1024x768 几何版。
+// ---------------------------------------------------------------------------
+
+fn hex_vertex(cx: i32, cy: i32, r: i32, i: usize) -> (u32, u32) {
+    // 顶点角 30° + 60°k: (cos, sin) 常用表
+    const C: [(f32, f32); 6] = [
+        (0.866_025, 0.5),
+        (0.0, 1.0),
+        (-0.866_025, 0.5),
+        (-0.866_025, -0.5),
+        (0.0, -1.0),
+        (0.866_025, -0.5),
+    ];
+    let (a, b) = C[i % 6];
+    let x = (cx as f32 + a * r as f32) as u32;
+    let y = (cy as f32 + b * r as f32) as u32;
+    (x, y)
+}
+
+/// 粗斜线段 (步进 + 方形笔头; 无浮点 Bresenham 近似)。
+pub fn draw_thick_line(x0: u32, y0: u32, x1: u32, y1: u32, color: u32, th: u32) {
+    let dx = x1 as i64 - x0 as i64;
+    let dy = y1 as i64 - y0 as i64;
+    let steps = dx.abs().max(dy.abs()) as u32;
+    if steps == 0 {
+        return;
+    }
+    let r = th / 2;
+    for s in 0..=steps {
+        let x = x0 + (dx * s as i64 / steps as i64) as u32;
+        let y = y0 + (dy * s as i64 / steps as i64) as u32;
+        for yy in (y.saturating_sub(r))..=(y + r) {
+            for xx in (x.saturating_sub(r))..=(x + r) {
+                put_pixel(xx, yy, color);
+            }
+        }
+    }
+}
+
+/// 六边形环 (顶点连线, 非纯文字 —— 几何绘制)。
+pub fn ring_hex(cx: i32, cy: i32, r: i32, color: u32, th: u32) {
+    for i in 0..6 {
+        let (x0, y0) = hex_vertex(cx, cy, r, i);
+        let (x1, y1) = hex_vertex(cx, cy, r, i + 1);
+        draw_thick_line(x0, y0, x1, y1, color, th);
+    }
+}
+
+/// 几何版 FujoOS 徽章 (shadow; 含读回自检与校验和日志)。
+pub fn logo_hex() {
+    // ---- 深空渐变底 (顶部深蓝 -> 底部近黑) ----
+    for y in 0..H {
+        let t = ((y as u64) << 10) / H as u64; // 0..1024
+        let r = (18 * t / 1024) as u32;
+        let g = (10 + 30 * t / 1024).min(50) as u32;
+        let b = (36 + 84 * t / 1024).min(120) as u32;
+        let color = (r << 16) | (g << 8) | b;
+        let row = (y * W) as usize;
+        for x in 0..W {
+            unsafe { fb().back.add(row + x as usize).write(color) }
+        }
+    }
+
+    let cx = 512i32;
+    let cy = 350i32;
+    // ---- 外双六边形环 + 内旋转环 ----
+    ring_hex(cx, cy, 235, 0x1C3C7C, 6);
+    ring_hex(cx, cy, 210, 0x3C82F0, 3);
+    ring_hex(cx, cy, 140, 0x1C3F80, 2);
+    // ---- 对角光掠 (斜向光束) ----
+    draw_thick_line(90, 750, 950, 70, 0x16294E, 14);
+    draw_thick_line(120, 758, 920, 88, 0x24489A, 5);
+    // ---- F 单字母: 三段黄色圆横条 (几何条, 水平对齐六边形中心) ----
+    let fx = cx - 74;
+    let fy = cy - 72;
+    fill_rect(fx as u32, (fy + 8) as u32, 30, 176, 0xE0A83A);    // 竖干暗部 (先画)
+    fill_rect(fx as u32, fy as u32, 150, 30, 0xF7C948);          // 顶横
+    fill_rect(fx as u32, (fy + 62) as u32, 106, 30, 0xF7C948);   // 中横
+    fill_rect(fx as u32, (fy + 124) as u32, 30, 60, 0xF7C948);   // 竖干下段亮部
+    fill_rect((fx + 30) as u32, fy as u32, 120, 10, 0xFFE9A8);   // 顶横高光
+    // ---- 标题与提示 (字面补充) ----
+    draw_str(437, 610, "F U J O S", 0xFFFFFF, 5);
+    draw_str(450, 680, "0.1.0-dev  x86_64  AI-native", 0x9FE0A0, 2);
+    draw_str(390, 720, "type: os run hermes", 0xB0C4E8, 2);
+
+    present();
+
+    // ---- self-check ----
+    let p_fbar = read_pixel(fx as u32 + 60, fy as u32 + 14);
+    let p_ring = read_pixel(cx as u32, (cy - 235) as u32 + 3);
+    let sum = frame_checksum();
+    serial::write_str("logo : geometry badge [hex-ring + F-monogram] fbar=");
+    print_hex(p_fbar as u64);
+    serial::write_str("ring=");
+    print_hex(p_ring as u64);
+    serial::write_str("checksum=");
+    print_hex(sum);
+    serial::write_line("(shadow rendered; present on real hw/KVM)");
+}

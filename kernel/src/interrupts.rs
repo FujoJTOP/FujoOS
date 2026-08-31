@@ -303,5 +303,7 @@ pub fn init() {
 }
 
 pub fn ticks() -> u64 {
-    unsafe { core::ptr::addr_of!(pit_ticks).read() }
+    // M10.1 修复: 必须 volatile —— 此前普通读被 LLVM 提升出等待循环,
+    // "while ticks-t0 < 250 {}" 编译成 jmp $ (死循环, 实测 RIP 停在 jmp 自身)。
+    unsafe { core::ptr::read_volatile(core::ptr::addr_of!(pit_ticks)) }
 }
