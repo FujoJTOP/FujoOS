@@ -321,9 +321,8 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         257 => crate::vfs::fujo_open(a1, a2, a3),
         // getrandom(buf, len, flags) — PIT 混哈希假熵
         317 => sys_getrandom(a0, a1),
-        // ---- fujo 原生 Win32 shim 通道 (M3/M26 基础 + M27 mingw CRT 家族) ----
-        // kernel32.msvcrt 垫片 (0x5001..0x5017 | 0x5201..0x5221) -> 统一分发
-        0x5001..=0x5017 | 0x5201..=0x5221 => shim_dispatch(nr, args),
+        // ---- fujo 原生 Win32 shim 通道 (M3/M26 基础 + M27 mingw CRT + M28 vcruntime) ----
+        0x5001..=0x5017 | 0x5201..=0x522B => shim_dispatch(nr, args),
         // exit(code) / exit_group(code) -> 内核接管并停机
         60 | 231 => {
             serial::write_line("user : sys_exit() - kernel takeover, M6 verified");
@@ -668,7 +667,7 @@ fn shim_dispatch(nr: u64, args: *const u64) -> i64 {
                 let mut tmp = [0u64; 4];
                 tmp[0] = a3;
                 tmp[1] = a4;
-                shim_vfmt(a2, tmp.as_ptr(), 2)
+                shim_vfmt(a2, tmp.as_ptr(), 2, 0, 0)
             }
             0x5215 => {
                 // fputc(c, stream)
@@ -731,7 +730,7 @@ fn shim_dispatch(nr: u64, args: *const u64) -> i64 {
             }
             0x5220 => {
                 // vfprintf(fp, fmt, va) — va = mingw ms_va_list (char* 参数数组)
-                shim_vfmt(a2, a3 as *const u64, 8)
+                shim_vfmt(a2, a3 as *const u64, 8, 0, 0)
             }
             0x5221 => {
                 // wcslen
@@ -744,6 +743,68 @@ fn shim_dispatch(nr: u64, args: *const u64) -> i64 {
                     n += 1;
                 }
                 n as i64
+            }
+            // ---------- M28: vcruntime 函数面 ----------
+            0x5222 => {
+                // _snprintf(ptr, n, fmt, ...) — 格式化落用户缓冲
+                let st = user_rsp_tmp;
+                let mut tmp = [0u64; 5];
+                tmp[0] = a4; // vararg 1 (r9)
+                let s1p = (st + 0x40) as *const u64; // vararg 2 [rsp+0x28]
+                let s2p = (st + 0x48) as *const u64; // vararg 3 [rsp+0x30]
+                let s3p = (st + 0x50) as *const u64; // vararg 4 [rsp+0x38]
+                let s4p = (st + 0x58) as *const u64; // vararg 5 [rsp+0x40]
+                tmp[1] = s1p.read();
+                tmp[2] = s2p.read();
+                tmp[3] = s3p.read();
+                tmp[4] = s4p.read();
+                shim_vfmt(a3, tmp.as_ptr(), 5, a1, a2.min(4096))
+            }
+            0x5223 => {
+                // atof(str) — 双精度位模式: 写 cell (专用蹦床 movsd xmm0) + rax
+                let bits = shim_parse_double(a1);
+                (crate::pe_loader::ATOF_CELL as *mut u64).write(bits);
+                bits as i64
+            }
+            0x5224 => {
+                // atoi(str)
+                shim_strtol_i(a1) as i64
+            }
+            0x5225 => {
+                // memset(dst, c, n)
+                for i in 0..(a3 as usize).min(0x100000) {
+                    (a1 as *mut u8).add(i).write(a2 as u8);
+                }
+                a1 as i64
+            }
+            0x5226 => shim_qsort(a1, a2, a3, a4), // qsort(base, n, sz, cmp)
+            0x5227 => {
+                // rand() — xorshift/LCG, 返回 [0, 32767]
+                let s = unsafe {
+                    let p = core::ptr::addr_of_mut!(SHIM_RAND_SEED);
+                    let v = p.read_volatile();
+                    let nv = v.wrapping_mul(6364136223846793005).wrapping_add(1);
+                    p.write_volatile(nv);
+                    (nv >> 33) & 0x7FFF
+                };
+                s as i64
+            }
+            0x5228 => {
+                // srand(seed)
+                unsafe {
+                    core::ptr::addr_of_mut!(SHIM_RAND_SEED).write_volatile(a1);
+                }
+                0
+            }
+            0x5229 => shim_strtol_any(a1, a2, a3) as i64, // strtol(str, end, base)
+            0x522A => shim_strtoul_any(a1, a2, a3) as i64, // strtoul(str, end, base)
+            0x522B => {
+                // toupper(c)
+                if a1 >= b'a' as u64 && a1 <= b'z' as u64 {
+                    (a1 - 32) as i64
+                } else {
+                    a1 as i64
+                }
             }
             _ => 0,
         }
@@ -798,7 +859,9 @@ fn shim_heap_alloc(n: u64) -> u64 {
 }
 
 /// 迷你 printf 引擎: fmt 用户指针, argp 用户态 u64 参数数组 (va 或回归值)。
-fn shim_vfmt(fmt: u64, argp: *const u64, max_args: usize) -> i64 {
+/// out_buf>0: 渲染到用户缓冲 (out_cap 上限, NUL 终结), 返回字符数;
+/// out_buf==0: 串口+VGA 输出, 返回输出字节数。
+fn shim_vfmt(fmt: u64, argp: *const u64, max_args: usize, out_buf: u64, out_cap: u64) -> i64 {
     let mut out = [0u8; 512];
     let mut on = 0usize;
     let mut ai = 0usize;
@@ -810,8 +873,10 @@ fn shim_vfmt(fmt: u64, argp: *const u64, max_args: usize) -> i64 {
                 break;
             }
             if c != b'%' {
-                out[on] = c;
-                on += 1;
+                if on < out.len() {
+                    out[on] = c;
+                    on += 1;
+                }
                 fi += 1;
                 continue;
             }
@@ -821,8 +886,10 @@ fn shim_vfmt(fmt: u64, argp: *const u64, max_args: usize) -> i64 {
                 break;
             }
             if c == b'%' {
-                out[on] = b'%';
-                on += 1;
+                if on < out.len() {
+                    out[on] = b'%';
+                    on += 1;
+                }
                 fi += 1;
                 continue;
             }
@@ -868,26 +935,28 @@ fn shim_vfmt(fmt: u64, argp: *const u64, max_args: usize) -> i64 {
                     } else {
                         v as u32 as i32 as i64
                     };
-                    on += write_dec(&mut out[on..], s);
+                    on += write_dec_into(&mut out[on..], s);
                 }
                 b'u' => {
                     let u = if wide { v } else { v as u32 as u64 };
-                    on += write_dec(&mut out[on..], u as i64);
+                    on += write_dec_into(&mut out[on..], u as i64);
                 }
                 b'x' | b'X' => {
                     let u = if wide { v } else { v as u32 as u64 };
-                    on += write_hex(&mut out[on..], u, c == b'X');
+                    on += write_hex_into(&mut out[on..], u, c == b'X');
                 }
                 b'p' => {
-                    on += write_hex_prefix(&mut out[on..], v);
+                    on += write_hex_prefix_into(&mut out[on..], v);
                 }
                 b'c' => {
-                    out[on] = (v & 0xFF) as u8;
-                    on += 1;
+                    if on < out.len() {
+                        out[on] = (v & 0xFF) as u8;
+                        on += 1;
+                    }
                 }
                 b's' => {
                     let mut k = 0usize;
-                    while k < 200 {
+                    while k < 200 && on < out.len() {
                         let b = (v as *const u8).add(k).read();
                         if b == 0 {
                             break;
@@ -898,19 +967,34 @@ fn shim_vfmt(fmt: u64, argp: *const u64, max_args: usize) -> i64 {
                     }
                 }
                 _ => {
-                    out[on] = b'%';
-                    on += 1;
-                    out[on] = c;
-                    on += 1;
+                    if on < out.len() {
+                        out[on] = b'%';
+                        on += 1;
+                    }
+                    if on < out.len() {
+                        out[on] = c;
+                        on += 1;
+                    }
                 }
             }
             fi += 1;
         }
-        shim_write_chars(&out[..on.min(512)])
+        if out_buf != 0 {
+            // _snprintf 语义: 截断到 cap-1 + NUL; 返回应写字符数
+            let cap = (out_cap.min(512)) as usize;
+            let n = on.min(cap.saturating_sub(1));
+            for i in 0..n {
+                (out_buf as *mut u8).add(i).write(out[i]);
+            }
+            (out_buf as *mut u8).add(n).write(0);
+            on as i64
+        } else {
+            shim_write_chars(&out[..on.min(512)])
+        }
     }
 }
 
-fn write_dec(buf: &mut [u8], v: i64) -> usize {
+fn write_dec_into(buf: &mut [u8], v: i64) -> usize {
     let mut n = 0usize;
     let neg = v < 0;
     let mut x = if neg { (v as i64).wrapping_neg() as u64 } else { v as u64 };
@@ -940,7 +1024,7 @@ fn write_dec(buf: &mut [u8], v: i64) -> usize {
     n
 }
 
-fn write_hex(buf: &mut [u8], v: u64, upper: bool) -> usize {
+fn write_hex_into(buf: &mut [u8], v: u64, upper: bool) -> usize {
     let mut n = 0usize;
     let mut tmp = [0u8; 16];
     let mut ti = 16;
@@ -970,7 +1054,7 @@ fn write_hex(buf: &mut [u8], v: u64, upper: bool) -> usize {
     n
 }
 
-fn write_hex_prefix(buf: &mut [u8], v: u64) -> usize {
+fn write_hex_prefix_into(buf: &mut [u8], v: u64) -> usize {
     let mut n = 0usize;
     let mut h = 0usize;
     if n < buf.len() {
@@ -1013,6 +1097,231 @@ fn shim_write_chars(chars: &[u8]) -> i64 {
     serial::write_str(s);
     vga::write_str(s);
     chars.len() as i64
+}
+
+// ================= M28: vcruntime 函数面实现 =================
+
+extern "C" {
+    /// 经 Win64 ABI (rcx/rdx 双参, rcx 入口对齐) 调用用户态函数指针
+    fn fujo_call_win_fn(f: u64, a: u64, b: u64) -> i64;
+}
+
+core::arch::global_asm!(r#"
+    .text
+    .p2align 4
+    .global fujo_call_win_fn
+fujo_call_win_fn:
+    push rbp
+    mov rbp, rsp
+    push r12
+    push r13
+    mov r12, rdi          # f
+    mov r13, rdx          # b
+    mov rdi, rsi          # a -> arg1
+    mov rsi, r13          # b -> arg2
+    push rbx
+    mov rbx, rsp          # 保存原 rsp (rax 会被用户返回覆盖!)
+    and rsp, -16
+    sub rsp, 32           # shadow space
+    call r12
+    mov rsp, rbx          # 恢复栈 (rbx 由用户 callee 保持)
+    pop rbx
+    pop r13
+    pop r12
+    pop rbp
+    ret
+"#);
+
+/// M28: rand/srand 种子
+static mut SHIM_RAND_SEED: u64 = 0x253F1;
+
+/// strtol/strtoul/atoi 共用整数解析。
+fn shim_strtol_any(strp: u64, endp: u64, base: u64) -> i64 {
+    unsafe {
+        let mut i = 0usize;
+        while i < 256 {
+            let b = (strp as *const u8).add(i).read();
+            if b == b' ' || b == b'\t' || b == b'\n' || b == b'\r' {
+                i += 1;
+            } else {
+                break;
+            }
+        }
+        let mut neg = false;
+        let mut c = (strp as *const u8).add(i).read();
+        if c == b'-' {
+            neg = true;
+            i += 1;
+        } else if c == b'+' {
+            i += 1;
+        }
+        let mut base = base;
+        let mut c = (strp as *const u8).add(i).read();
+        if base == 0 {
+            if c == b'0' {
+                let c2 = (strp as *const u8).add(i + 1).read();
+                if c2 == b'x' || c2 == b'X' {
+                    base = 16;
+                    i += 2;
+                } else {
+                    base = 8;
+                    i += 1;
+                }
+            } else {
+                base = 10;
+            }
+        } else if base == 16 && c == b'0' {
+            let c2 = (strp as *const u8).add(i + 1).read();
+            if c2 == b'x' || c2 == b'X' {
+                i += 2;
+            }
+        }
+        let mut val: u64 = 0;
+        let mut last = i;
+        loop {
+            let ch = (strp as *const u8).add(i).read();
+            let d = if ch >= b'0' && ch <= b'9' {
+                ch - b'0'
+            } else if ch >= b'a' && ch <= b'f' {
+                ch - b'a' + 10
+            } else if ch >= b'A' && ch <= b'F' {
+                ch - b'A' + 10
+            } else {
+                255
+            };
+            if d >= base as u8 {
+                break;
+            }
+            val = val.wrapping_mul(base).wrapping_add(d as u64);
+            last = i + 1;
+            i += 1;
+        }
+        if endp != 0 {
+            (endp as *mut u64).write(strp + last as u64);
+        }
+        if neg && last > 0 {
+            (val as i64).wrapping_neg()
+        } else {
+            val as i64
+        }
+    }
+}
+
+fn shim_strtol_i(strp: u64) -> i64 {
+    shim_strtol_any(strp, 0, 10) as i32 as i64
+}
+
+/// strtoul: 无符号 (C 语义 "-1" 取反)。
+fn shim_strtoul_any(strp: u64, endp: u64, base: u64) -> u64 {
+    shim_strtol_any(strp, endp, base) as u64
+}
+
+/// atof: 解析 [-]digits[.digits][e[+-]digits], 返回 f64 位模式。
+fn shim_parse_double(strp: u64) -> u64 {
+    unsafe {
+        let mut i = 0usize;
+        while i < 256 {
+            let b = (strp as *const u8).add(i).read();
+            if b == b' ' || b == b'\t' {
+                i += 1;
+            } else {
+                break;
+            }
+        }
+        let mut neg = false;
+        let mut c = (strp as *const u8).add(i).read();
+        if c == b'-' {
+            neg = true;
+            i += 1;
+        } else if c == b'+' {
+            i += 1;
+        }
+        let mut int_part: f64 = 0.0;
+        c = (strp as *const u8).add(i).read();
+        while c >= b'0' && c <= b'9' {
+            int_part = int_part * 10.0 + (c - b'0') as f64;
+            i += 1;
+            c = (strp as *const u8).add(i).read();
+        }
+        let mut frac = 0.0;
+        let mut scale = 0.1;
+        if c == b'.' {
+            i += 1;
+            c = (strp as *const u8).add(i).read();
+            while c >= b'0' && c <= b'9' {
+                frac += (c - b'0') as f64 * scale;
+                scale *= 0.1;
+                i += 1;
+                c = (strp as *const u8).add(i).read();
+            }
+        }
+        let mut v = int_part + frac;
+        if c == b'e' || c == b'E' {
+            i += 1;
+            let mut ec = (strp as *const u8).add(i).read();
+            let mut eneg = false;
+            if ec == b'-' {
+                eneg = true;
+                i += 1;
+                ec = (strp as *const u8).add(i).read();
+            } else if ec == b'+' {
+                i += 1;
+                ec = (strp as *const u8).add(i).read();
+            }
+            let mut e = 0u32;
+            while ec >= b'0' && ec <= b'9' {
+                e = e * 10 + (ec - b'0') as u32;
+                i += 1;
+                ec = (strp as *const u8).add(i).read();
+            }
+            let mut m = 1.0f64;
+            for _ in 0..e.min(64) {
+                m *= 10.0;
+            }
+            if eneg {
+                v /= m;
+            } else {
+                v *= m;
+            }
+        }
+        if neg {
+            v = -v;
+        }
+        v.to_bits()
+    }
+}
+
+/// qsort: 插入排序 (n<=64, sz<=1024), 经 Win64 桥调用户 cmp。
+fn shim_qsort(base: u64, n: u64, sz: u64, cmp_fn: u64) -> i64 {
+    if sz == 0 || n == 0 || n > 64 || sz > 1024 || n * sz > 0x10000 {
+        return 0;
+    }
+    unsafe {
+        let mut rounds = 0usize;
+        for i in 1..n {
+            let mut j = i;
+            while j > 0 {
+                let p1 = base + (j - 1) * sz;
+                let p2 = base + j * sz;
+                let r = fujo_call_win_fn(cmp_fn, p1, p2);
+                if r <= 0 {
+                    break;
+                }
+                for k in 0..sz as usize {
+                    let a = (p1 as *mut u8).add(k).read();
+                    let bv = (p2 as *mut u8).add(k).read();
+                    (p1 as *mut u8).add(k).write(bv);
+                    (p2 as *mut u8).add(k).write(a);
+                }
+                j -= 1;
+                rounds += 1;
+                if rounds > 8192 {
+                    return 0;
+                }
+            }
+        }
+    }
+    0
 }
 
 /// M22 fork 实现: 从当前 syscall 帧克隆任务。

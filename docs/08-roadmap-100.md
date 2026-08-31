@@ -184,7 +184,23 @@
       **回归**: M26(m26_win ReadFile 32 bytes/GetFileSize=3072 转真实
       语义, CloseHandle BOOL 化, fd=3 预打开 /boot/module)与 M3
       (hello_win) 全 PASS
-- [ ] **M28** vcruntime 最小集
+- [x] **M28** vcruntime 最小集 —— **vcruntime/msvcrt 函数面扩展**(mingw
+      16.1 CRT 10 个新导入全通): `os run win`(m28_vc.exe, 依赖
+      strtol/strtoul/strtod/atoi/atof/qsort/_snprintf/rand/srand/memmove/
+      toupper/isdigit 等)→ **`m28: strtol=12345 strtoul=31` /
+      `strtod=3.75 atoi=42 atof=1.5 rand=26` / `q=0,3,6,9 12345` /
+      `memmove=vcruntime chr='w' toupper=A isdigit=1` /
+      `M28 RESULT: PASS`** → exit(7);
+      实现: 垫片表 +10 符号(0x5222..0x522B: _snprintf 渲染到用户缓冲
+      (栈 params 读 [user_rsp+0x40/0x48/0x50/0x58])、strtol/strtoul
+      (base 0/8/10/16 + endptr)、atoi、memset、rand/srand(LCG)、
+      toupper、**atof 专用蹦床**(Win64 浮点返回 XMM0: syscall 后
+      `movsd xmm0,[cell]`, 0x7F0E00)、**qsort 内核实现 + Win64 ABI
+      用户回调桥** `fujo_call_win_fn`(CPL0 直接 call 用户 cmp 指针,
+      rcx/rdx 双参 + 32B shadow + 16 对齐));
+      **修复链**: 回调桥 `mov rsp,rax` 恢复栈被用户返回值覆盖(首次
+      cmp 差 3 → rsp=3 → #UD rip=0x3) → 改 rbx 保存原 rsp;
+      回归: M27 全绿
 - [ ] **M29** darwinsubsys:libSystem 薄层;darwin CLI 工具
 - [ ] **M30** 三子系统一致化(统一内核对象映射)
 - [ ] **M31** fujopack 资源化 .run 命令行工具链

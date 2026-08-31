@@ -75,6 +75,17 @@ pub const SHIM_TABLE: &[(&str, &str, u64)] = &[
     ("msvcrt.dll", "strncmp", 0x521F),
     ("msvcrt.dll", "vfprintf", 0x5220),
     ("msvcrt.dll", "wcslen", 0x5221),
+    // ---- M28: vcruntime/msvcrt 函数面扩展 ----
+    ("msvcrt.dll", "_snprintf", 0x5222),
+    ("msvcrt.dll", "atof", 0x5223),
+    ("msvcrt.dll", "atoi", 0x5224),
+    ("msvcrt.dll", "memset", 0x5225),
+    ("msvcrt.dll", "qsort", 0x5226),
+    ("msvcrt.dll", "rand", 0x5227),
+    ("msvcrt.dll", "srand", 0x5228),
+    ("msvcrt.dll", "strtol", 0x5229),
+    ("msvcrt.dll", "strtoul", 0x522A),
+    ("msvcrt.dll", "toupper", 0x522B),
 ];
 
 /// 数据导入表: IAT 槽绑定到用户态全局 cell 地址 (导出是数据对象)。
@@ -86,6 +97,10 @@ pub const SHIM_DATA: &[(&str, &str, u64)] = &[
 
 /// 用户空间蹦床页基址 (0x7F0000..0x800000, U=1, 恒等映射内)
 pub const SHIM_PAGE: usize = 0x7F0000;
+/// M28: atof 专用蹦床 (返回 double 在 XMM0; syscall 后 movsd xmm0, [cell])
+pub const ATOF_TRAMP: u64 = 0x7F0E00;
+/// M28: atof 位模式 cell (内核写, 专用蹦床读)
+pub const ATOF_CELL: u64 = 0x7E0F00;
 /// 通用 no-op 蹦床 (xor eax,eax; ret) — GetProcAddress 未知符号 / 垫片兜底
 pub const SHIM_HEAP_BASE: u64 = 0x800000;
 
@@ -187,6 +202,31 @@ pub unsafe fn install_shims() {
     core::ptr::write_bytes(teb as *mut u8, 0, 0x80);
     (teb as *mut u64).add(1).write(0x600000u64); // +0x08 StackBase
     (teb as *mut u64).add(6).write(teb); // +0x30 Self
+    // M28: atof 专用蹦床 (0x7F0E00, 64B 槽):
+    //   push rcx/rdi/rsi; 转换 4 参; mov rax,0x5223; syscall;
+    //   movabs rsp 载 cell 地址已被内核写好位模式 -> movsd xmm0,[cell];
+    //   pop rsi/rdi/rcx; ret
+    // 注意: 这是"返回值经 XMM0"的唯一特例 (Win64 浮点返回约定)。
+    let at = ATOF_TRAMP as *mut u8;
+    let at_stub: [u8; 92] = [
+        0x51, 0x57, 0x56, // push rcx, rdi, rsi
+        0x48, 0x89, 0xCF, 0x48, 0x89, 0xD6, 0x4C, 0x89, 0xC2, 0x4C, 0x89, 0xC9, // mov 4 参
+        0x48, 0xC7, 0xC0, 0x23, 0x52, 0x00, 0x00, // mov rax, 0x5223
+        0x0F, 0x05, // syscall
+        0x48, 0xB8, 0x00, 0x0F, 0x7E, 0x00, 0x00, 0x00, 0x00, 0x00, // movabs rax, 0x7E0F00
+        0xF2, 0x0F, 0x10, 0x00, // movsd xmm0, [rax]
+        0x5E, 0x5F, 0x59, // pop rsi, rdi, rcx
+        0xC3, // ret
+        0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, // pad
+        0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
+        0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
+        0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
+        0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
+    ];
+    for (i, b) in at_stub.iter().enumerate() {
+        at.add(i).write(*b);
+    }
+    (ATOF_CELL as *mut u64).write(0);
     core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
 }
 
@@ -283,7 +323,13 @@ pub fn load_pe(base: u32, len: u32) -> Result<u64, &'static str> {
                     let fname_s = core::str::from_utf8(&fname_b[..fn_n]).unwrap_or("?");
 
                     if let Some(idx) = shim_resolve(dname_s, fname_s) {
-                        let addr = shim_addr(idx);
+                        let addr = if dname_s.eq_ignore_ascii_case("msvcrt.dll")
+                            && fname_s.eq_ignore_ascii_case("atof")
+                        {
+                            ATOF_TRAMP // M28: XMM0 返回专用蹦床
+                        } else {
+                            shim_addr(idx)
+                        };
                         (iat as *mut u64).write(addr);
                         syscall::log_shim(dname_s, fname_s, addr);
                     } else if let Some(cell) = shim_data_resolve(dname_s, fname_s) {
