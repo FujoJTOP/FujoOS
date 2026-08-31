@@ -17,6 +17,7 @@ mod ata;
 mod audio;
 mod clip;
 mod desk;
+mod dxwrap;
 mod display;
 mod elf_loader;
 mod fjfs;

@@ -466,7 +466,13 @@
       `tri_in=ffff0000 out=ff000000 rect=ffffffff line=ff00ff00` →
       **M55 RESULT: PASS**; 说明: 参数面 6 上限(dispatch 帧) →
       顶点缓冲指针+打包色
-- [ ] **M56** DXVK 式翻译可行性评估(方案+原型)
+- [x] **M56** DXVK 式翻译可行性评估(方案+原型) —— **docs/09-dxvk-feasibility.md**
+      (现状盘点/DXVK 架构对照/分层方案 layer0..2/缺口路线 M61/M62/M63/
+      M69); **原语原型 dxwrap.rs**: 顶点缓冲(0x6301)+ 仿射矩阵
+      (0x6302)+ flush 变换→fujogl 光栅(0x6303)—— "D3D 命令模型 →
+      fujogl" 最小翻译闭环; **m56_dxwrap.elf 实测**: 3 顶点 × 2x
+      矩阵 → `center=ffff0000 orig=00000000 corner=00000000`
+      (变换后中心红/放大三角外黑) → **M56 RESULT: PASS**
 - [ ] **M57** KVM 加速支持 + TCG/KVM 基准对照
 - [ ] **M58** 2D 游戏#1 原生运行(开源 2D 引擎选择)
 - [ ] **M59** 游戏模式:前台调度/资源预留/全屏

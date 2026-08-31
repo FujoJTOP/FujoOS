@@ -378,6 +378,10 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5121 => crate::ipc::fujo_sigkill(a0, a1),
         // fujo_sigret() -> 0
         0x5122 => crate::ipc::fujo_sigret(),
+        // ---- M56: DXVK 式翻译原型 ----
+        0x6301 => crate::dxwrap::fujo_dx_verts(a0, a1),
+        0x6302 => crate::dxwrap::fujo_dx_matrix(a0),
+        0x6303 => crate::dxwrap::fujo_dx_flush(a0),
         // ---- M55: fujogl (软件光栅) ----
         0x6201 => crate::gl::fujo_gl_clear(a0, a1, a2),
         0x6202 => crate::gl::fujo_gl_rect(a0, a1, a2, a3, a4),
