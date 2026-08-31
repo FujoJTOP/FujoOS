@@ -12,7 +12,9 @@
 #![allow(static_mut_refs)]
 
 mod ai;
+mod ata;
 mod elf_loader;
+mod fjfs;
 mod gdt;
 mod graphics;
 mod interrupts;
@@ -190,6 +192,13 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     mem::harden_user_guard();
     mem::demand_zero_init();
     out_line("mem  : virtual memory v0 - user heap 0x800000..0xC00000 (brk/mmap ready)");
+
+    // ---- M16: ATA + FJFS 持久卷 (QEMU: -drive file=...,format=raw,if=ide) ----
+    ata::init();
+    fjfs::init();
+    if unsafe { crate::ata::ATA_PRESENT } {
+        crate::fjfs::list();
+    }
 
     // ---- M15: VFS 内存文件系统 (挂载前记录模块) ----
     syscall::remember_module(mbi);

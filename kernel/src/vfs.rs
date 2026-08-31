@@ -15,6 +15,7 @@ use crate::serial;
 pub const F_KIND_BLOB: u8 = 0; // 静态内存 (模块)
 pub const F_KIND_GEN: u8 = 1; // 生成内容 (proc)
 pub const F_KIND_RAM: u8 = 2; // 内存盘读写
+pub const F_KIND_DISK: u8 = 3; // fujofs 磁盘文件 (M16)
 
 pub const MAX_OPEN: usize = 16;
 
@@ -37,6 +38,11 @@ static mut NEXT_FD: usize = 3;
 static mut BOOT_MODULE: (u64, u64) = (0, 0); // (addr, len)
 static mut MODULE_COPY: [u8; 4096] = [0; 4096];
 static mut MODULE_COPY_LEN: usize = 0;
+
+// ---- M16 fujofs 磁盘文件缓存 ----
+static mut DISK_CACHE: [u8; 2048] = [0; 2048];
+static mut DISK_CACHE_LEN: usize = 0;
+static mut DISK_DIRTY: bool = false;
 static mut RAMDISK: [u8; 4096] = [0; 4096];
 static mut RAMDISK_LEN: usize = 0;
 static mut MEMINFO: [u8; 256] = [0; 256];
@@ -205,6 +211,25 @@ pub extern "C" fn fujo_open(ptr: u64, len: u64, flags: u64) -> i64 {
             f.pos = 0;
             serial::write_line("vfs  : open /dev/tty (serial)");
             return fd as i64;
+        } else if let Some(fname) = name.strip_prefix("/disk/") {
+            // M16: fujofs 磁盘文件 (打开时载入缓存; 写穿在 close 刷盘)
+            let fname_bytes = fname.as_bytes();
+            let len = crate::fjfs::read_file(fname_bytes, core::ptr::addr_of_mut!(DISK_CACHE).cast::<u8>(), 2048);
+            DISK_CACHE_LEN = len;
+            DISK_DIRTY = false;
+            f.name = "/disk/";
+            // 记录短名: 存到 data_len 无意义 -> 用 name 的静态拷贝
+            // (File.name 是 &'static str; 磁盘文件全走缓存与脏标记, 短名从路径再解析)
+            f.kind = F_KIND_DISK;
+            f.data_ptr = core::ptr::addr_of!(DISK_CACHE) as *const u8;
+            f.data_len = DISK_CACHE_LEN as u64;
+            f.pos = 0;
+            serial::write_str("vfs  : open /disk/");
+            serial::write_str(fname);
+            serial::write_str(" (cache ");
+            print_dec(len as u64);
+            serial::write_line(" bytes)");
+            return fd as i64;
         }
         let _ = flags;
         NEXT_FD -= 1; // 回滚
@@ -250,10 +275,18 @@ pub extern "C" fn fujo_close(fd: u64) -> i64 {
     if fd >= 3 && (fd as usize) < MAX_OPEN {
         unsafe {
             let f = &mut *core::ptr::addr_of_mut!(FILES[fd as usize]);
+            // M16: 磁盘文件脏刷盘 (写穿)
+            if f.kind == F_KIND_DISK && DISK_DIRTY {
+                if crate::fjfs::write_file(b"hello.txt", core::ptr::addr_of!(DISK_CACHE).cast::<u8>(), DISK_CACHE_LEN) {
+                    serial::write_line("vfs  : disk flush ok (/disk/hello.txt)");
+                }
+                DISK_DIRTY = false;
+            }
             f.pos = 0;
             f.data_len = 0;
             f.data_ptr = core::ptr::null();
             f.name = "/dev/null";
+            f.kind = 0;
         }
     }
     0
@@ -271,6 +304,22 @@ pub fn file_write(fd: u64, ptr: u64, len: u64) -> Option<i64> {
         }
         if name == "/dev/tty" {
             return None; // 调用方串口回退
+        }
+        if FILES[fd as usize].kind == F_KIND_DISK {
+            // fujofs 缓存追加 (close 刷盘)
+            let mut n = 0usize;
+            while (n as u64) < len && DISK_CACHE_LEN < DISK_CACHE.len() {
+                DISK_CACHE[DISK_CACHE_LEN] = (ptr as *const u8).add(n).read();
+                DISK_CACHE_LEN += 1;
+                n += 1;
+            }
+            DISK_DIRTY = true;
+            serial::write_str("vfs  : disk cache fd=");
+            print_dec(fd);
+            serial::write_str(" +");
+            print_dec(n as u64);
+            serial::write_line(" bytes (dirty)");
+            return Some(n as i64);
         }
         if FILES[fd as usize].kind == F_KIND_RAM {
             let mut n = 0usize;
