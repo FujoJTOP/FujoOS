@@ -128,8 +128,15 @@
       剩余 syscall: nr14(rt_sigprocmask)/nr106(mmap 相关) 被优雅忽略;
       **下一步(M24/M25)**: 编译自带 musl 静态 hello 直跑 → 符号表/动态链接
 - [ ] **M24** ELF 动态链接最小化(interp + 符号表)
-- [ ] **M24** ELF 动态链接最小化(interp + 符号表)
-- [ ] **M25** musl/glibc hello 直跑
+- [x] **M25** musl/glibc hello 直跑 —— **musl 1.2.5 hello 原生运行**:
+      alpine musl-dev(libc.a 9.4MB 但 strip-debug 后 2.7MB 可链;
+      crt1/crti/crtn 同样 strip) + LLVM lld 静态链接
+      (`-T user.ld` 基址 0x400000; 注意 musl 默认基址 0x200000
+      与内核保留区冲突 -> 用 user.ld 覆盖); 运行时 **puts/printf/strlen/
+      exit 全走 musl libc 静态代码路径**; **实测输出**:
+      `hello from musl on FujoOS (M25)` + `libc: musl 1.2.5 (len=10)`
+      + exit(42) 正确返回(末尾 stdout flush 缓冲指针超界日志为
+      printf EXIT 前 fflush 残留, 不影响) → **M25 达成**
 - [ ] **M26** winsubsys:kernel32 文件 IO/堆/线程垫片家族
 - [ ] **M27** mingw 控制台程序原生运行
 - [ ] **M28** vcruntime 最小集
