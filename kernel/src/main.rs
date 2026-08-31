@@ -21,6 +21,7 @@ mod gdt;
 mod graphics;
 mod interrupts;
 mod ipc;
+mod ime;
 mod kbd;
 mod kobj;
 mod macho_loader;

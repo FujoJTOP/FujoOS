@@ -378,6 +378,13 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5121 => crate::ipc::fujo_sigkill(a0, a1),
         // fujo_sigret() -> 0
         0x5122 => crate::ipc::fujo_sigret(),
+        // ---- M40: IME 骨架 ----
+        0x5701 => crate::ime::fujo_ime_begin(),
+        0x5702 => crate::ime::fujo_ime_key(a0),
+        0x5703 => crate::ime::fujo_ime_candidates(a0, a1),
+        0x5704 => crate::ime::fujo_ime_commit(a0),
+        0x5705 => crate::ime::fujo_ime_reset(),
+        0x5706 => crate::ime::fujo_ime_out(a0),
         // ---- M39: 位图字体 (缩放/字形/backbuffer) ----
         0x5601 => crate::font::fujo_font_text(a0, a1, a2, a3, a4),
         0x5602 => crate::font::fujo_font_pixel(a0, a1),

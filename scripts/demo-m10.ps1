@@ -46,7 +46,7 @@ if (-not $NoBuild) {
     }
     cargo build --release
     if ($LASTEXITCODE -ne 0) { Write-Error 'cargo build failed'; exit 1 }
-    python ..\tools\flatten_elf.py target\x86_64-unknown-none\release\fujo-kernel fujo-kernel.bin --pad 0x120000
+    python ..\tools\flatten_elf.py target\x86_64-unknown-none\release\fujo-kernel fujo-kernel.bin --pad 0x170000
     if ($LASTEXITCODE -ne 0) { Write-Error 'flatten failed'; exit 1 }
     Set-Location "$root"
     Write-Host '  kernel image OK'
