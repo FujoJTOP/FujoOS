@@ -201,7 +201,18 @@
       **修复链**: 回调桥 `mov rsp,rax` 恢复栈被用户返回值覆盖(首次
       cmp 差 3 → rsp=3 → #UD rip=0x3) → 改 rbx 保存原 rsp;
       回归: M27 全绿
-- [ ] **M29** darwinsubsys:libSystem 薄层;darwin CLI 工具
+- [x] **M29** darwinsubsys:libSystem 薄层;darwin CLI 工具 —— **BSD
+      syscall 面补齐**(0x2000000|nr): read(3)/open(5)/close(6)/
+      lseek(13)/mmap(197, darwin flags MAP_PRIVATE|MAP_ANON=0x1002 →
+      内核集 0x22)/getpid(20)/exit(带 code)接 VFS/mem 直通;
+      vfs 新增 `fujo_lseek`(whence SET/CUR/END, 负拒 -EINVAL);
+      **darwin CLI 工具**(sdk/mac/m29_darwin.macho, clang
+      --target=x86_64-apple-macos11 -nostdlib, 零 libc 手工 BSD
+      syscall): **`m29: darwin CLI tool - libSystem shim layer`** →
+      `open fd=3` → `read n=32 first8=cffaedfe07000001`(Mach-O 自身魔数
+      回读, LE) → `lseek pos=0` → `mmap=8388608` + 写验证 →
+      `getpid=2` → `close=0` → **`M29 RESULT: PASS`** → `darwin exit(7)`;
+      回归: M27 全绿
 - [ ] **M30** 三子系统一致化(统一内核对象映射)
 - [ ] **M31** fujopack 资源化 .run 命令行工具链
 - [ ] **M32** fujorun 支持多模块/库目录

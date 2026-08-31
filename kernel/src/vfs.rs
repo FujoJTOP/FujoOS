@@ -423,6 +423,29 @@ pub extern "C" fn fujo_close(fd: u64) -> i64 {
     0
 }
 
+/// M29: lseek(fd, off, whence) — 文件位置跳转 (whence 0=SET, 1=CUR, 2=END)。
+#[no_mangle]
+pub extern "C" fn fujo_lseek(fd: u64, off: i64, whence: u64) -> i64 {
+    unsafe {
+        if fd < 3 || (fd as usize) >= MAX_OPEN {
+            return -9; // -EBADF
+        }
+        let f = &mut *core::ptr::addr_of_mut!(FILES[fd as usize]);
+        let base: i64 = match whence {
+            0 => 0,
+            1 => f.pos as i64,
+            2 => f.data_len as i64,
+            _ => return -22, // -EINVAL
+        };
+        let np = base + off;
+        if np < 0 {
+            return -22; // -EINVAL
+        }
+        f.pos = np as u64;
+        np
+    }
+}
+
 /// 文件写入 (fd>=3): 内存盘追加; /dev/tty 与 fd<3 由调用方走串口。
 pub fn file_write(fd: u64, ptr: u64, len: u64) -> Option<i64> {
     unsafe {

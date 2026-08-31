@@ -360,17 +360,28 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5131 => crate::kobj::fujo_kobj_free(a0),
         // fujo_kobj_info(ptr, n) -> 写入 i32×min(4,n) 计数
         0x5132 => crate::kobj::fujo_kobj_info(a0, a1),
-        // ---- darwin BSD 空间 (0x2000000|nr, M6 darwinsubsys) ----
+        // ---- darwin BSD 空间 (0x2000000|nr, M6/M29 darwinsubsys) ----
         0x200_0001 => {
-            serial::write_line("user : darwin exit() - kernel takeover, M6 verified");
+            serial::write_str("user : darwin exit(");
+            print_dec(a0);
+            serial::write_line(") - kernel takeover, M6 verified");
             serial::write_str("timer : pit ticks=");
             print_dec(interrupts::ticks());
             serial::write_line(" (~100 Hz since boot)");
             halt_forever();
         }
+        0x200_0003 => crate::vfs::fujo_read(a0, a1, a2), // darwin read(fd, buf, len)
         0x200_0004 => user_write(a0, a1, a2), // darwin write(fd, buf, len)
+        0x200_0005 => crate::vfs::fujo_open(a0, a1, a2), // darwin open(path, flags, mode)
+        0x200_0006 => crate::vfs::fujo_close(a0), // darwin close(fd)
+        0x200_0013 => crate::vfs::fujo_lseek(a0, a1 as i64, a2), // darwin lseek(fd, off, whence)
         // darwin getpid (BSD: 0x2000014)
         0x200_0014 => 2,
+        // darwin mmap (197) — darwin flags: MAP_PRIVATE=2 | MAP_ANON=0x1000 -> 内核集
+        0x200_00C5 => {
+            let flags = if (a3 & 0x1002) == 0x1002 { 2 | 0x20 } else { a3 };
+            crate::mem::fujo_mmap(a0, a1, a2, flags, a4, a5)
+        }
         _ => {
             // 未实现: 打印一次(带计数), 返回 -ENOSYS
             let c = unsafe {
