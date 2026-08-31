@@ -203,6 +203,10 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         12 => crate::mem::fujo_brk(a0),
         // getpid() (x86-64: 39) — linuxsubsys v0 最小实现
         39 => 1,
+        // fork() — M22: 克隆当前任务 (v0 共享地址空间 + 用户栈物理拷贝)
+        57 => fork_self(args),
+        // execve(path, argv, envp) — M22 v0: 未实现 (M23 直通扩展)
+        59 => -38, // -ENOSYS
         // ---------------------------------------------------------------
         // M21: linuxsubsys syscall 面扩展 (~20 个常用)
         // 原则: 行为合理的哨兵返回 + 必要回填 (用户缓冲地址检查同 VFS)。
@@ -414,9 +418,38 @@ fn halt_forever() -> ! {
     }
 }
 
-// ---------------------------------------------------------------------------
-// M21 · linuxsubsys syscall 面扩展实现 (~20 个常用)
-// ---------------------------------------------------------------------------
+/// M22 fork 实现: 从当前 syscall 帧克隆任务。
+/// 帧布局 (fujo_syscall_entry push 序, 栈顶->下):
+///   [0]=rdi [1]=rsi [2]=rdx [3]=r10 [4]=r8 [5]=r9 [6]=rcx [7]=r11
+/// 用户返回 RIP = rcx (syscall 指令后的地址, sysretq 用); RSP = user_rsp_tmp。
+fn fork_self(args: *const u64) -> i64 {
+    unsafe {
+        let rip = args.add(6).read(); // rcx = 用户返回地址
+        let rsp = user_rsp_tmp;
+        let regs8: [u64; 8] = [
+            args.add(7).read(), // r11
+            args.add(3).read(), // r10
+            args.add(5).read(), // r9
+            args.add(4).read(), // r8
+            args.add(0).read(), // rdi
+            args.add(1).read(), // rsi
+            args.add(2).read(), // rdx
+            args.add(6).read(), // rcx
+        ];
+        match crate::sched::fork_current(rip, rsp, &regs8) {
+            Some(tid) => {
+                // 父返回子 tid (=1 首个); 子返回 0 (rax 槽置零)
+                serial::write_str("fork : parent returns tid ");
+                print_dec(tid as u64);
+                serial::write_line("");
+                tid as i64
+            }
+            None => -12, // -ENOMEM (任务表满)
+        }
+    }
+}
+
+/// M21: linuxsubsys syscall 面扩展实现 (~20 个常用)
 
 /// 用户指针区域检查 (linux 低区 + darwin 区)。
 fn user_ok(ptr: u64, len: u64) -> bool {

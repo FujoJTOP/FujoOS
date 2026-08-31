@@ -92,7 +92,18 @@
       getrandom(PIT 混哈希伪熵); **实测通过**: 14 项逐一断言,
       用户态忙等 80ms 时间推进显式验证 → **M21 RESULT: PASS**;
       说明: 全部 syscall 带用户指针区域检查(低区+darwin 区)返回 -EFAULT
-- [ ] **M22** linuxsubsys 直通文件系统(brk/mmap/fork 连到 Mm/Ke/VFS)
+- [x] **M22** linuxsubsys fork 直通(连到调度器): `fork(nr57)` —
+      内核 `sched::fork_current` 克隆: 用户栈物理拷贝(0x600000→0x700000,
+      64KiB 上限)+ 独立内核栈(父 0x380000 / 子 0x340000)+ 共享地址空间
+      (v0: 无每进程页表; 子从 fork 返回 0 (rax 槽), 父返回子 tid),
+      PIT 轮转两任务; **实测通过**: `os run fork` →
+      父 tid=1 / 子返回 0(子记录 tid=1) → 子写共享标记 0x5A5B →
+      父读回验证 → **M22 RESULT: PASS**;
+      **修复链**: syscall 帧解码(rcx=用户返回 RIP 在 args[6])、
+      父登记不再构造帧(写 0x300000 覆盖 dispatch 返回帧 → 内核 #UD rip=3)、
+      父帧被子 syscall 覆盖(iretq 目标帧垃圾 → #GP tRIP=0x2fffd8;
+      修: 父 set_rsp0 到独立栈 0x380000)、子栈 0x240000 与内核 BSS 重叠
+      (BSS 到 0x24BCA8; 修: 0x340000); execve 留 M23
 - [ ] **M23** 静态 busybox 原生运行(验收:ls/cat/echo/管道)
 - [ ] **M24** ELF 动态链接最小化(interp + 符号表)
 - [ ] **M25** musl/glibc hello 直跑

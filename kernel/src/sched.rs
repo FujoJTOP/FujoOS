@@ -152,6 +152,88 @@ fn maybe_deliver_signal(regs: *mut u64) -> bool {
     }
 }
 
+/// M22 fork: 克隆当前任务为独立任务 (共享地址空间 v0: 用户栈物理拷贝到 0x700000)。
+/// 若当前任务未登记 (单任务隐式运行, TASK_COUNT==0), 先把父登记为 TASKS[0]
+/// (帧 = 当前现场, rax=1=返回 tid), 再建子 TASKS[1] (rax=0)。
+/// 返回子 tid; None = 任务表满。
+pub fn fork_current(rip: u64, rsp: u64, regs: &[u64; 8]) -> Option<usize> {
+    unsafe {
+        if TASK_COUNT >= MAX_TASKS {
+            return None;
+        }
+        // 构造保存帧 (布局同 spawn): [RIP][CS][RFLAGS][RSP][SS] + 9 槽
+        // regs 序: [0]=r11 [1]=r10 [2]=r9 [3]=r8 [4]=rdi [5]=rsi [6]=rdx [7]=rcx
+        // 嵌套 fn 不能继承外层 unsafe 上下文 -> 用宏内联。
+        macro_rules! build_frame {
+            ($kstack_top:expr, $rip:expr, $rsp:expr, $regs:expr, $rax:expr) => {{
+                let fr = ($kstack_top - 0x40) as *mut u64;
+                fr.add(0).write($rip);
+                fr.add(1).write(0x23u64);
+                fr.add(2).write(0x202u64);
+                fr.add(3).write($rsp);
+                fr.add(4).write(0x1Bu64);
+                for k in 0..8usize {
+                    fr.sub(9 - k).write($regs[k]);
+                }
+                fr.sub(1).write($rax); // rax 槽
+                fr as u64 - 72
+            }};
+        }
+        let user_stack: u64 = 0x700000;
+        // 拷贝当前用户栈 (0x600000 -> 0x700000, 最多 64KiB)
+        let copy_top = 0x600000u64;
+        let copy_lo = (rsp & !0xFFF).max(copy_top - 0x10000);
+        let mut from = copy_lo;
+        while from < copy_top {
+            let b = (from as *const u8).read_volatile();
+            ((user_stack - (copy_top - from)) as *mut u8).write_volatile(b);
+            from += 1;
+        }
+        let new_rsp = user_stack - (copy_top - rsp);
+        // 父登记 (若隐式单任务): 无需构造帧 —— 父登记后继续运行,
+        // 首次 PIT 用户态中断时 fujo_tick_sched 以真实现场覆盖 saved_rsp。
+        // 关键: 必须立即 set_rsp0 到独立内核栈 0x380000 —— 若沿用 0x300000
+        // (syscall 栈), 子任务调用 write 会覆盖父的保存帧 (iretq 目标帧变
+        // 垃圾 -> #GP, M22 实证: tRIP=0x2fffd8 tCS=0x0)。
+        // 0x200000 不可用: 镜像直接落在 0x100000..0x251D18 且入口 0x21xxxx。
+        let mut parent_idx = CUR;
+        if TASK_COUNT == 0 {
+            parent_idx = 0;
+            TASKS[0] = Task {
+                saved_rsp: 0,
+                kstack_top: 0x380000,
+                state: TASK_RUNNABLE,
+                sig_handler: 0,
+                sig_pending: false,
+                sig_active: false,
+            };
+            TASK_COUNT = 1;
+            crate::gdt::set_rsp0(0x380000);
+        }
+        // 子任务 (idx = TASK_COUNT)
+        let idx = TASK_COUNT;
+        if idx >= MAX_TASKS {
+            return None;
+        }
+        let saved = build_frame!(0x340000, rip, new_rsp, regs, 0);
+        TASKS[idx] = Task {
+            saved_rsp: saved,
+            kstack_top: 0x340000,
+            state: TASK_RUNNABLE,
+            sig_handler: 0,
+            sig_pending: false,
+            sig_active: false,
+        };
+        TASK_COUNT += 1;
+        serial::write_str("sched: fork parent=");
+        print_dec(parent_idx as u64);
+        serial::write_str(" child=");
+        print_dec(idx as u64);
+        serial::write_line("");
+        Some(idx)
+    }
+}
+
 fn print_dec(v: u64) {
     let mut buf = [0u8; 24];
     let mut i = 24;

@@ -65,6 +65,7 @@ pub fn shell(mbi: u32) -> ! {
     out_line("os   :   os run crash     launch exc-isolation demo (M20)");
     out_line("os   :   os run stress    launch leak-stress demo (M20)");
     out_line("os   :   os run m21      launch syscall-surface demo (M21)");
+    out_line("os   :   os run fork      launch fork demo (M22)");
     out_line("os   :   help             show this list");
     let mut line = [0u8; 64];
     loop {
@@ -105,6 +106,10 @@ pub fn shell(mbi: u32) -> ! {
                 } else if t1 == "run" && t2 == "m21" {
                     // M21: linuxsubsys syscall 面 (~20 个)
                     out_line("os   : launching syscall-surface demo ...");
+                    syscall::enter_user_test(mbi); // > !: 不再返回
+                } else if t1 == "run" && t2 == "fork" {
+                    // M22: fork 克隆 (父/子共享地址空间, 用户栈物理拷贝)
+                    out_line("os   : launching fork demo ...");
                     syscall::enter_user_test(mbi); // > !: 不再返回
                 } else {
                     // TEMP-DEBUG

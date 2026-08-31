@@ -330,6 +330,19 @@ pub extern "C" fn fujo_exc2(vec: u64, regs: *mut u64) -> i64 {
         crate::syscall::log_hex(rip);
         serial::write_str(" cs=");
         crate::syscall::log_hex(cs as u64 & 0xFF);
+        if e == 1 {
+            // 有错误码: 打印 (iretq 恢复段失败时 err=选择子)
+            serial::write_str(" err=");
+            crate::syscall::log_hex(regs.add(10).read());
+            // 帧解码: [10]=ERR [11]=RIP [12]=CS [13]=RFLAGS; iretq 目标帧在
+            // 下方: [14..18]=tRIP tCS tRFLAGS tRSP tSS
+            for k in 0..9usize {
+                serial::write_str(" f");
+                crate::syscall::log_hex(k as u64);
+                serial::write_str("=");
+                crate::syscall::log_hex(regs.add(11 + k).read());
+            }
+        }
         if vec == 14 {
             let mut cr2: u64;
             asm!("mov {}, cr2", out(reg) cr2, options(nomem, nostack, preserves_flags));
