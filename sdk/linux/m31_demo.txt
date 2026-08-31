@@ -1,0 +1,1 @@
+M31 resource demo — packed by fujopack.py

@@ -224,7 +224,17 @@
       **PASS**; 三程序同里程碑同一对象语义 → **M30 达成**;
       架构: kernel32!CreateFileA(0x5018) 垫片(路径 7 参只有 name 用,
       反斜杠→正斜杠)+ vfs 重构 `fujo_open_name(name)` 公共入口
-- [ ] **M31** fujopack 资源化 .run 命令行工具链
+- [x] **M31** fujopack 资源化 .run 命令行工具链 —— **宿主端 Python 工具
+      `tools/fujopack.py`**(pack/info/check): FUJR v0.1 容器
+      (64B 头 + 32B×n 节表 + 4096 对齐 payload, FNV-1a 校验, 节 tag
+      1=MANIFEST/4=EMBED/5=DATA) 一键打包 **可执行体+资源**:
+      `fujopack pack -e EXEC -r name:file -o out.run` /
+      `check`(全量 hash)、`info`(节表); 内核 `fujr::load` 全流程:
+      **`FUJR container ok (sections=3)`** → `perm claim: perms runres:read
+      (audited)` → `resource #0 name=demo.txt` → `exec extracted`;
+      `os run hermes`(m31_res.run)→ **`m31: resource content: M31
+      resource demo — packed by fujopack.py`** → **`M31 RESULT: PASS`**;
+      工具链闭环: 编译 ELF → fujopack 打包 → 内核解包 → /runres 资源读取
 - [ ] **M32** fujorun 支持多模块/库目录
 - [ ] **M33** 系统调用追踪(trace 工具 + 计数)
 - [ ] **M34** 兼容矩阵回归(三格式 × 三子系统, 自动化)
