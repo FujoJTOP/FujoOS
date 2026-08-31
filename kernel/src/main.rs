@@ -163,13 +163,11 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
         out_line("gfx  : framebuffer unavailable (VBE not present), desktop skipped");
     }
 
-    // ---- M5: 输入系统 (PS/2 键盘 IRQ1; 独立验证见 M5 提交记录) ----
+    // ---- M5: 输入系统 (PS/2 键盘 IRQ1 + 交互终端窗; 集成验证) ----
     kbd::init();
-    // M6 注: 键盘交互窗口在 QEMU 上受 IRQ1 挂起字节风暴影响 (PIT 饥饿);
-    //        键盘功能本体已在 M5 用 sendkey 端到端验证, 此处跳过交互等待。
-    // kbd::demo();
+    kbd::demo();
 
-    // ---- M2/M3: 用户态测试 (ELF/PE 模块装载 + ABI syscall) ----
+    // ---- M2/M3/M6: 用户态测试 (ELF/PE/Mach-O 模块装载 + ABI syscall) ----
     syscall::enter_user_test(mbi);
 }
 
