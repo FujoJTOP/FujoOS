@@ -131,22 +131,22 @@ fn draw_char_block(x: u32, y: u32, ch: u8, scale: u32, color: u32) {
 }
 
 fn setp(x: u32, y: u32, col: u32) {
-    if x >= font::FB_W || y >= font::FB_H {
+    if x >= font::fb_w() || y >= font::fb_h() {
         return;
     }
     unsafe {
-        let p = (font::BACKBUFFER + ((y as u64) * font::FB_W as u64 + x as u64) * 4) as *mut u32;
+        let p = (font::BACKBUFFER + ((y as u64) * font::fb_w() as u64 + x as u64) * 4) as *mut u32;
         p.write(col);
     }
 }
 
 /// 0x5A03: 像素读回。
 pub fn fujo_term_pixel(x: u64, y: u64) -> i64 {
-    if x >= font::FB_W as u64 || y >= font::FB_H as u64 {
+    if x >= font::fb_w() as u64 || y >= font::fb_h() as u64 {
         return 0;
     }
     unsafe {
-        let p = (font::BACKBUFFER + (y * font::FB_W as u64 + x) * 4) as *const u32;
+        let p = (font::BACKBUFFER + (y * font::fb_w() as u64 + x) * 4) as *const u32;
         p.read() as i64
     }
 }

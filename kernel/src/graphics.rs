@@ -104,6 +104,41 @@ pub unsafe fn vbe_get(idx: u16) -> u16 {
     inw(0x1CF)
 }
 
+/// M47: VBE 模式切换 (QEMU Bochs 动态): 0=1024x768 1=640x480 2=1280x1024。
+/// 写 XRES/YRES/BPP/ENABLE 后读回确认, 同步 font::FB_W/FB_H。
+pub fn fujo_vbe_set(which: u64) -> i64 {
+    let (w, h): (u16, u16) = match which {
+        0 => (1024, 768),
+        1 => (640, 480),
+        2 => (1280, 1024),
+        _ => return -22,
+    };
+    unsafe {
+        vbe_io(0x01, w);
+        vbe_io(0x02, h);
+        vbe_io(0x03, 32);
+        vbe_io(0x0B, 0x41);
+        let rw = vbe_get(0x01);
+        let rh = vbe_get(0x02);
+        if rw == w && rh == h {
+            crate::font::FB_W = rw as u32;
+            crate::font::FB_H = rh as u32;
+            crate::serial::write_line("vbe  : mode switched (M47)");
+            return 0;
+        }
+    }
+    -1
+}
+
+/// M47: 当前实际分辨率 (ptr 写 u32×2 w,h)。
+pub fn fujo_vbe_actual(ptr: u64) -> i64 {
+    unsafe {
+        ((ptr as *mut u32)).write(crate::font::fb_w());
+        ((ptr as *mut u32).add(1)).write(crate::font::fb_h());
+    }
+    0
+}
+
 /// 初始化 Bochs VBE 1024x768x32 LFB; 返回是否成功。
 pub fn init() -> bool {
     unsafe {

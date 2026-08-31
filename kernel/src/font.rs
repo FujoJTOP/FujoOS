@@ -9,8 +9,16 @@
 use crate::serial;
 
 pub const BACKBUFFER: u64 = 0xC00000; // RAM 双缓冲 (M4 graphics backbuffer)
-pub const FB_W: u32 = 1024;
-pub const FB_H: u32 = 768;
+/// M47: 当前分辨率 (vbe_set_mode 动态调整)。
+pub static mut FB_W: u32 = 1024;
+pub static mut FB_H: u32 = 768;
+
+pub fn fb_w() -> u32 {
+    unsafe { FB_W }
+}
+pub fn fb_h() -> u32 {
+    unsafe { FB_H }
+}
 
 /// 5x7 字形表 (0x20..0x7F): 每字符 5 字节 (bit4=最左列)。
 /// 值取自经典 5x7 LCD 字模 (公开标准字体形状)。
@@ -115,21 +123,21 @@ pub const GLYPHS: [[u8; 5]; 96] = [
 
 /// 写 backbuffer 像素 (整数拆色, 下采样防越界)。
 fn set_pixel(x: u32, y: u32, col: u32) {
-    if x >= FB_W || y >= FB_H {
+    if x >= fb_w() || y >= fb_h() {
         return;
     }
     unsafe {
-        let p = (BACKBUFFER + ((y as u64) * FB_W as u64 + x as u64) * 4) as *mut u32;
+        let p = (BACKBUFFER + ((y as u64) * fb_w() as u64 + x as u64) * 4) as *mut u32;
         p.write(col);
     }
 }
 
 fn read_pixel(x: u32, y: u32) -> u32 {
-    if x >= FB_W || y >= FB_H {
+    if x >= fb_w() || y >= fb_h() {
         return 0;
     }
     unsafe {
-        let p = (BACKBUFFER + ((y as u64) * FB_W as u64 + x as u64) * 4) as *const u32;
+        let p = (BACKBUFFER + ((y as u64) * fb_w() as u64 + x as u64) * 4) as *const u32;
         p.read()
     }
 }
@@ -187,9 +195,9 @@ pub fn fujo_font_clear(color: u64) -> i64 {
     let g = (color as u32) & 0x00FF_FFFF;
     let dark = 0xFF000000u32 | g;
     unsafe {
-        for y in 0..FB_H {
-            for x in 0..FB_W {
-                let p = (BACKBUFFER + ((y as u64) * FB_W as u64 + x as u64) * 4) as *mut u32;
+        for y in 0..fb_h() {
+            for x in 0..fb_w() {
+                let p = (BACKBUFFER + ((y as u64) * fb_w() as u64 + x as u64) * 4) as *mut u32;
                 p.write(dark);
             }
         }

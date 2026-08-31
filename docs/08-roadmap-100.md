@@ -395,7 +395,14 @@
       **m46_desk.elf 实测**: init+taskbar → `start-hit=1` → menu 渲染
       → **`tb=ff1caa5e(任务栏绿) menu=ffe5e7eb(表面) bg=ff202020(背景)`**
       → **M46 RESULT: PASS**; 回归: 矩阵 9/9
-- [ ] **M47** 多屏/分辨率切换(vbe 枚举)
+- [x] **M47** 多屏/分辨率切换(vbe 枚举) —— **VBE 动态模式切换**:
+      Bochs VBE 寄存器(0x1CE/0x1CF): XRES/YRES/BPP/ENABLE →
+      **三模式枚举** 0x5C01 vbe_set(0=1024x768 / 1=640x480 /
+      2=1280x1024) + 读回确认 + **font::FB_W/FB_H 同步**(const →
+      static mut, 全渲染模块经 fb_w()/fb_h());
+      **m47_vbe.elf 实测**: 三模式逐一切换+读回:
+      `mode0->1024x768 / mode1->640x480 / mode2->1280x1024 (rc=0)` →
+      收尾回 1024x768 → **M47 RESULT: PASS**; 回归: 矩阵 9/9
 - [ ] **M48** 输入法候选窗+fujokit 集成
 - [ ] **M49** 无障碍:高对比/大字模式
 - [ ] **M50** GUI 基准:窗口开关/拖动帧率表

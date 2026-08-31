@@ -50,21 +50,21 @@ fn icondata(id: u64) -> Option<&'static [u16; 8]> {
 }
 
 fn setp(x: u32, y: u32, col: u32) {
-    if x >= font::FB_W || y >= font::FB_H {
+    if x >= font::fb_w() || y >= font::fb_h() {
         return;
     }
     unsafe {
-        let p = (font::BACKBUFFER + ((y as u64) * font::FB_W as u64 + x as u64) * 4) as *mut u32;
+        let p = (font::BACKBUFFER + ((y as u64) * font::fb_w() as u64 + x as u64) * 4) as *mut u32;
         p.write(col);
     }
 }
 
 fn readp(x: u32, y: u32) -> u32 {
-    if x >= font::FB_W || y >= font::FB_H {
+    if x >= font::fb_w() || y >= font::fb_h() {
         return 0;
     }
     unsafe {
-        let p = (font::BACKBUFFER + ((y as u64) * font::FB_W as u64 + x as u64) * 4) as *const u32;
+        let p = (font::BACKBUFFER + ((y as u64) * font::fb_w() as u64 + x as u64) * 4) as *const u32;
         p.read()
     }
 }

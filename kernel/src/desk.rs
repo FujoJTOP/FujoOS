@@ -16,21 +16,21 @@ const MENU_W: u32 = 200;
 const MENU_H: u32 = 180;
 
 fn setp(x: u32, y: u32, col: u32) {
-    if x >= font::FB_W || y >= font::FB_H {
+    if x >= font::fb_w() || y >= font::fb_h() {
         return;
     }
     unsafe {
-        let p = (font::BACKBUFFER + ((y as u64) * font::FB_W as u64 + x as u64) * 4) as *mut u32;
+        let p = (font::BACKBUFFER + ((y as u64) * font::fb_w() as u64 + x as u64) * 4) as *mut u32;
         p.write(col);
     }
 }
 
 fn readp(x: u32, y: u32) -> u32 {
-    if x >= font::FB_W || y >= font::FB_H {
+    if x >= font::fb_w() || y >= font::fb_h() {
         return 0;
     }
     unsafe {
-        let p = (font::BACKBUFFER + ((y as u64) * font::FB_W as u64 + x as u64) * 4) as *const u32;
+        let p = (font::BACKBUFFER + ((y as u64) * font::fb_w() as u64 + x as u64) * 4) as *const u32;
         p.read()
     }
 }
@@ -70,12 +70,12 @@ pub fn fujo_desk_init() -> i64 {
     unsafe {
         let bg = icon::PAL[1];
         let tb = icon::PAL[2];
-        fill(0, 0, font::FB_W, font::FB_H, bg);
+        fill(0, 0, font::fb_w(), font::fb_h(), bg);
         // 任务栏
-        fill(0, font::FB_H - TB_H, font::FB_W, TB_H, tb);
+        fill(0, font::fb_h() - TB_H, font::fb_w(), TB_H, tb);
         // 开始按钮 (60x36 方块 + logo 图标)
-        fill(8, font::FB_H - TB_H + 2, 56, 36, 0xFFFFFFFFu32);
-        let _ = icon::fujo_icon_draw(10, font::FB_H as u64 - TB_H as u64 + 4, 3, 2);
+        fill(8, font::fb_h() - TB_H + 2, 56, 36, 0xFFFFFFFFu32);
+        let _ = icon::fujo_icon_draw(10, font::fb_h() as u64 - TB_H as u64 + 4, 3, 2);
         crate::serial::write_line("desk : desktop + taskbar rendered");
     }
     0
@@ -96,14 +96,14 @@ pub fn fujo_desk_taskbar(text: u64) -> i64 {
         }
         let s = core::str::from_utf8(&tb[..n]).unwrap_or("");
         let color = icon::PAL[0];
-        font_line(700, font::FB_H - TB_H + 10, 2, color, s);
+        font_line(700, font::fb_h() - TB_H + 10, 2, color, s);
     }
     0
 }
 
 /// 0x5B03: 开始按钮命中。
 pub fn fujo_desk_start(x: u64, y: u64) -> i64 {
-    if y >= (font::FB_H - TB_H) as u64 && x < 64 && y >= (font::FB_H - 38) as u64 {
+    if y >= (font::fb_h() - TB_H) as u64 && x < 64 && y >= (font::fb_h() - 38) as u64 {
         1
     } else {
         0
