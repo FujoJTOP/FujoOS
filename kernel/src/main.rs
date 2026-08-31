@@ -24,6 +24,7 @@ mod fjfs;
 mod font;
 mod fujr;
 mod gl;
+mod hvm;
 mod gdt;
 mod graphics;
 mod interrupts;
