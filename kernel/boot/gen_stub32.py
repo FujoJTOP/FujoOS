@@ -88,11 +88,13 @@ emit(b"\xea" + struct.pack("<I", RUST_ENTRY) + struct.pack("<H", 0x08), p); p +=
 assert p <= BLOB_BASE + 0x1000, "stub too long"
 
 # ================= 页表数据（4 KiB 页, 16 MiB 恒等映射） =================
-set64(PML4, PDPT | 3)
-set64(PDPT, PD_BASE | 3)
-# PD[0] = PT0 (2 MiB 区); 共 8 个页表覆盖 16 MiB
+# 注意: x86 页表遍历在**每一级**都检查 U/S 位 —— 用户访问要求
+# PML4/PDPT/PD/PTE 全链 U=1, 只设叶级会 #PF (M1 踩坑实录; e=5 U 违规)。
+set64(PML4, PDPT | 0x07)          # PML4[0]: P|RW|U
+set64(PDPT, PD_BASE | 0x07)       # PDPT[0]: P|RW|U
+# PD[0..7] = PT 指针, 任意用途均为用户可见 (16MiB 恒等区)
 for i in range(8):
-    set64(PD_BASE + 8 * i, (PT_BASE + 0x1000 * i) | 3)
+    set64(PD_BASE + 8 * i, (PT_BASE + 0x1000 * i) | 0x07)
 # 页表内容
 for i in range(8):
     for j in range(512):

@@ -1,14 +1,23 @@
 /* user_test.c — M1 Ring3 用户态测试程序 (linux-x64 ABI)
  *
- * 诊断版: 第一条指令就是 syscall; rax 由内核在 iret 前预置为 60 (exit)。
- * 编译:
- *   clang --target=x86_64-unknown-linux-gnu -nostdlib -static -fno-pie -no-pie \
- *         -fuse-ld=lld -Wl,-e,_start -Wl,-T,sdk/user/user.ld sdk/user/user_test.c \
- *         -o sdk/user/user_test.elf
- *   python tools/flatten_elf.py sdk/user/user_test.elf kernel/src/user_test.bin
+ * 分离实验: iretq 到 CPL0 运行同一程序 (改 fujo_enter_user 的 CS/SS 即可)。
+ * 本版程序: 写 syscall + exit (写时用), 用于验证执行路径本身。
  */
+typedef long int64_t;
+
+static int64_t sc3(long nr, long a, long b, long c) {
+    register long rax asm("rax") = nr;
+    register long rdi asm("rdi") = a;
+    register long rsi asm("rsi") = b;
+    register long rdx asm("rdx") = c;
+    asm volatile("syscall" : "+r"(rax) : "r"(rdi), "r"(rsi), "r"(rdx) : "rcx", "r11", "memory");
+    return rax;
+}
+
 void _start(void) {
-    asm volatile("syscall" ::: "rcx", "r11", "memory");
+    static const char m[] = "user : ring3 program live — syscall write ok\n";
+    sc3(1, 1, (long)m, (long)(sizeof(m) - 1));
+    sc3(60, 0, 0, 0);
     for (;;) {
     }
 }

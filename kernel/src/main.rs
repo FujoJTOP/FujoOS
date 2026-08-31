@@ -152,35 +152,13 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     out_line("timer : 100 ticks = 1.0 s elapsed (PIT @100 Hz)");
 
     // ---- M1: 用户态测试程序 (linux-x64 ABI, 原生 syscall) ----
-    // 诊断: 进入用户态前打印实际页表与 TSS (调试用, 展示后保留)
     unsafe {
-        let pd2: u64 = core::ptr::read((0x104000usize as *const u64).add(2));
-        let pte: u64 = core::ptr::read(0x10A000usize as *const u64);
         out_raw("test : PD[2]=");
-        out_hex_u32(pd2 as u32);
+        out_hex_u32((core::ptr::read((0x104000usize as *const u64).add(2)) as u32));
         out_raw(" PT2[0]=");
-        out_hex_u32(pte as u32);
+        out_hex_u32((core::ptr::read(0x10A000usize as *const u64)) as u32);
         out_raw(" tss.rsp0=");
         out_hex_u32(gdt::debug_tss_rsp0() as u32);
-        out_raw(" cr3=");
-        let mut cr3: u64 = 0;
-        asm!("mov {}, cr3", out(reg) cr3, options(nomem, nostack));
-        out_hex_u32(cr3 as u32);
-        out_line("");
-        // 内存 0x27 (被 CPU 当作执行区) 的内容
-        out_raw("test : bytes@0x27   : ");
-        for i in 0..8usize {
-            let b = core::ptr::read((0x27usize as *const u8).add(i));
-            out_hex_u32(b as u32);
-            out_raw(" ");
-        }
-        out_line("");
-        let full: &[u8] = include_bytes!("user_test.bin");
-        out_raw("test : bytes@bin    : ");
-        for i in 0..8usize {
-            out_hex_u32(full[i] as u32);
-            out_raw(" ");
-        }
         out_line("");
     }
     syscall::enter_user_test();

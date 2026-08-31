@@ -177,27 +177,16 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
             halt_forever();
         }
         _ => {
-            // 只打印前 5 次, 之后停机: 防止无限 spam 淹没日志
+            // 未实现: 打印一次(带计数), 返回 -ENOSYS
             let c = unsafe {
                 let p = core::ptr::addr_of_mut!(spam_count);
                 p.write_volatile(p.read_volatile() + 1);
                 p.read_volatile()
             };
-            if c <= 5 {
-                serial::write_str("sys nr=");
+            if c <= 3 {
+                serial::write_str("syscall unimplemented nr=");
                 print_dec(nr);
-                serial::write_str(" ret=");
-                print_hex(ret);
-                serial::write_str(" a0=");
-                print_hex(a0);
-                serial::write_str(" a1=");
-                print_hex(a1);
-                serial::write_str(" a2=");
-                print_hex(a2);
                 serial::write_line("");
-            }
-            if c > 6 {
-                halt_forever();
             }
             -38 // -ENOSYS
         }
