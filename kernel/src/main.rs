@@ -13,6 +13,7 @@
 
 mod ai;
 mod ata;
+mod clip;
 mod elf_loader;
 mod fjfs;
 mod font;

@@ -25,6 +25,7 @@ pub const WM_CREATE: u32 = 0x10;
 pub const WM_DESTROY: u32 = 0x11;
 pub const WM_ZORDER: u32 = 0x12;
 pub const WM_MOVE: u32 = 0x13;
+pub const WM_DROPFILES: u32 = 0x14;
 
 /// 类表: (name, id); id=0 为空位。
 static mut CLASSES: [([u8; 16], u32); 8] = [([0; 16], 0); 8];
@@ -85,10 +86,10 @@ fn refresh_rects() {
         let mut n = 0usize;
         for k in 0..WMAX {
             if WINS[k].1 != 0xFFFF_FFFF && n < 8 {
-                rects[n * 5] = WINS[k].0[1];
-                rects[n * 5 + 1] = WINS[k].0[2];
-                rects[n * 5 + 2] = WINS[k].0[3];
-                rects[n * 5 + 3] = WINS[k].0[4];
+                rects[n * 5] = WINS[k].0[1]; // x0
+                rects[n * 5 + 1] = WINS[k].0[2]; // y0
+                rects[n * 5 + 2] = WINS[k].0[1] + WINS[k].0[3]; // x1 = x+w
+                rects[n * 5 + 3] = WINS[k].0[2] + WINS[k].0[4]; // y1 = y+h
                 rects[n * 5 + 4] = WINS[k].1;
                 n += 1;
             }
@@ -249,4 +250,9 @@ pub fn notify_button(x: u32, y: u32, btn: u32, focus: u32) {
     if focus != 0xFFFF_FFFF {
         push_msg(WM_BUTTON, focus, x, y, btn);
     }
+}
+
+/// M43: 外部消息投递 (clip::fujo_dnd_drop 等)。
+pub fn push_external(kind: u32, win: u32, a: u32, b: u32, c: u32) {
+    push_msg(kind, win, a, b, c);
 }

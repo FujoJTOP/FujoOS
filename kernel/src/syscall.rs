@@ -378,6 +378,13 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5121 => crate::ipc::fujo_sigkill(a0, a1),
         // fujo_sigret() -> 0
         0x5122 => crate::ipc::fujo_sigret(),
+        // ---- M43: 剪贴板/拖放 ----
+        0x5801 => crate::clip::fujo_clip_set(a0, a1),
+        0x5802 => crate::clip::fujo_clip_get(a0, a1),
+        0x5803 => crate::clip::fujo_clip_len(),
+        0x5804 => crate::clip::fujo_dnd_begin(a0 as u32, a1 as u32, a2 as u32),
+        0x5805 => crate::clip::fujo_dnd_move(a0 as u32, a1 as u32),
+        0x5806 => crate::clip::fujo_dnd_drop(a0 as u32, a1 as u32, a2),
         // ---- M40: IME 骨架 ----
         0x5701 => crate::ime::fujo_ime_begin(),
         0x5702 => crate::ime::fujo_ime_key(a0),

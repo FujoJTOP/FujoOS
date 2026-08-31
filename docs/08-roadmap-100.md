@@ -358,7 +358,16 @@
       说明: QEMU HMP mouse_button 注入不产生按钮包(按钮消息路径按
       hit-test 逻辑经 kt_button_click 双路验证); 按钮坐标曾置于窗口界
       外(y=208>200) → 焦点不命中 → 修入窗内 y=188
-- [ ] **M43** 剪贴板/拖放雏形
+- [x] **M43** 剪贴板/拖放雏形 —— **clip.rs**: 剪贴板 8KB 缓冲
+      (0x5801 set / 0x5802 get / 0x5803 len) + **拖放会话**
+      (0x5804 begin / 0x5805 move→命中预览 / 0x5806 drop→命中窗口
+      → 队列 **WM_DROPFILES**(0x14, win,x,y,payload));
+      命中共用 mouse HIT_RECTS 表(wmsg refresh_rects);
+      **m43_clip.elf 实测**: clip 往返 `'hello-clipboard'`(15B) →
+      `dnd_move hit=1`(rect 100,100,300,220) → `dnd_drop dest=1` →
+      **`wm_dropfiles=1 win=1 payload=0xbeef`** → **M43 RESULT: PASS**;
+      **修复链**: refresh_rects 误把 w/h 当 x1/y1 注册(历史躲过 —
+      M37/M38 命中恰好 w>=x) → 修 x+w/y+h; 回归: 矩阵 9/9
 - [ ] **M44** 图标/主题/调色板系统
 - [ ] **M45** 终端窗口控件(串口/VGA 转 GUI)
 - [ ] **M46** 桌面环境:任务栏/开始菜单雏形
