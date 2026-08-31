@@ -38,7 +38,7 @@ FujoOS 的目标不是"又一个 Linux 发行版"，而是一个**以应用程�
 
 ```
 FujoOS/
-├── docs/                    # 设计与规范（架构 / .run 格式 / 兼容层 / UI / SDK / 路线图）
+├── docs/                    # 设计与规范（架构 / .run 格式 / 兼容层 / UI / SDK / 路线图 / AI OS 愿景）
 ├── fujo-compat/             # 二进制识别库：PE / ELF / Mach-O / .run 容器读写（零依赖）
 ├── fujopack/                # 打包器 CLI：任意格式 -> .run
 ├── fujorun/                 # 运行器 CLI：解析 / 校验 / 导出 .run
@@ -47,6 +47,8 @@ FujoOS/
 ├── tools/                   # 构建辅助（ELF 扁平化等）
 ├── scripts/                 # setup / build / qemu 一键脚本
 ```
+
+> **AI OS 愿景**：我们的立场见 `docs/07-ai-os-vision.md` 与 [Issue #1](https://github.com/FujoJTOP/FujoOS/issues/1)（四件套：模型调用原语 / Agent 一等进程 / 上下文即服务 / 权限与审计）。
 
 ## 四、快速开始（Windows 开发机）
 
