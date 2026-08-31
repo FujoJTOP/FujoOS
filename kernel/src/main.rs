@@ -15,6 +15,7 @@ mod elf_loader;
 mod gdt;
 mod graphics;
 mod interrupts;
+mod kbd;
 mod pe_loader;
 mod serial;
 mod syscall;
@@ -160,6 +161,10 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     } else {
         out_line("gfx  : framebuffer unavailable (VBE not present), desktop skipped");
     }
+
+    // ---- M5: 输入系统 (PS/2 键盘 IRQ1 + 交互终端窗) ----
+    kbd::init();
+    kbd::demo();
 
     // ---- M2/M3: 用户态测试 (ELF/PE 模块装载 + ABI syscall) ----
     syscall::enter_user_test(mbi);

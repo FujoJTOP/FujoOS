@@ -49,13 +49,14 @@ struct IdtPtr {
 
 static mut IDT_PTR: IdtPtr = IdtPtr { limit: 0, base: 0 };
 
-const IDT_SIZE: usize = 0x21; // 0..0x20
+const IDT_SIZE: usize = 0x22; // 0..0x21 (异常 + IRQ0 timer + IRQ1 keyboard)
 
 static mut IDT: [IdtEntry; IDT_SIZE] = [IdtEntry::empty(); IDT_SIZE];
 
 extern "C" {
     fn fujo_exc_stub_table();
     fn fujo_pit_stub();
+    fn fujo_kbd_stub();
 }
 
 core::arch::global_asm!(r#"
@@ -97,6 +98,21 @@ fujo_pit_stub:
     out 0x20, al
     pop rax
     iretq
+
+    # ---- 键盘 (IRQ1) —— 调 C 处理 (读 0x60/入环/EOI) ----
+    .p2align 4
+    .global fujo_kbd_stub
+fujo_kbd_stub:
+    push rax
+    push rcx
+    push rdx
+    push rdi
+    call fujo_kbd_irq
+    pop rdi
+    pop rdx
+    pop rcx
+    pop rax
+    iretq
 "#);
 
 /// 异常处理（C 侧, 只打印并停机）
@@ -132,7 +148,7 @@ fn pic_remap() {
         serial::outb(0xA1, 0x02);
         serial::outb(0x21, 0x01);
         serial::outb(0xA1, 0x01);
-        serial::outb(0x21, 0xFE); // 仅 IRQ0 (timer)
+        serial::outb(0x21, 0xFE); // 仅 IRQ0 (timer) — M5 二分: 键盘 IRQ1 暂时屏蔽
         serial::outb(0xA1, 0xFF);
     }
 }
@@ -151,6 +167,7 @@ pub fn init() {
 
     let stub_base = fujo_exc_stub_table as usize as u64;
     let pit_addr = fujo_pit_stub as usize as u64;
+    let kbd_addr = fujo_kbd_stub as usize as u64;
 
     unsafe {
         for i in 0..15usize {
@@ -175,6 +192,18 @@ pub fn init() {
         core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_mid), (pit_addr >> 16) as u16);
         core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_hi), (pit_addr >> 32) as u32);
         core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).zero), 0u32);
+
+        let e = (core::ptr::addr_of_mut!(IDT) as *mut IdtEntry).add(0x21);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_lo), kbd_addr as u16);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).sel), 0x08u16);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).ist), 0u8);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).attr), 0x8Eu8);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_mid), (kbd_addr >> 16) as u16);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_hi), (kbd_addr >> 32) as u32);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).zero), 0u32);
+        // 注: mask 保持 IRQ0+IRQ1 开放 (0xFD)。
+        #[cfg(debug_assertions)]
+        let _ = kbd_addr;
 
         core::ptr::write_volatile(core::ptr::addr_of_mut!(IDT_PTR.limit), (IDT_SIZE * 16 - 1) as u16);
         core::ptr::write_volatile(core::ptr::addr_of_mut!(IDT_PTR.base), &raw mut IDT as u64);
