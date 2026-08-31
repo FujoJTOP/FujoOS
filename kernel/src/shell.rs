@@ -68,6 +68,35 @@ pub fn argv_mode() -> bool {
     unsafe { ARGV_MODE }
 }
 
+/// M23b: busybox 命令参数 (argv[1..]), 由 `os run busybox <args...>` 解析。
+/// v0: 单槽 (最大 8 参数, 每参数 31 字符)。
+static mut ARGV_CMD: [[u8; 32]; 8] = [[0; 32]; 8];
+static mut ARGV_CMD_N: usize = 0;
+
+pub fn set_argv_cmd(words: &[&str]) {
+    unsafe {
+        ARGV_CMD_N = words.len().min(8);
+        for (i, w) in words.iter().enumerate().take(ARGV_CMD_N) {
+            let bytes = w.as_bytes();
+            let n = bytes.len().min(31);
+            let mut k = 0;
+            while k < n {
+                ARGV_CMD[i][k] = bytes[k];
+                k += 1;
+            }
+            ARGV_CMD[i][k] = 0;
+        }
+    }
+}
+
+pub fn argv_cmd() -> &'static [[u8; 32]; 8] {
+    unsafe { &ARGV_CMD }
+}
+
+pub fn argv_cmd_n() -> usize {
+    unsafe { ARGV_CMD_N }
+}
+
 pub fn shell(mbi: u32) -> ! {
     vga::set_color(0x07);
     out_line("");
@@ -127,8 +156,20 @@ pub fn shell(mbi: u32) -> ! {
                     out_line("os   : launching fork demo ...");
                     syscall::enter_user_test(mbi); // > !: 不再返回
                 } else if t1 == "run" && t2 == "busybox" {
-                    // M23: 静态 busybox (argc/argv 栈帧)
+                    // M23: 静态 busybox (argc/argv 栈帧); 额外词 -> argv[1..]
                     set_argv_mode(true);
+                    let mut words: [&str; 8] = [""; 8];
+                    let mut wn = 0usize;
+                    while wn < 8 {
+                        match parts.next() {
+                            Some(w) => {
+                                words[wn] = w;
+                                wn += 1;
+                            }
+                            None => break,
+                        }
+                    }
+                    set_argv_cmd(&words[..wn]);
                     out_line("os   : launching busybox (argv mode) ...");
                     syscall::enter_user_test(mbi); // > !: 不再返回
                 } else {

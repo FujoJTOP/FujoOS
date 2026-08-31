@@ -426,9 +426,11 @@ fn user_write(fd: u64, ptr: u64, len: u64) -> i64 {    // M15: fd>=3 先走 VFS 
         // /dev/tty: 落到串口
     }
     let _ = fd;
-    // 用户地址范围检查: linux/win 低区 (0x400000..0x800000) 或 darwin 区
-    // (0x100000000..0x100800000, M6 Mach-O 原生地址)
-    let in_low = ptr >= 0x400000 && ptr <= 0x800000;
+    // 用户地址范围检查: linux/win 低区 (0x400000..0xC00000, 含堆/mmap 区)
+    // 或 darwin 区 (0x100000000..0x100800000, M6 Mach-O 原生地址)。
+    // M23b 更新: 0x800000..0xC00000 是 musl/glibc mmap 堆 (busybox stdout
+    // 缓冲即落此处; 旧界 0x800000 拒绝 -> write EFAULT, 实证)。
+    let in_low = ptr >= 0x400000 && ptr <= 0xC00000;
     let in_darwin = ptr >= 0x100000000 && ptr <= 0x100800000;
     if !in_low && !in_darwin {
         serial::write_line("syscall write: bad user pointer");
@@ -514,9 +516,9 @@ fn fork_self(args: *const u64) -> i64 {
 
 /// M21: linuxsubsys syscall 面扩展实现 (~20 个常用)
 
-/// 用户指针区域检查 (linux 低区 + darwin 区)。
+/// 用户指针区域检查 (linux 低区 0x400000..0xC00000 含堆, + darwin 区)。
 fn user_ok(ptr: u64, len: u64) -> bool {
-    let in_low = ptr >= 0x400000 && ptr <= 0x800000;
+    let in_low = ptr >= 0x400000 && ptr <= 0xC00000;
     let in_darwin = ptr >= 0x100000000 && ptr <= 0x100800000;
     in_low || in_darwin
 }
@@ -813,34 +815,60 @@ pub fn enter_user_test(mbi: u32) -> ! {
         // 帧区选 0x5F0000 起 (与 STACK=0x5FFFF8 不冲突的独立区域)
         let sp0 = 0x5F0000u64;
         unsafe {
-            // 字符串: argv0="busybox" 逆序放 (栈向低生长)
-            let mut cur = sp0;
-            let argv0 = b"busybox\0";
-            for &b in argv0.iter().rev() {
-                cur -= 1;
-                (cur as *mut u8).write(b);
+            // 字符串: 逆序放置 argv 表 (argv[0]="busybox", argv[1..]=命令词)
+            let cmdn = crate::shell::argv_cmd_n();
+            let cmds = crate::shell::argv_cmd();
+            let argc = 1 + cmdn;
+            let mut ptrs = [0u64; 16];
+            let mut strs: [[u8; 32]; 9] = [[0; 32]; 9];
+            {
+                let bb = b"busybox";
+                for k in 0..bb.len() {
+                    strs[0][k] = bb[k];
+                }
             }
-            let mut ptrs = [0u64; 8];
-            ptrs[0] = cur; // argv[0]
-            // 指针区放 0x5F0400: [argc][argv0][0][envp][0(空envp)][auxv...][0]
+            for i in 0..cmdn.min(8) {
+                strs[1 + i] = cmds[i];
+            }
+            // 字符串放置: 从后往前 (argv[argc-1] 先放高地址, argv[0] 最后放
+            // 最低地址) —— 低地址留给 argv[0], 避免后放置覆盖先放字符串。
+            let mut cur = 0x5F0C00u64;
+            for a in (0..argc).rev() {
+                let s = strs[a.min(8)];
+                let mut end = 31;
+                while end > 0 && s[end] == 0 {
+                    end -= 1;
+                }
+                let len = (end + 2) as u64; // 字符 + NUL (s[end] 是最后非 0)
+                cur -= len;
+                for k in 0..len {
+                    ((cur + k) as *mut u8).write(s[k as usize]);
+                }
+                ((cur + len - 1) as *mut u8).write(0u8); // 保障 NUL
+                ptrs[a] = cur;
+            }
+            // 指针区放 0x5F0400: [argc][argv0..][0][envp][0][auxv...][0]
             let argp = 0x5F0400u64;
-            let n = 1usize;
-            (argp as *mut u64).write(n as u64); // argc=1
-            (argp as *mut u64).add(1).write(ptrs[0]);
-            (argp as *mut u64).add(2).write(0u64); // argv 结束
-            (argp as *mut u64).add(3).write(0u64); // envp 结束 (无环境)
-            // auxv (起始于 argp+4*8): 至少 AT_PHDR/AT_PHNUM/AT_ENTRY/AT_SECURE/AT_NULL
-            // 注意 AT_PHDR 必须指向 ELF program header —— busybox 的入口已知
-            // 0x40b300, ELF 头在 0x400000, 段表在 0x400040 (e_phoff=64)
-            let aux = argp + 32;
+            let n = argc;
+            (argp as *mut u64).write(n as u64); // argc
+            for i in 0..n {
+                (argp as *mut u64).add(1 + i).write(ptrs[i]);
+            }
+            (argp as *mut u64).add(1 + n).write(0u64); // argv 结束
+            // envp: 空串 + NULL
+            (argp as *mut u64).add(2 + n).write(0x5F0100u64);
+            (argp as *mut u64).add(3 + n).write(0u64); // envp 结束
+            (0x5F0100u64 as *mut u8).write(0u8); // ""
+            // auxv (起始于 argp+(4+n)*8)
+            let aux = argp + (4 + n as u64) * 8;
             (aux as *mut u64).add(0).write(3u64); // AT_PHDR
             (aux as *mut u64).add(1).write(0x400040u64);
             (aux as *mut u64).add(2).write(4u64); // AT_PHENT
             (aux as *mut u64).add(3).write(56u64);
             (aux as *mut u64).add(4).write(5u64); // AT_PHNUM
-            (aux as *mut u64).add(5).write(5u64);
+            (aux as *mut u64).add(5).write(9u64); // musl busybox e_phnum=9
             (aux as *mut u64).add(6).write(9u64); // AT_ENTRY
-            (aux as *mut u64).add(7).write(0x40b300u64);
+            (aux as *mut u64).add(7).write(0x401eb9u64); // musl busybox entry
             (aux as *mut u64).add(8).write(23u64); // AT_SECURE
             (aux as *mut u64).add(9).write(0u64);
             (aux as *mut u64).add(10).write(25u64); // AT_RANDOM
@@ -853,8 +881,14 @@ pub fn enter_user_test(mbi: u32) -> ! {
             (aux as *mut u64).add(13).write(0x1000u64);
             (aux as *mut u64).add(14).write(0u64); // AT_NULL
             (aux as *mut u64).add(15).write(0u64);
+            // stack_end 区清零
+            for off in 0x120usize..0x200 {
+                ((argp + off as u64) as *mut u8).write(0u8);
+            }
             user_rsp = argp;
-            serial::write_str("argv : argc=1 stack @");
+            serial::write_str("argv : argc=");
+            print_dec(n as u64);
+            serial::write_str(" stack @");
             print_hex(argp);
             serial::write_line("");
         }

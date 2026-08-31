@@ -115,7 +115,19 @@
       argv 帧 demo(argc=1, argv[0]="busybox") **PASS**, 用户态执行流进入
       glibc init(用户 RIP 推进); **未完项(M23b)**: glibc 静态 init 深链路
       (TLS/更多 syscall 直通) 使 busybox 达 usage 输出 —— 待 M24/M25 输入
-- [ ] **M23b** busybox 完整原生运行(验收: ls/cat/echo/管道)
+- [x] **M23b** busybox 完整原生运行(验收: ls/cat/echo/管道) ——
+      **musl 静态 busybox**(alpine busybox-static 1.36.1-r31, 1.0MB 静态 ELF,
+      段 0x400000..0x4FC1E8)在 FujoOS **原生执行命令**: `os run busybox` →
+      显示版本/Usage 帮助; `os run busybox echo hello` → **输出 hello (PASS)**;
+      架构: 用户进程栈 [argc][argv…][0][envp][0][auxv: AT_PHDR/PHENT/PHNUM/
+      ENTRY/RANDOM/PAGESZ][0] 完整构造(0x5F0400 指针区 + 0x5F0C00 字符串区),
+      shell `os run busybox <cmd> <args...>` 解析 argv[1..];
+      **修复链**: musl 已取代 glibc 静态(glibc 需 TLS/termios 深层, 记为 M25k
+      后续); write/mmap 等用户指针检查放宽到 0xC00000(堆/mmap 区);
+      argv 字符串放置顺序(逆序防覆盖) + NUL 终结(len=end+2)两个实证 bug;
+      剩余 syscall: nr14(rt_sigprocmask)/nr106(mmap 相关) 被优雅忽略;
+      **下一步(M24/M25)**: 编译自带 musl 静态 hello 直跑 → 符号表/动态链接
+- [ ] **M24** ELF 动态链接最小化(interp + 符号表)
 - [ ] **M24** ELF 动态链接最小化(interp + 符号表)
 - [ ] **M25** musl/glibc hello 直跑
 - [ ] **M26** winsubsys:kernel32 文件 IO/堆/线程垫片家族
