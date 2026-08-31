@@ -189,6 +189,11 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
             serial::write_line(" (~100 Hz since boot)");
             halt_forever();
         }
+        // ---- M9: fujonn 模型调用原语 (fujoos-ai-dev) ----
+        // fujo_ai_classify(ptr, len) -> intent
+        0x5101 => crate::ai::fujo_ai_classify(a0, a1),
+        // fujo_ai_fetch(ptr, len) -> n (fujoctx 上下文注入)
+        0x5102 => crate::ai::fujo_ai_fetch(a0, a1),
         // ---- darwin BSD 空间 (0x2000000|nr, M6 darwinsubsys) ----
         0x200_0001 => {
             serial::write_line("user : darwin exit() — 内核接管, M6 验证完成");

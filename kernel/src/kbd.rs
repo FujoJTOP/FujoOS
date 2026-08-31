@@ -155,6 +155,18 @@ fn print_hex64(v: u64) {
     serial::write_str(core::str::from_utf8(&buf).unwrap());
 }
 
+/// 轮询一个已解码按键 (无则 None)。Agent/主循环使用。
+pub fn try_poll() -> Option<char> {
+    unsafe {
+        if KBD_TAIL == KBD_HEAD {
+            return None;
+        }
+        let t = KBD_HEAD;
+        KBD_HEAD = (t + 1) % BUF_SIZE;
+        decode(KBD_BUF[t])
+    }
+}
+
 /// 按键事件服务声明 (M5 交互窗口证据见提交 64748e8; QEMU sendkey 注入
 /// F/U/J/O 已全命中)。启动路径跳过 3s 等待窗口, 直接回到主流程。
 pub fn demo() {

@@ -11,6 +11,7 @@
 #![no_main]
 #![allow(static_mut_refs)]
 
+mod ai;
 mod elf_loader;
 mod gdt;
 mod graphics;
@@ -61,8 +62,8 @@ static MB_HEADER: MultibootHeader = MultibootHeader {
     load_addr: 0x0010_0000,
     // 注意: 必须覆盖整个镜像(rodata/data/bss)。内核增长时要同步扩大,
     // 否则尾部段不被加载 -> 字符串/内嵌二进制为垃圾 RAM (M1 踩坑实录)。
-    load_end_addr: 0x0021_0000,
-    bss_end_addr: 0x0021_0000,
+    load_end_addr: 0x0022_0000,
+    bss_end_addr: 0x0022_0000,
     entry_addr: 0x0010_1000,
 };
 
@@ -166,6 +167,48 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     // ---- M5: 输入系统 (PS/2 键盘 IRQ1 + 交互终端窗; 集成验证) ----
     kbd::init();
     kbd::demo();
+
+    // ---- M9 (fujoos-ai-dev): Agent 宿主 —— 命令捕获 -> 意图槽 ----
+    let mut cmd = [0u8; 32];
+    let mut used = 0usize;
+    let mut done = false;
+    let mut iter: u64 = 0;
+    out_line("m9   : agent host up — type a command (sendkey: r u n + enter)");
+    while !done && iter < 30_000_000 {
+        iter += 1;
+        while let Some(c) = kbd::try_poll() {
+            if c == '\n' {
+                done = true;
+            } else if c == '\x08' {
+                if used > 0 {
+                    used -= 1;
+                }
+            } else if used < 30 {
+                cmd[used] = c as u8;
+                used += 1;
+            }
+        }
+    }
+    if used == 0 {
+        let d = b"run";
+        for (i, &b) in d.iter().enumerate() {
+            cmd[i] = b;
+        }
+        used = d.len();
+        out_line("m9   : no input, default cmd='run'");
+    }
+    unsafe {
+        let slot = 0x402000 as *mut u8;
+        for i in 0..64 {
+            slot.add(i).write(0);
+        }
+        for i in 0..used {
+            slot.add(i).write(cmd[i]);
+        }
+    }
+    out_raw("m9   : agent cmd='");
+    out_raw(core::str::from_utf8(&cmd[..used]).unwrap_or("?"));
+    out_raw("' — launching agent (ring3)\n");
 
     // ---- M2/M3/M6: 用户态测试 (ELF/PE/Mach-O 模块装载 + ABI syscall) ----
     syscall::enter_user_test(mbi);

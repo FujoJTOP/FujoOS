@@ -33,6 +33,15 @@ if (Test-Path "$llvm\llvm-dlltool.exe") {
     Write-Host "  dlltool missing: win sample skipped (PE loader regress via fixtures only)"
 }
 
+Write-Host "== [0d] build M9 agent (ring3, model-call client) =="
+if (Test-Path "$llvm\clang.exe") {
+    & "$llvm\clang.exe" --target=x86_64-unknown-linux-gnu -O2 -nostdlib -static -fno-pie -no-pie `
+        -fuse-ld=lld -fno-builtin "-Wl,-e,_start" "-Wl,-T,$root\sdk\user\user.ld" `
+        ..\sdk\ai\agent.c -o ..\sdk\ai\agent.elf
+} else {
+    Write-Host "  clang missing: agent skipped"
+}
+
 Write-Host "== [1/4] generate boot stub (32-bit stub + page tables + GDT) =="
 python boot\gen_stub32.py
 
@@ -40,5 +49,5 @@ Write-Host "== [2/4] cargo build (x86_64-unknown-none) =="
 cargo build --release
 
 Write-Host "== [3/4] flatten + QEMU boot (module = PE win sample; ELF 回归: 换 -initrd user_test.elf) =="
-python ..\tools\flatten_elf.py target\x86_64-unknown-none\release\fujo-kernel fujo-kernel.bin --pad 0x110000
+python ..\tools\flatten_elf.py target\x86_64-unknown-none\release\fujo-kernel fujo-kernel.bin --pad 0x120000
 qemu-system-x86_64 -m 128M -kernel fujo-kernel.bin -initrd ..\sdk\win\hello_win.exe -display none -serial stdio -monitor none -no-reboot
