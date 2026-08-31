@@ -159,7 +159,31 @@
       与旧二进制缓存(entry 0x21f230 确认); 构造: msvcrt 无需(裸
       WinMain/GetStdHandle 直链 kernel32.def); 回归: M3 hello_win.exe
       (WriteFile/ExitProcess) 仍 PASS
-- [ ] **M27** mingw 控制台程序原生运行
+- [x] **M27** mingw 控制台程序原生运行 ——
+      **mingw-w64 real CRT 程序**(x86_64-w64-mingw32-gcc 16.1, `mainCRTStartup`
+      + 静态 mingwex libc, `--image-base 0x400000 -s`)在 FujoOS 原生执行:
+      `os run win` → **`m27: mingw console app alive` / `argc=1` /
+      `argv[0]=C:\...\m27_mingw.exe` / `heap works` / `M27 RESULT: PASS`** →
+      `msvcrt exit(7)` 内核接管;51 全导入绑定(23 kernel32 + 3 数据导入 +
+      32 msvcrt(28 码 + 数据 cell));
+      架构: **表驱动垫片注册表**(55 蹦床槽 + 通用 no-op 槽)、**GS 基址
+      = 假 TEB**(0x7E1000, mingw 启动读 gs:[0x30]=Self→[Self+8]=StackBase,
+      由 fujo_enter_user iretq 前写 MSR_GS_BASE)、**__getmainargs**
+      回填 argc/argv/envp(用户态 0x7E0400 帧)、**__iob_func/FILE[2]/
+      _errno/lconv** 用户态数据块(0x7E0000..0x7E3000)、**msvcrt
+      malloc/calloc/free**(内核 bump 0x800000 起)、**mini printf 引擎**
+      (vfprintf va=char* 参数数组)、Win64 CRT 无需 getmainargs 之后
+      自 argv-dup 全通;
+      **修复链(两处 trampoline 实证缺陷)**: ① pop rax 把 syscall 返回值
+      覆盖成调用方原 rax(M26 没查返回值所以未暴露; malloc 返 16 = 参数
+      区大小) → 改跳过 rax 槽保留结果; **② trampoline 破坏 Win64
+      callee-saved rdi/rsi**(mingw main 把 argc 存 esi 越过 puts 垫片后
+      被 mov rsi,rdx 覆盖 → argc 打印 0x800000/3 漂移) → push/pop rdi/rsi;
+      ③ GetProcAddress 返回已知垫片蹦床(动态解析 msvcrt 导出)/未知
+      通用 no-op;
+      **回归**: M26(m26_win ReadFile 32 bytes/GetFileSize=3072 转真实
+      语义, CloseHandle BOOL 化, fd=3 预打开 /boot/module)与 M3
+      (hello_win) 全 PASS
 - [ ] **M28** vcruntime 最小集
 - [ ] **M29** darwinsubsys:libSystem 薄层;darwin CLI 工具
 - [ ] **M30** 三子系统一致化(统一内核对象映射)

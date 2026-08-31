@@ -224,6 +224,29 @@ fn path_of(ptr: u64, len: u64) -> Option<[u8; 64]> {
     Some(p)
 }
 
+/// M26/M27: PE 程序启动时预打开 /boot/module -> fd=3 (kernel32 文件句柄家族
+/// 可直读自身模块; Windows 语义: 程序模块即一个可读句柄)。
+#[no_mangle]
+pub extern "C" fn fujo_open_startup_module() -> i64 {
+    unsafe {
+        let fd = match alloc_fd_slot() {
+            Some(f) => f,
+            None => return -24, // -EMFILE
+        };
+        NEXT_FD = NEXT_FD.max(fd + 1);
+        let f = &mut *core::ptr::addr_of_mut!(FILES[fd]);
+        f.name = "/boot/module";
+        f.kind = F_KIND_BLOB;
+        f.data_ptr = core::ptr::addr_of!(MODULE_COPY) as *const u8;
+        f.data_len = MODULE_COPY_LEN as u64;
+        f.pos = 0;
+        serial::write_str("vfs  : pre-open /boot/module fd=");
+        print_dec(fd as u64);
+        serial::write_line("");
+        fd as i64
+    }
+}
+
 /// 系统调用 open(nr2): 匹配固定表; flags: 0=RDONLY, 1=WRONLY, 2=RDWR。
 #[no_mangle]
 pub extern "C" fn fujo_open(ptr: u64, len: u64, flags: u64) -> i64 {

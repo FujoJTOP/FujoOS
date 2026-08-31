@@ -53,6 +53,12 @@ pub static mut user_rsp_tmp: u64 = 0;
 pub static mut sys_kernel_rsp: u64 = 0x300000;
 #[no_mangle]
 pub static mut spam_count: u64 = 0;
+/// M27: 用户态 GS 基址 (mingw CRT 的假 TEB; ELF 程序保持 0)。
+#[no_mangle]
+pub static mut user_gs_base: u64 = 0;
+/// M27: PE 模块 argv0 (__getmainargs 回填, 由装载路径写入)。
+#[no_mangle]
+pub static mut pe_argv0: [u8; 64] = [0; 64];
 /// M11: 用户 FPU/SIMD 状态 (syscall 进出保存恢复; 16 对齐 —— fxsave 要求)。
 #[repr(C, align(16))]
 pub struct FpuSave {
@@ -116,6 +122,12 @@ fujo_enter_user:
     mov cr3, rax          # TLB flush (M2 原有; 幂等)
     mov r8, rdi
     mov r10, rsi
+    # M27: 用户 GS 基址 (mingw TEB) — 先于 iretq 写 MSR_GS_BASE; ELF 保持 0
+    mov rax, [rip + user_gs_base]
+    mov ecx, 0xC0000101
+    mov rdx, rax
+    shr rdx, 32
+    wrmsr
     xor rax, rax
     xor rbx, rbx
     xor rcx, rcx
@@ -309,26 +321,9 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         257 => crate::vfs::fujo_open(a1, a2, a3),
         // getrandom(buf, len, flags) — PIT 混哈希假熵
         317 => sys_getrandom(a0, a1),
-        // ---- fujo 原生 Win32 shim 通道 (M3) ----
-        // kernel32!WriteFile (fd, buf, len)
-        0x5001 => user_write(a0, a1, a2),
-        // kernel32!ExitProcess (code)
-        0x5002 => {
-            serial::write_line("user : ExitProcess(0) - kernel takeover, M3 verified");
-            serial::write_str("timer : pit ticks=");
-            print_dec(interrupts::ticks());
-            serial::write_line(" (~100 Hz since boot)");
-            halt_forever();
-        }
-        // ---- M26: winsubsys 垫片家族扩展 ----
-        // kernel32!ReadFile (fd, buf, len) -> 实际读入 n
-        0x5003 => crate::vfs::fujo_read(a0, a1, a2),
-        // kernel32!GetFileSize (fd) -> 文件大小 (vfs 直通)
-        0x5004 => crate::vfs::fujo_size(a0),
-        // kernel32!GetCurrentThreadId -> 当前任务 id+1
-        0x5005 => crate::sched::current_task() as i64 + 1,
-        // kernel32!CloseHandle (fd >= 3 -> close)
-        0x5006 => crate::vfs::fujo_close(a0),
+        // ---- fujo 原生 Win32 shim 通道 (M3/M26 基础 + M27 mingw CRT 家族) ----
+        // kernel32.msvcrt 垫片 (0x5001..0x5017 | 0x5201..0x5221) -> 统一分发
+        0x5001..=0x5017 | 0x5201..=0x5221 => shim_dispatch(nr, args),
         // exit(code) / exit_group(code) -> 内核接管并停机
         60 | 231 => {
             serial::write_line("user : sys_exit() - kernel takeover, M6 verified");
@@ -490,6 +485,534 @@ fn halt_forever() -> ! {
     loop {
         crate::hlt();
     }
+}
+
+// ================= M27: winsubsys 垫片分发 (Win64 ABI -> fujo syscall) =================
+// 蹦床寄存器映射: rdi=arg1, rsi=arg2, rdx=arg3, rcx=arg4 (原 r9)。
+// args 帧: [0]=arg1 [1]=arg2 [2]=arg3 [4]=arg3(原样) [5]=arg4 [6]=arg4(rcx)。
+// 第 5 个以上参数在用户栈 [user_rsp_tmp+0x38] 起。
+fn shim_dispatch(nr: u64, args: *const u64) -> i64 {
+    unsafe {
+        let a1 = args.read();
+        let a2 = args.add(1).read();
+        let a3 = args.add(2).read();
+        let a4 = args.add(5).read();
+        match nr {
+            // ---------- kernel32 ----------
+            0x5001 => user_write(a1, a2, a3), // WriteFile(fd, buf, len)
+            0x5002 => {
+                // ExitProcess(code)
+                serial::write_str("user : ExitProcess(");
+                print_dec(a1);
+                serial::write_line(") - kernel takeover, M3 verified");
+                serial::write_str("timer : pit ticks=");
+                print_dec(interrupts::ticks());
+                serial::write_line(" (~100 Hz since boot)");
+                halt_forever()
+            }
+            0x5003 => {
+                // ReadFile(fd, buf, len, read_ptr, ovl) — 写回 *read + BOOL 语义
+                let n = crate::vfs::fujo_read(a1, a2, a3);
+                if n >= 0 {
+                    if a4 != 0 {
+                        (a4 as *mut u32).write(n as u32);
+                    }
+                    1
+                } else {
+                    0
+                }
+            }
+            0x5004 => crate::vfs::fujo_size(a1), // GetFileSize
+            0x5005 => crate::sched::current_task() as i64 + 1, // GetCurrentThreadId
+            0x5006 => {
+                // CloseHandle(fd) — vfs close 返回 0 成功, 转 BOOL
+                if crate::vfs::fujo_close(a1) >= 0 {
+                    1
+                } else {
+                    0
+                }
+            }
+            // GetModuleHandleA(name|NULL) -> 镜像基址 / 假模块句柄
+            0x5007 => {
+                if a1 == 0 {
+                    0x400000i64
+                } else {
+                    0x4001_0000i64
+                }
+            }
+            // GetProcAddress(h, name) -> 已知垫片返回蹦床地址; 未知 -> 通用 no-op
+            0x5008 => {
+                let mut nb = [0u8; 64];
+                let mut nn = 0usize;
+                while nn < 63 {
+                    let b = (a2 as *const u8).add(nn).read();
+                    if b == 0 {
+                        break;
+                    }
+                    nb[nn] = b;
+                    nn += 1;
+                }
+                let name = core::str::from_utf8(&nb[..nn]).unwrap_or("");
+                match crate::pe_loader::shim_resolve_any(name) {
+                    Some(idx) => crate::pe_loader::shim_addr(idx) as i64,
+                    None => crate::pe_loader::shim_noop_addr() as i64,
+                }
+            }
+            0x5009 => 0x4001_0000i64, // LoadLibraryA -> 假模块句柄 (成功)
+            0x500A => 1, // FreeLibrary
+            0x500B => 0, // GetLastError
+            0x500C => 0, // Sleep(ms) — PIT 在跑, no-op
+            0x500D => {
+                // VirtualProtect(addr, size, prot, old)
+                if a4 != 0 {
+                    (a4 as *mut u32).write(4);
+                }
+                1
+            }
+            0x500E => {
+                // VirtualQuery(addr, buf, len) — 填 MEMORY_BASIC_INFORMATION(x64)
+                let b = a2 as *mut u64;
+                b.add(0).write(a1); // BaseAddress
+                b.add(1).write(a1); // AllocationBase
+                (b.add(2) as *mut u32).write(4); // AllocationProtect
+                b.add(3).write(0x1000u64); // RegionSize
+                (b.add(4) as *mut u32).write(0x1000); // State=MEM_COMMIT
+                (b.add(5) as *mut u32).write(4); // Protect=PAGE_READWRITE
+                (b.add(6) as *mut u32).write(0x20000); // Type=MEM_PRIVATE
+                a3 as i64
+            }
+            0x500F => 0, // TlsGetValue
+            0x5010 => 0, // SetUnhandledExceptionFilter
+            0x5011 | 0x5012 | 0x5013 | 0x5014 => 0, // CS 操作
+            0x5015 => {
+                // MultiByteToWideChar(cp, flags, src, srclen, dst, dstlen)
+                let src = a2 as *const u8;
+                let dst = a4 as *mut u16;
+                let limit = if a3 == 0xFFFF_FFFF { 1024usize } else { a3 as usize };
+                let mut n = 0usize;
+                for i in 0..limit.min(1024) {
+                    let c = src.add(i).read();
+                    if a3 == 0xFFFF_FFFF && c == 0 {
+                        break;
+                    }
+                    dst.add(n).write(c as u16);
+                    n += 1;
+                }
+                n as i64
+            }
+            0x5016 => {
+                // WideCharToMultiByte(cp, flags, src, srclen, dst, dstlen)
+                let src = a2 as *const u16;
+                let dst = a4 as *mut u8;
+                let st = user_rsp_tmp;
+                let _dstlen = (st + 0x40) as *const u64; // 6th arg
+                let limit = if a3 == 0xFFFF_FFFF { 1024usize } else { a3 as usize };
+                let mut n = 0usize;
+                for i in 0..limit.min(1024) {
+                    let c = src.add(i).read();
+                    if a3 == 0xFFFF_FFFF && c == 0 {
+                        break;
+                    }
+                    dst.add(n).write((c & 0xFF) as u8);
+                    n += 1;
+                }
+                n as i64
+            }
+            0x5017 => {
+                // GetCPInfo(cp, buf) — CPINFO.MaxCharSize=1
+                (a2 as *mut u8).write(1);
+                1
+            }
+            // ---------- msvcrt ----------
+            0x5201 => 0, // __C_specific_handler (无 SEH 会走这里)
+            0x5202 => 1252, // ___lc_codepage_func
+            0x5203 => 1, // ___mb_cur_max_func
+            0x5204 => shim_getmainargs(a1, a2, a3), // __getmainargs
+            0x5206 => 0x7E0000i64, // __iob_func -> FILE[2]
+            0x5207 => 0, // __set_app_type
+            0x5208 => 0, // __setusermatherr
+            0x5209 => {
+                serial::write_line("msv : _amsg_exit() - ignored");
+                0
+            }
+            0x520A => 0, // _cexit
+            0x520B => 0x7E0100i64, // _errno -> &int cell
+            0x520C => 0, // _initterm (mu 无静态 ctor)
+            0x520D | 0x520E => 0, // _lock/_unlock
+            0x520F => 0, // atexit
+            0x5210 => 3, // abort (不中止内核)
+            0x5211 => {
+                // calloc(n, size): 清零
+                let total = a1.wrapping_mul(a2);
+                if total > 0x400000 {
+                    return 0;
+                }
+                let p = shim_heap_alloc(total);
+                for i in 0..total {
+                    (p as *mut u8).add(i as usize).write(0u8);
+                }
+                p as i64
+            }
+            0x5212 => {
+                // exit(code) — 内核接管
+                serial::write_str("user : msvcrt exit(");
+                print_dec(a1);
+                serial::write_str(") - kernel takeover, M27 verified (ticks=");
+                print_dec(interrupts::ticks());
+                serial::write_line(")");
+                halt_forever()
+            }
+            0x5213 => 0, // fflush (无缓冲)
+            0x5214 => {
+                // fprintf(fp, fmt, a1, a2)
+                let mut tmp = [0u64; 4];
+                tmp[0] = a3;
+                tmp[1] = a4;
+                shim_vfmt(a2, tmp.as_ptr(), 2)
+            }
+            0x5215 => {
+                // fputc(c, stream)
+                shim_write_chars(core::slice::from_ref(&(a1 as u8)))
+            }
+            0x5216 => 0, // free
+            0x5217 => 0x7E0200i64, // localeconv -> lconv
+            0x5218 => shim_heap_alloc(a1) as i64, // malloc
+            0x5219 => {
+                // memcpy(dst, src, n)
+                for i in 0..(a3 as usize).min(0x100000) {
+                    let b = (a2 as *const u8).add(i).read();
+                    (a1 as *mut u8).add(i).write(b);
+                }
+                a1 as i64
+            }
+            0x521A => {
+                // puts(str) -> "str\n"
+                let mut out = [0u8; 260];
+                let mut n = 0usize;
+                while n < 255 {
+                    let b = (a1 as *const u8).add(n).read();
+                    if b == 0 {
+                        break;
+                    }
+                    out[n] = b;
+                    n += 1;
+                }
+                out[n] = b'\n';
+                shim_write_chars(&out[..n + 1]);
+                1
+            }
+            0x521B => 0, // setvbuf
+            0x521C => 0, // signal
+            0x521D => 0x7E0330i64, // strerror
+            0x521E => {
+                // strlen
+                let mut n = 0u64;
+                while n < 0x100000 {
+                    let b = ((a1 + n) as *const u8).read();
+                    if b == 0 {
+                        break;
+                    }
+                    n += 1;
+                }
+                n as i64
+            }
+            0x521F => {
+                // strncmp(a, b, n)
+                let mut r = 0i64;
+                for i in 0..a3 {
+                    let x = ((a1 + i) as *const u8).read();
+                    let y = ((a2 + i) as *const u8).read();
+                    if x != y || x == 0 {
+                        r = x as i64 - y as i64;
+                        break;
+                    }
+                }
+                r
+            }
+            0x5220 => {
+                // vfprintf(fp, fmt, va) — va = mingw ms_va_list (char* 参数数组)
+                shim_vfmt(a2, a3 as *const u64, 8)
+            }
+            0x5221 => {
+                // wcslen
+                let mut n = 0u64;
+                while n < 0x100000 {
+                    let c = ((a1 + n * 2) as *const u16).read();
+                    if c == 0 {
+                        break;
+                    }
+                    n += 1;
+                }
+                n as i64
+            }
+            _ => 0,
+        }
+    }
+}
+
+/// __getmainargs(&argc, &argv, &envp, _dowildcard, &startinfo):
+/// 回填用户态 argv0 帧 (0x7E0400 指针区 + 0x7E0420 字符串区)。
+fn shim_getmainargs(argc_out: u64, argv_out: u64, envp_out: u64) -> i64 {
+    unsafe {
+        let mut n = 0usize;
+        while n < 63 && pe_argv0[n] != 0 {
+            n += 1;
+        }
+        if n == 0 {
+            let bb = b"m27_mingw.exe";
+            for k in 0..bb.len() {
+                pe_argv0[k] = bb[k];
+            }
+            pe_argv0[bb.len()] = 0;
+            n = bb.len();
+        }
+        // 字符串 @0x7E0420
+        let strp = 0x7E0420u64;
+        for k in 0..=n {
+            ((strp + k as u64) as *mut u8).write(if k < n { pe_argv0[k] } else { 0 });
+        }
+        // 指针数组 @0x7E0400: [argv0, 0]
+        (0x7E0400u64 as *mut u64).write(strp);
+        (0x7E0400u64 as *mut u64).add(1).write(0);
+        // envp 空表 @0x7E0408
+        (0x7E0408u64 as *mut u64).write(0);
+        (argc_out as *mut u32).write(1);
+        (argv_out as *mut u64).write(0x7E0400u64);
+        (envp_out as *mut u64).write(0x7E0408u64);
+    }
+    0
+}
+
+/// M27: 用户态堆 bump (0x800000 起, 与 mem 堆/mmap 同区)。
+static mut SHIM_HEAP: u64 = 0x800000;
+fn shim_heap_alloc(n: u64) -> u64 {
+    unsafe {
+        let n = (n + 15) & !15;
+        let p = SHIM_HEAP;
+        if p + n > 0xBFFFF0 {
+            return 0;
+        }
+        SHIM_HEAP = p + n;
+        p
+    }
+}
+
+/// 迷你 printf 引擎: fmt 用户指针, argp 用户态 u64 参数数组 (va 或回归值)。
+fn shim_vfmt(fmt: u64, argp: *const u64, max_args: usize) -> i64 {
+    let mut out = [0u8; 512];
+    let mut on = 0usize;
+    let mut ai = 0usize;
+    let mut fi = 0usize;
+    unsafe {
+        loop {
+            let mut c = (fmt as *const u8).add(fi).read();
+            if c == 0 {
+                break;
+            }
+            if c != b'%' {
+                out[on] = c;
+                on += 1;
+                fi += 1;
+                continue;
+            }
+            fi += 1;
+            c = (fmt as *const u8).add(fi).read();
+            if c == 0 {
+                break;
+            }
+            if c == b'%' {
+                out[on] = b'%';
+                on += 1;
+                fi += 1;
+                continue;
+            }
+            // 标志/宽度/精度跳过
+            while matches!(
+                c,
+                b'-' | b'0' | b'#' | b' ' | b'+' | b'.' | b'0'..=b'9'
+            ) {
+                fi += 1;
+                c = (fmt as *const u8).add(fi).read();
+            }
+            let mut wide = false;
+            if c == b'l' {
+                wide = true;
+                fi += 1;
+                c = (fmt as *const u8).add(fi).read();
+                if c == b'l' {
+                    fi += 1;
+                    c = (fmt as *const u8).add(fi).read();
+                }
+            } else if c == b'z' || c == b'j' || c == b't' {
+                wide = true;
+                fi += 1;
+                c = (fmt as *const u8).add(fi).read();
+            } else if c == b'h' {
+                fi += 1;
+                c = (fmt as *const u8).add(fi).read();
+                if c == b'h' {
+                    fi += 1;
+                    c = (fmt as *const u8).add(fi).read();
+                }
+            }
+            let v = if ai < max_args {
+                (argp as *const u64).add(ai).read()
+            } else {
+                0
+            };
+            ai += 1;
+            match c {
+                b'd' | b'i' => {
+                    let s = if wide {
+                        v as i64
+                    } else {
+                        v as u32 as i32 as i64
+                    };
+                    on += write_dec(&mut out[on..], s);
+                }
+                b'u' => {
+                    let u = if wide { v } else { v as u32 as u64 };
+                    on += write_dec(&mut out[on..], u as i64);
+                }
+                b'x' | b'X' => {
+                    let u = if wide { v } else { v as u32 as u64 };
+                    on += write_hex(&mut out[on..], u, c == b'X');
+                }
+                b'p' => {
+                    on += write_hex_prefix(&mut out[on..], v);
+                }
+                b'c' => {
+                    out[on] = (v & 0xFF) as u8;
+                    on += 1;
+                }
+                b's' => {
+                    let mut k = 0usize;
+                    while k < 200 {
+                        let b = (v as *const u8).add(k).read();
+                        if b == 0 {
+                            break;
+                        }
+                        out[on] = b;
+                        on += 1;
+                        k += 1;
+                    }
+                }
+                _ => {
+                    out[on] = b'%';
+                    on += 1;
+                    out[on] = c;
+                    on += 1;
+                }
+            }
+            fi += 1;
+        }
+        shim_write_chars(&out[..on.min(512)])
+    }
+}
+
+fn write_dec(buf: &mut [u8], v: i64) -> usize {
+    let mut n = 0usize;
+    let neg = v < 0;
+    let mut x = if neg { (v as i64).wrapping_neg() as u64 } else { v as u64 };
+    let mut tmp = [0u8; 24];
+    let mut ti = 24;
+    if x == 0 {
+        tmp[23] = b'0';
+        ti = 23;
+    }
+    while x > 0 {
+        ti -= 1;
+        tmp[ti] = b'0' + (x % 10) as u8;
+        x /= 10;
+    }
+    if neg {
+        if n < buf.len() {
+            buf[n] = b'-';
+            n += 1;
+        }
+    }
+    for k in ti..24 {
+        if n < buf.len() {
+            buf[n] = tmp[k];
+            n += 1;
+        }
+    }
+    n
+}
+
+fn write_hex(buf: &mut [u8], v: u64, upper: bool) -> usize {
+    let mut n = 0usize;
+    let mut tmp = [0u8; 16];
+    let mut ti = 16;
+    let mut x = v;
+    if x == 0 {
+        tmp[15] = b'0';
+        ti = 15;
+    }
+    while x > 0 {
+        ti -= 1;
+        let d = (x & 0xF) as u8;
+        tmp[ti] = if d < 10 {
+            b'0' + d
+        } else if upper {
+            b'A' + d - 10
+        } else {
+            b'a' + d - 10
+        };
+        x >>= 4;
+    }
+    for k in ti..16 {
+        if n < buf.len() {
+            buf[n] = tmp[k];
+            n += 1;
+        }
+    }
+    n
+}
+
+fn write_hex_prefix(buf: &mut [u8], v: u64) -> usize {
+    let mut n = 0usize;
+    let mut h = 0usize;
+    if n < buf.len() {
+        buf[n] = b'0';
+        n += 1;
+    }
+    if n < buf.len() {
+        buf[n] = b'x';
+        n += 1;
+    }
+    if v == 0 {
+        if n < buf.len() {
+            buf[n] = b'0';
+            n += 1;
+        }
+    } else {
+        let mut tmp = [0u8; 16];
+        let mut ti = 16;
+        let mut x = v;
+        while x > 0 {
+            ti -= 1;
+            let d = (x & 0xF) as u8;
+            tmp[ti] = if d < 10 { b'0' + d } else { b'a' + d - 10 };
+            x >>= 4;
+        }
+        while h < 16 - ti {
+            if n < buf.len() {
+                buf[n] = tmp[ti + h];
+                n += 1;
+            }
+            h += 1;
+        }
+    }
+    n
+}
+
+/// 垫片输出: 串口 + VGA 文本
+fn shim_write_chars(chars: &[u8]) -> i64 {
+    let s = core::str::from_utf8(chars).unwrap_or("<bin>");
+    serial::write_str(s);
+    vga::write_str(s);
+    chars.len() as i64
 }
 
 /// M22 fork 实现: 从当前 syscall 帧克隆任务。
@@ -746,6 +1269,18 @@ pub fn enter_user_test(mbi: u32) -> ! {
             if is_pe {
                 serial::write_line("fmt  : PE32+ -> winsubsys (M3)");
                 unsafe { crate::pe_loader::install_shims(); }
+                // M27: mingw CRT 需要 GS:0x30 (假 TEB) + argv0 (__getmainargs)
+                unsafe {
+                    user_gs_base = 0x7E1000;
+                    let mut nn2 = 0usize;
+                    while nn2 < 63 && name[nn2] != 0 {
+                        pe_argv0[nn2] = name[nn2];
+                        nn2 += 1;
+                    }
+                    pe_argv0[nn2] = 0;
+                }
+                // M26: 预打开 /boot/module -> fd=3 (kernel32 文件句柄家族直读)
+                crate::vfs::fujo_open_startup_module();
                 match crate::pe_loader::load_pe(start, len) {
                     Ok(entry) => {
                         serial::write_str("pexc : ImageBase+EntryPoint=");
