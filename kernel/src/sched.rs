@@ -12,6 +12,7 @@ use crate::serial;
 
 pub const MAX_TASKS: usize = 8;
 pub const TASK_RUNNABLE: u8 = 1;
+pub const TASK_DEAD: u8 = 3;
 
 #[derive(Clone, Copy)]
 pub struct Task {
@@ -32,6 +33,38 @@ static mut MULTI: bool = false;
 /// 切换桩引用的全局: 下一任务的内核栈保存帧指针 (桩 mov rsp, [rip + ...])。
 #[no_mangle]
 pub static mut sched_next_rsp: u64 = 0;
+/// #PF 桩引用的切换标志: 崩溃任务终止后的目标任务帧 (桩先查再换栈)。
+#[no_mangle]
+pub static mut pf_must_switch: u64 = 0;
+
+/// M14: 终止当前任务 (用户致命 #PF 等), 切换给下一存活任务。
+/// 返回 true 表示已设置 pf_must_switch (桩下一次 iretq 前转场)。
+pub fn terminate_current_and_next() -> bool {
+    unsafe {
+        if TASK_COUNT < 2 {
+            return false; // 单任务: 让调用方走原有停机诊断
+        }
+        TASKS[CUR].state = TASK_DEAD;
+        serial::write_str("proc: task ");
+        print_dec(CUR as u64);
+        serial::write_line(" terminated (crash isolated) - scheduling survivors");
+        let mut next = (CUR + 1) % TASK_COUNT;
+        let mut guard = 0usize;
+        while TASKS[next].state != TASK_RUNNABLE && guard < TASK_COUNT {
+            next = (next + 1) % TASK_COUNT;
+            guard += 1;
+        }
+        if TASKS[next].state == TASK_RUNNABLE {
+            CUR = next;
+            sched_next_rsp = TASKS[next].saved_rsp;
+            gdt::set_rsp0(TASKS[next].kstack_top);
+            pf_must_switch = 1;
+            true
+        } else {
+            false // 全部死亡: 调用方停机
+        }
+    }
+}
 
 /// shell `os run threads` 打开双任务模式。
 pub fn set_multi() {
@@ -42,6 +75,11 @@ pub fn set_multi() {
 
 pub fn multi_task() -> bool {
     unsafe { MULTI }
+}
+
+/// 当前任务 id (M14: 演示/进程标识)。
+pub fn current_task() -> usize {
+    unsafe { CUR }
 }
 
 fn print_dec(v: u64) {

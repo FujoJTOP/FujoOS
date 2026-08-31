@@ -312,6 +312,11 @@ pub extern "C" fn fujo_pf_handler(_vec: u64, regs: *const u64) {
         if user && write && !present && demand_zero(cr2) {
             return; // 桩: pop 寄存器 + iretq -> 重试原指令
         }
+        // M14: 用户态进程级崩溃隔离 —— 多任务时终止当前任务并切换幸存者
+        // (需求页之外的用户 #PF, 如空指针写); 单任务保持停机诊断。
+        if user && crate::sched::terminate_current_and_next() {
+            return; // 桩: 检测 pf_must_switch -> 转场到幸存任务帧
+        }
         serial::write_str("m12  : UNHANDLED #PF cr2=0x");
         print_hex(cr2);
         serial::write_str(" err=0x");

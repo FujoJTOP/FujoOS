@@ -225,6 +225,8 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5103 => crate::kbd::try_poll().map(|c| c as i64).unwrap_or(0),
         // fujo_ai_info(ptr, len) -> n (引擎/模型/链路信息)
         0x5104 => crate::ai::fujo_ai_info(a0, a1),
+        // fujo_get_task_id() -> tid (M14: 进程/任务标识原语)
+        0x5105 => crate::sched::current_task() as i64,
         // ---- darwin BSD 空间 (0x2000000|nr, M6 darwinsubsys) ----
         0x200_0001 => {
             serial::write_line("user : darwin exit() - kernel takeover, M6 verified");

@@ -223,7 +223,23 @@ fujo_pf_stub:
     mov rdi, 14
     mov rsi, rsp          # regs 帧: [0..8]=r11..rax, [9]=ERR, [10]=RIP, [11]=CS,
     call fujo_pf_handler  #              [12]=RFLAGS, [13]=RSP, [14]=SS
-    pop r11
+    # M14: 崩溃任务终止 -> 转场到幸存任务帧 (pf_must_switch 由 sched 设置)
+    cmp qword ptr [rip + pf_must_switch], 0
+    jz 1f
+    mov rsp, [rip + sched_next_rsp]
+    mov qword ptr [rip + pf_must_switch], 0
+    pop r11             # 目标帧 (PIT 保存, 无错误码): 9 寄存器 + iretq
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rax
+    iretq
+1:
+    pop r11             # 本帧 (含错误码): 9 寄存器 + 跳过 err + iretq
     pop r10
     pop r9
     pop r8

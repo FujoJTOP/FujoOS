@@ -13,12 +13,14 @@
 - [x] **M12 缺页处理**:按需零页(堆区 P=0, 首写逐页分配零帧→PTE→指令重试, 进程继续)、
       #PF 专用桩全寄存器保存 + 进程级分发(未处理才停机);帧分配器(位图 16–63MiB);
       COW 种子随 M14 fork 一并落地(帧分配器/写时复制机制就绪)
-- [x] **M13 抢占调度 + 线程**(v0, 已知项①待修): PIT 时间片轮转 —— task 结构/独立内核栈/
-      TSS.rsp0 切换/保存帧切换 (`os run threads` 双任务交替运行, 切换日志可见);
-      **修复: STAR RPL (用户真回 CPL3, U-guard 才生效) + PIT 桩 EOI 毁 RAX (用户寄存
-      器每 tick 被打掉, 单任务 hermes 复现空字符; EOI 移至恢复前); 已知项①: 双任务
-      恢复时 A 拿到 B 的栈指纹 (帧 RSP 偏移待核) —— 下轮先修
-- [ ] **M14 多进程**:fork/exec 雏形;一个进程崩溃不影响其他
+- [x] **M13 抢占调度 + 线程**: PIT 时间片轮转(100Hz) —— task 结构/独立内核栈/
+      TSS.rsp0 动态切换/保存帧切换; `os run threads` 双任务交替运行;
+      **m12 期间修复**: STAR RPL(用户真回 CPL3, U-guard 生效)、PIT 桩 EOI 毁 RAX、
+      中断帧字节序确证; **M14 收尾**: 0x5105 任务 id 原语替代栈地址身份
+- [x] **M14 多进程/崩溃隔离**: 用户态致命 #PF → `terminate_current_and_next`(TASK_DEAD
+      + 转场幸存者帧, pf 桩双退出路径) —— **"一个进程崩溃不影响其他" 实测闭环**:
+      `task 1 about to CRASH → proc: task 1 terminated → task 0 持续运行`;
+      fork/exec 雏形 = M14b(进程克隆/镜像重载, 下一刀)
 - [ ] **M15 VFS + 内存盘**:initrd 挂载、fd/打开表;用户态 read/write/open
 - [ ] **M16 fujofs**:极简本地文件系统(FAT-like);重启持久化
 - [ ] **M17 .run 升级**:资源节(图标/清单/权限声明)+ 多文件打包

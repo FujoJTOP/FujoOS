@@ -73,6 +73,15 @@ if (Test-Path "$llvm\clang.exe") {
     Write-Host "  clang missing: thread_demo skipped"
 }
 
+Write-Host "== [0h] build M14 crash demo (ring3, process isolation) =="
+if (Test-Path "$llvm\clang.exe") {
+    & "$llvm\clang.exe" --target=x86_64-unknown-linux-gnu -O2 -nostdlib -static -fno-pie -no-pie `
+        -fuse-ld=lld -fno-builtin "-Wl,-e,_start" "-Wl,-T,$root\sdk\user\user.ld" `
+        ..\sdk\user\crash_demo.c -o ..\sdk\user\crash_demo.elf
+} else {
+    Write-Host "  clang missing: crash_demo skipped"
+}
+
 Write-Host "== [1/4] generate boot stub (32-bit stub + page tables + GDT) =="
 python boot\gen_stub32.py
 

@@ -1,8 +1,10 @@
-/* thread_demo.c — M13 线程演示 (ring3): 同一镜像双任务, PIT 时间片轮转
+/* crash_demo.c — M14 进程崩溃隔离演示 (ring3): 双任务
  *
- * 验证目标: 两个任务各自独立栈 (A=0x600000 / B=0x640000) 交替运行,
- *           现场 (计数器/栈) 各自保持 —— 抢占切换零丢失。
- * 任务标识: 取本地变量地址 (与用户栈同区域, 差 4MiB 可区分)。
+ * 任务 A (0x600000 栈): 正常循环打印。
+ * 任务 B (0x640000 栈): 打印几轮后执行空指针写 *(int*)0x100 = 1
+ *                       -> 用户 #PF -> 内核终止 B -> A 继续运行。
+ *
+ * 验证目标: "一个进程崩溃不影响其他"。
  */
 typedef long long int64_t;
 
@@ -46,24 +48,28 @@ static void phex(int64_t v) {
 }
 
 void _start(void) {
-    /* 任务 id ≈ 用户栈区 (A: 0x600000 / B: 0x640000) */
-    long local;
-    long tid = (long)&local & ~0xFFF;
-    /* volatile: 强制栈化计数 —— 跨抢占调度恢复时以栈值还原 (寄存器版会重入回退) */
+    /* 内核任务 id (0x5105 原语): 0 = A, 1 = B —— 比栈地址身份可靠 (共享镜像) */
+    long tid = sys3(0x5105, 0, 0, 0);
     volatile long n = 0;
     volatile long round = 0;
+    int is_b = tid == 1;
     for (;;) {
-        /* 忙转 (可被 PIT 任意打断并恢复 —— 现场即证明) */
-        for (long i = 0; i < 40000; i++) n++;
+        for (long i = 0; i < 30000; i++) n++;
         round++;
         if (round % 2000 == 0) {
             puts("task ");
-            phex(tid);
+            pnum(tid);
             puts(" alive round=");
             pnum((long)round);
-            puts(" n=");
-            pnum((long)n);
             puts("\n");
+        }
+        if (is_b && round > 6000) {
+            puts("task ");
+            pnum(tid);
+            puts(" about to CRASH (null write)\n");
+            volatile int *null_ptr = (volatile int *)0x100;
+            *null_ptr = 1; /* #PF -> 内核终止 */
+            /* 不会回到这里 */
         }
     }
 }
