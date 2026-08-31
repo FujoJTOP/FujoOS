@@ -34,6 +34,7 @@ mod macho_loader;
 mod mem;
 mod mouse;
 mod wmsg;
+mod xinput;
 mod pe_loader;
 mod sched;
 mod serial;

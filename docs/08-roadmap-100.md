@@ -441,7 +441,14 @@
       **m52_audio.elf 实测**(QEMU AC97): `present=1 vendor=8086` →
       `enable rc=0` → `playback queued 64 samples` →
       **M52 RESULT: PASS**
-- [ ] **M53** XInput 式输入抽象(手柄/键鼠统一)
+- [x] **M53** XInput 式输入抽象(手柄/键鼠统一) —— **xinput.rs**:
+      XInput 布局状态(buttons bitmask + LX/LY/RX/RY i16 轴),
+      **键鼠统一聚合**: 键盘 WASD→左摇杆 / 空格→button0 / Z X→
+      button1/2 / Enter→start / Backspace→back(kbd_hook), 鼠标相对
+      位移→右摇杆+按钮→bit8(mouse_hook); 0x6001 get / 0x6002 reset /
+      0x6003 press(自测注入);
+      **m53_xin.elf 实测**: reset→全 0 → press(1|4)→ buttons=5 →
+      **M53 RESULT: PASS**
 - [ ] **M54** 定时器:高精度/帧同步(rdtsc 基)
 - [ ] **M55** 原生 fujogl v0(OpenGL 1.x 子集, 软件后端)
 - [ ] **M56** DXVK 式翻译可行性评估(方案+原型)

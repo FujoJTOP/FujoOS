@@ -378,6 +378,10 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5121 => crate::ipc::fujo_sigkill(a0, a1),
         // fujo_sigret() -> 0
         0x5122 => crate::ipc::fujo_sigret(),
+        // ---- M53: XInput 输入抽象 ----
+        0x6001 => crate::xinput::fujo_xin_get(a0),
+        0x6002 => crate::xinput::fujo_xin_reset(),
+        0x6003 => crate::xinput::fujo_xin_press(a0),
         // ---- M52: 音频 (AC97) ----
         0x5F01 => crate::audio::fujo_audio_info(a0),
         0x5F02 => crate::audio::fujo_audio_enable(a0),
