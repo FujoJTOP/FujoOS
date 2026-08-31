@@ -84,7 +84,6 @@ core::arch::global_asm!(r#"
     .text
     .global fujo_cpuid_leaf0
     .p2align 4
-    .type fujo_cpuid_leaf0, @function
 fujo_cpuid_leaf0:
     push rbx
     push rcx
@@ -100,7 +99,6 @@ fujo_cpuid_leaf0:
     pop rcx
     pop rbx
     ret
-    .size fujo_cpuid_leaf0, . - fujo_cpuid_leaf0
 "#);
 
 extern "C" {
