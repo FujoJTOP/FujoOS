@@ -339,7 +339,15 @@
       **`ime: committed '你好'` / `'北京'` / `'中国'`** →
       `M40 RESULT: PASS`; 骨架预留: 键盘流钩子 + 悬浮候选窗(M48) +
       fujopack 资源码表; 回归: 兼容矩阵 9/9
-- [ ] **M41** fujokit v0:按钮/文本框/列表控件
+- [x] **M41** fujokit v0:按钮/文本框/列表控件 —— **sdk/kit/fujokit.h**
+      用户态控件库(零 libc, 纯几何/命中/状态机; 宿主负责渲染与消息环):
+      **kt_button**(矩形命中+按下/释放触发+计数+label)、
+      **kt_textbox**(文本缓冲 64B+追加/退格/光标)、**kt_list**
+      (8 行表+行命中 12px 行高+选中);
+      m41_kit.elf 模拟交互: 3 次按钮点击 / 输入 "FUJOKI" / 列表行 2
+      点击 → **`button triggers=3 textbox='FUJOKI' list=beta`** →
+      **M41 RESULT: PASS**; M42 起 GUI 应用直接消费 (渲染=font_text +
+      wm 消息=kt 控件)
 - [ ] **M42** GUI 应用#1:一个可点按钮的窗口(验收)
 - [ ] **M43** 剪贴板/拖放雏形
 - [ ] **M44** 图标/主题/调色板系统
