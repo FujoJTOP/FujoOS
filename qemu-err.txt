@@ -1,0 +1,1 @@
+C:\Program Files\qemu\qemu-system-x86_64.exe: Failed to open file 'C:\Users\hooya\Documents\FujoOS\sdk\linux\m52_audio.elf'

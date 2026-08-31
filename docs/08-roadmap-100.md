@@ -432,7 +432,15 @@
       **m51_disp.elf 实测**: `backend=0 vendor=00001234 device=00001111
       mode=1024x768`(virtio-gpu 未装配时探测确认 absent) →
       **M51 RESULT: PASS**; 回归: 矩阵 9/9
-- [ ] **M52** 音频:AC97/HDA 驱动 + 播放入口
+- [x] **M52** 音频:AC97/HDA 驱动 + 播放入口 —— **audio.rs AC97 v0**
+      (QEMU `-device AC97`, 0x8086:0x2415, I/O BAM BAR0):
+      PCI 探测 + 全局控制 0x2C 复位/使能 + PCM out 音量(0x18) +
+      **播放入口**(0x5F04 采样排队, 真实 FIFO 混音留 M63);
+      fujo: 0x5F01 info / 0x5F02 enable / 0x5F03 volume / 0x5F04
+      playback;
+      **m52_audio.elf 实测**(QEMU AC97): `present=1 vendor=8086` →
+      `enable rc=0` → `playback queued 64 samples` →
+      **M52 RESULT: PASS**
 - [ ] **M53** XInput 式输入抽象(手柄/键鼠统一)
 - [ ] **M54** 定时器:高精度/帧同步(rdtsc 基)
 - [ ] **M55** 原生 fujogl v0(OpenGL 1.x 子集, 软件后端)
