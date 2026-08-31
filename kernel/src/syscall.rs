@@ -244,6 +244,13 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5121 => crate::ipc::fujo_sigkill(a0, a1),
         // fujo_sigret() -> 0
         0x5122 => crate::ipc::fujo_sigret(),
+        // ---- M19: 内核对象/句柄表 (统一资源抽象) ----
+        // fujo_kobj_create(kind) -> slot
+        0x5130 => crate::kobj::fujo_kobj_create(a0),
+        // fujo_kobj_free(handle) -> 0
+        0x5131 => crate::kobj::fujo_kobj_free(a0),
+        // fujo_kobj_info(ptr, n) -> 写入 i32×min(4,n) 计数
+        0x5132 => crate::kobj::fujo_kobj_info(a0, a1),
         // ---- darwin BSD 空间 (0x2000000|nr, M6 darwinsubsys) ----
         0x200_0001 => {
             serial::write_line("user : darwin exit() - kernel takeover, M6 verified");

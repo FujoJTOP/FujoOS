@@ -93,6 +93,9 @@ pub fn fujo_pipe(ptr: u64) -> i64 {
         PIPES[pi].used = true;
         PIPES[pi].head = 0;
         PIPES[pi].len = 0;
+        // M19: 双端登记为内核对象 (统计/审计; fd 路径不变)
+        let _ = crate::kobj::alloc(crate::kobj::K_PIPE, (pi as u64) << 32 | (rfd as u64));
+        let _ = crate::kobj::alloc(crate::kobj::K_PIPE, (pi as u64) << 32 | (wfd as u64));
         // 写入用户数组 [rfd, wfd]
         (ptr as *mut u32).write(rfd as u32);
         (ptr as *mut u32).add(1).write(wfd as u32);
@@ -151,6 +154,8 @@ pub fn pipe_write(p: *mut Pipe, ptr: u64, len: u64) -> i64 {
 
 /// fujo_shm(): 返回共享窗口基址 (全局固定, 多任务同名同址即共享)。
 pub fn fujo_shm() -> i64 {
+    // M19: 每次获取登记一个 SHM 对象 (引用语义 v0: 每次调用 +1)
+    let _ = crate::kobj::alloc(crate::kobj::K_SHM, SHM_BASE);
     SHM_BASE as i64
 }
 
@@ -162,6 +167,10 @@ pub fn fujo_sigset(handler: u64) -> i64 {
     }
     let tid = crate::sched::current_task();
     crate::sched::set_sig_handler(tid, handler);
+    // M19: 信号对象登记 (每任务至多一条; 统计/审计)
+    if handler != 0 {
+        let _ = crate::kobj::alloc(crate::kobj::K_SIG, tid as u64);
+    }
     serial::write_str("ipc  : task ");
     print_dec(tid as u64);
     serial::write_str(" sig handler @");

@@ -56,7 +56,14 @@
       修复: 用户 fd 数组须 int(内核写 2×u32, long 读成 0x400000003)、
       信号握手时序(shm[5] 完成栅栏); 桩表全向量改走 trampoline
       捕获精确异常帧(见 M17 记录)
-- [ ] **M19 内核对象/句柄表**:统一资源抽象
+- [x] **M19 内核对象/句柄表**:统一资源抽象 —— 内核 `kobj.rs` 类型化对象表
+      (kind: FILE/PIPE/SHM/SIG + epoch 代序防悬垂 + payload; 64 槽全局单表 v0):
+      `fujo_kobj_create/free`(0x5130/0x5131) + `fujo_kobj_info`(0x5132 统计);
+      管道(每端×2)/共享窗口/信号注册自动接入, 生命周期可见; 
+      **对象表集成实测通过**: `os run kobj` → 基线全 0 → 创建 pipe(2)+shm(1)+sig(1)
+      +手工 FILE(1) → 统计 file=1 pipe=2 shm=1 sig=1 (计数逐一断言) →
+      free/close → 最终 file=0 pipe=2 shm=1 sig=1 → **PASS**;
+      说明: 对象表为 M14b 每进程句柄表的前身, fd 与 kobj 并行走 VFS 路径
 - [ ] **M20 稳定性**:进程级异常恢复;24h 无泄漏运行
 
 ## Wave 2 · 兼容层加深(M21–M35)

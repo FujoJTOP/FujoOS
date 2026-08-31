@@ -21,6 +21,7 @@ mod graphics;
 mod interrupts;
 mod ipc;
 mod kbd;
+mod kobj;
 mod macho_loader;
 mod mem;
 mod pe_loader;

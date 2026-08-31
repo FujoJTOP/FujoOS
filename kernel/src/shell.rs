@@ -61,6 +61,7 @@ pub fn shell(mbi: u32) -> ! {
     out_line("os   :   os run hermes    launch Hermes CLI (agent + qwen model call)");
     out_line("os   :   os run threads   launch 2 tasks (M13 timeslice demo)");
     out_line("os   :   os run ipc       launch IPC demo (pipe+shm+sig, M18)");
+    out_line("os   :   os run kobj      launch kobj table demo (M19)");
     out_line("os   :   help             show this list");
     let mut line = [0u8; 64];
     loop {
@@ -84,6 +85,10 @@ pub fn shell(mbi: u32) -> ! {
                     // M18: IPC demo (管道 + 共享内存 + 信号)
                     crate::sched::set_multi();
                     out_line("os   : launching IPC demo (2 tasks: pipe/shm/sig) ...");
+                    syscall::enter_user_test(mbi); // > !: 不再返回
+                } else if t1 == "run" && t2 == "kobj" {
+                    // M19: 内核对象表 demo
+                    out_line("os   : launching kobj table demo ...");
                     syscall::enter_user_test(mbi); // > !: 不再返回
                 } else {
                     // TEMP-DEBUG
