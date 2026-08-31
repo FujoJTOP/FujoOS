@@ -1567,7 +1567,60 @@ pub fn enter_user_test(mbi: u32) -> ! {
                     && (start as *const u8).add(2).read() == b'J'
                     && (start as *const u8).add(3).read() == b'R'
             };
-            if is_run {
+            // ---- M32: 多模块镜像 (BootMulti) 解析 ----
+            let is_multi = unsafe {
+                (start as *const u8).read() == b'F'
+                    && (start as *const u8).add(1).read() == b'U'
+                    && (start as *const u8).add(2).read() == b'J'
+                    && (start as *const u8).add(3).read() == b'O'
+                    && (start as *const u8).add(4).read() == b'M'
+                    && (start as *const u8).add(5).read() == b'U'
+                    && (start as *const u8).add(6).read() == b'L'
+                    && (start as *const u8).add(7).read() == b'T'
+            };
+            if is_multi {
+                unsafe {
+                    let cnt = (start as *const u64).add(1).read();
+                    let mut ent = start as *const u8;
+                    let mut new_start = start;
+                    let mut new_len = len;
+                    let mut have_main = false;
+                    for i in 0..cnt.min(8) {
+                        let e = ent.add(16 + i as usize * 32);
+                        let off = (e as *const u64).read();
+                        let l = (e as *const u64).add(1).read();
+                        let name_b = e.add(16);
+                        let mut nm = [0u8; 16];
+                        for k in 0..15 {
+                            nm[k] = name_b.add(k).read();
+                        }
+                        let nm_end = nm.iter().position(|&b| b == 0).unwrap_or(15);
+                        let nm_s = core::str::from_utf8(&nm[..nm_end]).unwrap_or("?");
+                        if i == 0 {
+                            new_start = start + off as u32;
+                            new_len = l as u32;
+                            have_main = true;
+                            serial::write_str("multi: exec module '");
+                            serial::write_str(nm_s);
+                            serial::write_line("'");
+                        } else {
+                            crate::vfs::fujo_lib_register(nm_s, start as u64 + off, l);
+                            serial::write_str("multi: lib module '");
+                            serial::write_str(nm_s);
+                            serial::write_line("' -> /lib");
+                        }
+                    }
+                    if have_main {
+                        start = new_start;
+                        len = new_len;
+                        serial::write_str("multi: main @");
+                        print_hex(start as u64);
+                        print_dec(len as u64);
+                        serial::write_line(" bytes");
+                    }
+                }
+            }
+            if is_run && !is_multi {
                 if let Some((eaddr, elen)) = crate::fujr::load(start as u64, len as u64) {
                     start = eaddr as u32;
                     len = elen as u32;

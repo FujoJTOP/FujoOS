@@ -235,7 +235,16 @@
       `os run hermes`(m31_res.run)→ **`m31: resource content: M31
       resource demo — packed by fujopack.py`** → **`M31 RESULT: PASS`**;
       工具链闭环: 编译 ELF → fujopack 打包 → 内核解包 → /runres 资源读取
-- [ ] **M32** fujorun 支持多模块/库目录
+- [x] **M32** fujorun 支持多模块/库目录 —— **宿主工具
+      `tools/fujorun.py`**(pack/run): BootMulti v1 多模块镜像
+      ("FUJOMULT" + count + (off/len/name[16])×n, 8 对齐),
+      单 initrd 装载 **可执行体 + 库/资源模块**; 内核解析:
+      **`multi: exec module 'main'`** / **`multi: lib module 'catlib.bin'
+      -> /lib`** → 主模块格式嗅探执行, 库模块挂 **vfs `/lib/<name>`**
+      (库表 LIBS[8] 注册, `fujo_open_name` /lib/ 匹配 blob);
+      `os run hermes`(m32_multi.initrd: ELF+catlib.bin)→
+      **`m32: lib content: CATLIB-BIN: library module payload from
+      fujorun (M32)`** → **`M32 RESULT: PASS`**
 - [ ] **M33** 系统调用追踪(trace 工具 + 计数)
 - [ ] **M34** 兼容矩阵回归(三格式 × 三子系统, 自动化)
 - [ ] **M35** 性能基准:syscall 延迟/切换开销表

@@ -247,6 +247,53 @@ pub extern "C" fn fujo_open_startup_module() -> i64 {
     }
 }
 
+/// M32: 多模块库表 (/lib/<name> -> 模块字节)。由 fujorun 多模块解析注册。
+static mut LIBS: [([u8; 16], u64, u64); 8] = [([0; 16], 0, 0); 8];
+static mut LIB_COUNT: usize = 0;
+
+/// M32: 库模块注册 (多模块 initrd 解析器调用)。
+pub fn fujo_lib_register(name: &str, addr: u64, len: u64) {
+    unsafe {
+        if LIB_COUNT >= 8 {
+            return;
+        }
+        let mut nm = [0u8; 16];
+        for (k, b) in name.as_bytes().iter().take(15).enumerate() {
+            nm[k] = *b;
+        }
+        LIBS[LIB_COUNT] = (nm, addr, len);
+        LIB_COUNT += 1;
+    }
+}
+
+fn fujo_lib_find(name: &[u8]) -> Option<(*const u8, usize)> {
+    unsafe {
+        let n = name.len().min(15);
+        for k in 0..LIB_COUNT {
+            let (nm, addr, len) = LIBS[k];
+            let mut same = true;
+            for i in 0..n {
+                if nm[i] != name[i] {
+                    same = false;
+                    break;
+                }
+            }
+            if same {
+                for i in n..15 {
+                    if nm[i] != 0 {
+                        same = false;
+                        break;
+                    }
+                }
+            }
+            if same && len > 0 {
+                return Some((addr as *const u8, len as usize));
+            }
+        }
+    }
+    None
+}
+
 /// 系统调用 open(nr2): 匹配固定表; flags: 0=RDONLY, 1=WRONLY, 2=RDWR。
 #[no_mangle]
 pub extern "C" fn fujo_open(ptr: u64, len: u64, flags: u64) -> i64 {
@@ -302,6 +349,24 @@ pub fn fujo_open_name(name: &str, _flags: u64) -> i64 {
             f.pos = 0;
             serial::write_line("vfs  : open /dev/tty (serial)");
             return fd as i64;
+        } else if let Some(lname) = name.strip_prefix("/lib/") {
+            // M32: 多模块库目录 (fujorun 注册的库/资源模块)
+            if let Some((ptr, len)) = fujo_lib_find(lname.as_bytes()) {
+                f.name = "/lib/";
+                f.kind = F_KIND_BLOB;
+                f.data_ptr = ptr;
+                f.data_len = len as u64;
+                f.pos = 0;
+                serial::write_str("vfs  : open /lib/");
+                serial::write_str(lname);
+                serial::write_line("");
+                return fd as i64;
+            }
+            serial::write_str("vfs  : open /lib/");
+            serial::write_str(lname);
+            serial::write_line(" not found -ENOENT");
+            NEXT_FD -= 1;
+            return -2;
         } else if let Some(rname) = name.strip_prefix("/runres/") {
             // M17: FUJR 容器资源 (已由 fujr::load 拷入内核静态)
             if let Some((ptr, len)) = crate::fujr::resource(rname.as_bytes()) {
