@@ -24,6 +24,7 @@ mod kbd;
 mod kobj;
 mod macho_loader;
 mod mem;
+mod mouse;
 mod pe_loader;
 mod sched;
 mod serial;
@@ -190,10 +191,12 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     // ---- M4: fujocom 显示栈 (Bochs VBE 1024x768x32 LFB + 双缓冲合成器) ----
     // ---- M5: 输入系统 (PS/2 键盘 IRQ1; 服务就绪, 演示延后到图形层之后) ----
     kbd::init();
-
     // ---- M10: COM2 模型链路 (IRQ3, fujonn engine=qwen) ----
     serial::uart2_init();
     out_line("m10  : com2 model-link up (irq3 @115200) - engine=qwen waits host server");
+
+    // ---- M36: PS/2 鼠标 (IRQ12, 命中测试/焦点) ----
+    mouse::init();
 
     // ---- M11/M12: 虚拟内存/堆 (U 位硬化 + 按需零页) ----
     mem::init();

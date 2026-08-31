@@ -275,7 +275,21 @@
 
 ## Wave 3 · 图形与交互(M36–M50)—— UI 从"演示"变"可用"
 
-- [ ] **M36** 鼠标驱动(PS/2)+ 命中测试/焦点
+- [x] **M36** 鼠标驱动(PS/2)+ 命中测试/焦点 —— **mouse.rs**: 8042
+      AUX(0xA8 + 命令字节 bit1) + **F4 enable reporting**(ps2 鼠标
+      默认禁包, 必须显式开启 — 实证)+ IRQ12(向量 0x2C, 从片 IRQ4,
+      master IRQ2 级联, 抑制 0x60 争抢)+ 3 字节包状态机(btn+Δx/Δy
+      累积符号位处理)+ 命中矩形表 HIT_RECTS[8](z-order, 0x5411
+      注册)+ **焦点**(0x5412 查询, 换焦日志);
+      fujo 原生: 0x5410 mouse_info(ptr u32×4) / 0x5411 rects / 0x5412
+      focus; **实测**(QEMU 9.2 HMP `mouse_move dx dy dz` +
+      `mouse_button`, 鼠标设备 #2): `m36: pos=(40,0) btn=2 …(120,0)` →
+      **`mouse: focus -> 2`**(矩形 2 命中 150,80/90,110)→ **PASS**;
+      **修复链(两处 8042/键冲突)**: ① 读命令字节期间 IRQ1 抢 0x60 把
+      键盘扫描码当命令写回 → 杀键盘(bisect: 禁 mouse init 键恢复) →
+      整个 AUX 序列禁 IRQ1 下执行+恢复; ② 删 F4 导致鼠标无包(QEMU
+      ps2 需 enable reporting);
+      回归: 兼容矩阵 9/9
 - [ ] **M37** 消息环(win32k 等价):消息队列、窗口类、z-order
 - [ ] **M38** 窗口管理:重叠/焦点/拖动/关闭
 - [ ] **M39** 字体升级:更多字形/缩放/抗锯齿

@@ -378,6 +378,10 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5121 => crate::ipc::fujo_sigkill(a0, a1),
         // fujo_sigret() -> 0
         0x5122 => crate::ipc::fujo_sigret(),
+        // ---- M36: PS/2 鼠标 (位置/按键/命中测试/焦点) ----
+        0x5410 => crate::mouse::fujo_mouse_info(a0),
+        0x5411 => crate::mouse::fujo_mouse_rects(a0, a1),
+        0x5412 => crate::mouse::fujo_mouse_focus(),
         // ---- M19: 内核对象/句柄表 (统一资源抽象) ----
         // fujo_kobj_create(kind) -> slot
         0x5130 => crate::kobj::fujo_kobj_create(a0),
@@ -491,6 +495,11 @@ fn trace_show() -> i64 {
 /// M3 调试: 十六进制日志 (pe_loader 使用)
 pub fn log_hex(v: u64) {
     print_hex(v);
+}
+
+/// M36: 十进制日志 (鼠标/其他模块使用)
+pub fn debug_dec(v: u64) {
+    print_dec(v);
 }
 
 fn user_write(fd: u64, ptr: u64, len: u64) -> i64 {    // M15: fd>=3 先走 VFS (内存盘追加); /dev/tty 与 fd<3 走串口

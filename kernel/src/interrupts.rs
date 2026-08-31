@@ -49,7 +49,7 @@ struct IdtPtr {
 
 static mut IDT_PTR: IdtPtr = IdtPtr { limit: 0, base: 0 };
 
-const IDT_SIZE: usize = 0x25; // 0..0x24 (异常 + IRQ0/1 键盘 + IRQ3 COM2 模型链路)
+const IDT_SIZE: usize = 0x2D; // 0..0x2C (异常 + IRQ0/1/3 + IRQ12 鼠标 M36)
 
 static mut IDT: [IdtEntry; IDT_SIZE] = [IdtEntry::empty(); IDT_SIZE];
 
@@ -59,6 +59,7 @@ extern "C" {
     fn fujo_kbd_stub();
     fn fujo_ser2_stub();
     fn fujo_pf_stub();
+    fn fujo_ms_stub();
 }
 
 core::arch::global_asm!(r#"
@@ -216,8 +217,7 @@ fujo_kbd_stub:
     iretq
 
     # ---- COM2 (IRQ3) —— 模型链路 RX: C 排空入环 (M10) ----
-    # 与键盘桩同一原则: 保存全部 caller-saved (C 会破坏 rsi/r8-r11)。
-    .p2align 4
+    # 与键盘桩同一原则: 保存全部 caller-saved (C 会破坏 rsi/r8-r11)。    .p2align 4
     .global fujo_ser2_stub
 fujo_ser2_stub:
     push rax
@@ -230,6 +230,31 @@ fujo_ser2_stub:
     push r10
     push r11
     call fujo_ser2_irq
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rax
+    iretq
+
+    # ---- 鼠标 (IRQ12, 向量 0x2C, M36) —— 3 字节包处理 + 双 EOI ----
+    .p2align 4
+    .global fujo_ms_stub
+fujo_ms_stub:
+    push rax
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push r8
+    push r9
+    push r10
+    push r11
+    call fujo_ms_irq
     pop r11
     pop r10
     pop r9
@@ -455,6 +480,17 @@ pub fn init() {
         core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_mid), (ser2_addr >> 16) as u16);
         core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_hi), (ser2_addr >> 32) as u32);
         core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).zero), 0u32);
+        // ---- IRQ12 (PS/2 鼠标, M36) ----
+        let ms_addr = fujo_ms_stub as usize as u64;
+        let e = (core::ptr::addr_of_mut!(IDT) as *mut IdtEntry).add(0x2C);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_lo), ms_addr as u16);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).sel), 0x08u16);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).ist), 0u8);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).attr), 0x8Eu8);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_mid), (ms_addr >> 16) as u16);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_hi), (ms_addr >> 32) as u32);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).zero), 0u32);
+
         // IRQ3 的 PIC 掩码在 serial::uart2_init() 末尾开放 (0x21=0xF5)。
 
         core::ptr::write_volatile(core::ptr::addr_of_mut!(IDT_PTR.limit), (IDT_SIZE * 16 - 1) as u16);
