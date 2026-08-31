@@ -262,7 +262,16 @@
       ELF(+lib)×fujorun (m32)、Mach-O×darwinsubsys (m29)、
       PE×winsubsys (M3/M26/M27/M30); 单用例 `--only IX`、超时
       `--timeout`、`--json` 输出; 每次 ~11s, 全程 ~100s
-- [ ] **M35** 性能基准:syscall 延迟/切换开销表
+- [x] **M35** 性能基准:syscall 延迟/切换开销表 —— **m35_bench.elf**
+      (rdtsc 计时 + gettimeofday 校准 cyc/us, TCG 虚拟 TSC):
+      **A. 纯 syscall 往返 getpid ×200000: 300 ns/call (cyc 149652)**;
+      **B. open+close (vfs 路径) ×5000: 577 ns/pair (cyc 288237)**;
+      C. time() tick 粒度: PIT 100Hz(10ms 切换粒度), 两次读 tick 差值 0;
+      校准: cyc/us=498840(TCG 软件模拟 TSC);
+      说明: 基准为 QEMU TCG 软仿真值(native/KVM 路径留 M57 对照);
+      附 trace 工具交叉验证(m33); → **M35 RESULT: PASS**;
+      **WAVE 2 (M21–M35) 全部完成**
+- [ ] **M36** 鼠标驱动(PS/2)+ 命中测试/焦点
 
 ## Wave 3 · 图形与交互(M36–M50)—— UI 从"演示"变"可用"
 
