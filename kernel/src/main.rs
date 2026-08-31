@@ -14,6 +14,7 @@
 mod elf_loader;
 mod gdt;
 mod interrupts;
+mod pe_loader;
 mod serial;
 mod syscall;
 mod vga;

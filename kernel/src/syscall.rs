@@ -170,6 +170,17 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         1 => user_write(a0, a1, a2),
         // getpid() (x86-64: 39) — linuxsubsys v0 最小实现
         39 => 1,
+        // ---- fujo 原生 Win32 shim 通道 (M3) ----
+        // kernel32!WriteFile (fd, buf, len)
+        0x5001 => user_write(a0, a1, a2),
+        // kernel32!ExitProcess (code)
+        0x5002 => {
+            serial::write_line("user : ExitProcess(0) — 内核接管, M3 验证完成");
+            serial::write_str("timer : pit ticks=");
+            print_dec(interrupts::ticks());
+            serial::write_line(" (~100 Hz since boot)");
+            halt_forever();
+        }
         // exit(code) / exit_group(code) -> 内核接管并停机
         60 | 231 => {
             serial::write_line("user : sys_exit() — 内核接管, M2 验证完成");
@@ -200,6 +211,22 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
 /// 从 LINUX_X64_SUBSET 中查 syscall 名 (M2: 日志可读性)
 pub fn name_of(nr: u64) -> Option<&'static str> {
     LINUX_X64_SUBSET.iter().find(|(n, _)| *n as u64 == nr).map(|(_, s)| *s)
+}
+
+/// M3: 记录垫片绑定 (由 pe_loader 调用)
+pub fn log_shim(dll: &str, func: &str, addr: u64) {
+    serial::write_str("shim : ");
+    serial::write_str(dll);
+    serial::write_str("!");
+    serial::write_str(func);
+    serial::write_str(" -> trampoline ");
+    print_hex(addr);
+    serial::write_line("");
+}
+
+/// M3 调试: 十六进制日志 (pe_loader 使用)
+pub fn log_hex(v: u64) {
+    print_hex(v);
 }
 
 fn user_write(fd: u64, ptr: u64, len: u64) -> i64 {
@@ -278,9 +305,9 @@ pub fn enter_user_test(mbi: u32) -> ! {
     const STACK: u64 = 0x600000;
 
     let mut load_addr: u64 = LOAD_DEFAULT;
-    let mut used_elf = false;
+    let mut used_module = false;
 
-    // ---- M2: ELF 模块装载路径 ----
+    // ---- M2/M3: 模块装载路径 (ELF 或 PE, 格式嗅探统一路由) ----
     match unsafe { find_module(mbi) } {
         Some((start, len, name_ptr)) => {
             // 模块名 (bootloader 提供零终止字符串)
@@ -297,35 +324,56 @@ pub fn enter_user_test(mbi: u32) -> ! {
                 }
             }
             let name_s = core::str::from_utf8(&name[..n]).unwrap_or("?");
-            serial::write_str("elf  : module '");
+            serial::write_str("fmod : '");
             serial::write_str(name_s);
             serial::write_str("' @");
             print_hex(start as u64);
             print_dec(len as u64);
             serial::write_line(" bytes");
 
-            match crate::elf_loader::load_elf(start, len) {
-                Ok(entry) => {
-                    serial::write_str("elf  : loaded ET_EXEC, entry=");
-                    print_hex(entry);
-                    serial::write_line("");
-                    load_addr = entry;
-                    used_elf = true;
+            let is_pe = unsafe { (start as *const u8).read() == b'M' && (start as *const u8).add(1).read() == b'Z' };
+            if is_pe {
+                serial::write_line("fmt  : PE32+ -> winsubsys (M3)");
+                unsafe { crate::pe_loader::install_shims(); }
+                match crate::pe_loader::load_pe(start, len) {
+                    Ok(entry) => {
+                        serial::write_str("pexc : ImageBase+EntryPoint=");
+                        print_hex(entry);
+                        serial::write_line("");
+                        load_addr = entry;
+                        used_module = true;
+                    }
+                    Err(e) => {
+                        serial::write_str("pexc : FAILED (");
+                        serial::write_str(e);
+                        serial::write_line(") — fallback...");
+                    }
                 }
-                Err(e) => {
-                    serial::write_str("elf  : FAILED (");
-                    serial::write_str(e);
-                    serial::write_line(") — falling back to embedded bin");
+            } else {
+                serial::write_line("fmt  : ELF64 -> linuxsubsys (M2)");
+                match crate::elf_loader::load_elf(start, len) {
+                    Ok(entry) => {
+                        serial::write_str("elfx : entry=");
+                        print_hex(entry);
+                        serial::write_line("");
+                        load_addr = entry;
+                        used_module = true;
+                    }
+                    Err(e) => {
+                        serial::write_str("elfx : FAILED (");
+                        serial::write_str(e);
+                        serial::write_line(") — fallback...");
+                    }
                 }
             }
         }
         None => {
-            serial::write_line("elf  : no boot module (use -initrd) — embedded bin fallback");
+            serial::write_line("fmod : no boot module (use -initrd) — embedded bin fallback");
         }
     }
 
     // ---- 回退: 内嵌二进制路径 (M1) ----
-    if !used_elf {
+    if !used_module {
         let bin: &[u8] = include_bytes!("user_test.bin");
         serial::write_str("test : loading embedded user bin @0x400000 (");
         print_dec(bin.len() as u64);
@@ -333,9 +381,6 @@ pub fn enter_user_test(mbi: u32) -> ! {
         unsafe {
             core::ptr::copy_nonoverlapping(bin.as_ptr(), LOAD_DEFAULT as *mut u8, bin.len());
         }
-    } else {
-        serial::write_str("test : ELF mapped (no embedded copy) — running module bytes");
-        serial::write_line("");
     }
 
     serial::write_line("test : iretq -> ring3 (cs=0x23 ss=0x1b, linux-x64 ABI)");
