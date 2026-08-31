@@ -378,6 +378,10 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5121 => crate::ipc::fujo_sigkill(a0, a1),
         // fujo_sigret() -> 0
         0x5122 => crate::ipc::fujo_sigret(),
+        // ---- M59: 游戏模式 ----
+        0x6601 => crate::gamemode::fujo_game_mode(a0),
+        0x6602 => crate::gamemode::fujo_game_status(a0),
+        0x6603 => crate::gamemode::fujo_game_fullscreen(a0),
         // ---- M57: 加速探测 ---
         0x6401 => crate::hvm::fujo_accel_info(a0),
         // ---- M56: DXVK 式翻译原型 ----

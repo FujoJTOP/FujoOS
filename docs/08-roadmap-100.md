@@ -481,7 +481,13 @@
       拍 20x60, 回弹物理, 拍跟球, gl_rect/gl_pixel 纯原语):
       **`track x=100..395 y=200..377 sampled=11`**(运动+回弹+首尾帧
       采样) → **M58 RESULT: PASS**
-- [ ] **M59** 游戏模式:前台调度/资源预留/全屏
+- [x] **M59** 游戏模式:前台调度/资源预留/全屏 —— **gamemode.rs**:
+      0x6601 game_mode(on)(**sched::GAME_MODE 前台调度标记**)/ 0x6602
+      status(mode/ticks/heap 预留基址)/ 0x6603 fullscreen(VBE 1024x768
+      确认);
+      **m59_gamemode.elf 实测**: `mode=1 ticks=1537 heap=8388608` →
+      `fullscreen rc=0 mode=1024x768` → **M59 RESULT: PASS**; 回归: 矩阵
+      9/9
 - [ ] **M60** 存档沙箱(权限目录+版本化)
 - [ ] **M61** 图形加速:blit/缩放硬件路径
 - [ ] **M62** 着色器内核评估(compute 子集)

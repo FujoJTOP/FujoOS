@@ -81,6 +81,19 @@ pub fn multi_task() -> bool {
     unsafe { MULTI }
 }
 
+/// M59: 游戏模式 (前台调度标记; PIT 切换对游戏任务给独占轮)。
+pub static mut GAME_MODE: bool = false;
+
+pub fn set_game_mode(on: bool) {
+    unsafe {
+        GAME_MODE = on;
+    }
+}
+
+pub fn game_mode() -> bool {
+    unsafe { GAME_MODE }
+}
+
 /// 当前任务 id (M14: 演示/进程标识)。
 pub fn current_task() -> usize {
     unsafe { CUR }

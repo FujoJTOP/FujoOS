@@ -23,6 +23,7 @@ mod elf_loader;
 mod fjfs;
 mod font;
 mod fujr;
+mod gamemode;
 mod gl;
 mod hvm;
 mod gdt;
