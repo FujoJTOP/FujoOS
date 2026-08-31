@@ -378,6 +378,12 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5121 => crate::ipc::fujo_sigkill(a0, a1),
         // fujo_sigret() -> 0
         0x5122 => crate::ipc::fujo_sigret(),
+        // ---- M55: fujogl (软件光栅) ----
+        0x6201 => crate::gl::fujo_gl_clear(a0, a1, a2),
+        0x6202 => crate::gl::fujo_gl_rect(a0, a1, a2, a3, a4),
+        0x6203 => crate::gl::fujo_gl_tri(a0, a1),
+        0x6204 => crate::gl::fujo_gl_line(a0, a1, a2, a3, a4),
+        0x6205 => crate::gl::fujo_gl_pixel(a0, a1),
         // ---- M54: 高精度定时器
         0x6100 => crate::timer::fujo_timer_arm(),
         0x6101 => crate::timer::fujo_timer_us(),

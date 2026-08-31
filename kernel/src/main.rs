@@ -22,6 +22,7 @@ mod elf_loader;
 mod fjfs;
 mod font;
 mod fujr;
+mod gl;
 mod gdt;
 mod graphics;
 mod interrupts;

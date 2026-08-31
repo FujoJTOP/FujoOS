@@ -457,7 +457,15 @@
       **m54_timer.elf 实测**: `calibrated cyc/us=1849` →
       `sleep(200000) took=200136 us` → `frame gap=49980 us (~50000)` →
       **M54 RESULT: PASS**
-- [ ] **M55** 原生 fujogl v0(OpenGL 1.x 子集, 软件后端)
+- [x] **M55** 原生 fujogl v0(OpenGL 1.x 子集, 软件后端) —— **gl.rs 软件
+      光栅**: backbuffer (glClear/glRectf/顶点三角形/线):
+      0x6201 clear(r,g,b) / 0x6202 rect(x,y,w,h,color 打包) /
+      0x6203 tri(verts ptr 6×u32 + color; 整数重心法) /
+      0x6204 line(Bresenham) / 0x6205 pixel 读回;
+      **m55_gl.elf 实测**: 大三角(红)+白 rect+绿线 →
+      `tri_in=ffff0000 out=ff000000 rect=ffffffff line=ff00ff00` →
+      **M55 RESULT: PASS**; 说明: 参数面 6 上限(dispatch 帧) →
+      顶点缓冲指针+打包色
 - [ ] **M56** DXVK 式翻译可行性评估(方案+原型)
 - [ ] **M57** KVM 加速支持 + TCG/KVM 基准对照
 - [ ] **M58** 2D 游戏#1 原生运行(开源 2D 引擎选择)
