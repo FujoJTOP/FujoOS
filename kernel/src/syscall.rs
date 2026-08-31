@@ -378,6 +378,10 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5121 => crate::ipc::fujo_sigkill(a0, a1),
         // fujo_sigret() -> 0
         0x5122 => crate::ipc::fujo_sigret(),
+        // ---- M45: 终端窗口控件 ----
+        0x5A01 => crate::term::fujo_term_put(a0, a1, a2, a3),
+        0x5A02 => crate::term::fujo_term_draw(a0, a1, a2),
+        0x5A03 => crate::term::fujo_term_pixel(a0, a1),
         // ---- M44: 调色板/主题/图标 ----
         0x5901 => crate::icon::fujo_pal_get(a0),
         0x5902 => crate::icon::fujo_pal_set(a0, a1),
@@ -563,6 +567,8 @@ fn user_write(fd: u64, ptr: u64, len: u64) -> i64 {    // M15: fd>=3 先走 VFS 
     }
     serial::write_str(core::str::from_utf8(&line[..n]).unwrap_or("<non-utf8>"));
     vga::write_str(core::str::from_utf8(&line[..n]).unwrap_or("<non-utf8>"));
+    // M45: 终端窗口镜像 (user_write 文本进 80x25 屏)
+    crate::term::term_feed(&line[..n]);
     len as i64
 }
 

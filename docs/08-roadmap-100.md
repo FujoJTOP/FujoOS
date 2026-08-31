@@ -377,7 +377,16 @@
       绘制 → 图标内=ink 边=黑 → LIGHT 重画 → 采样 →
       **M44 RESULT: PASS**; 修复: 判定含 alpha 位(0xFF…) → 按 RGB 比较;
       回归: 矩阵 9/9
-- [ ] **M45** 终端窗口控件(串口/VGA 转 GUI)
+- [x] **M45** 终端窗口控件(串口/VGA 转 GUI) —— **term.rs**: 80x25 文本屏
+      (u16 槽 color|char, **user_write 输出镜像** term_feed: 换行/
+      退格/80 列回绕/25 行上滚)→ **整屏渲染 backbuffer**
+      (0x5A02 term_draw ox,oy,scale: 每字符 7x5·scale 块, VGA 色板
+      映射)+ 直接写屏(0x5A01)+ 像素读回(0x5A03);
+      **m45_term.elf 实测**: write 两行(镜像)→ term_draw →
+      `chars=2000`(80x25 全 render)→ 采样 `px=ffffffff`(首字符左上
+      白)/`blank=ff000000` → **M45 RESULT: PASS**;
+      修复: 采样点曾落在字形空心(bit 位) → 选 bit6 必 on 位;
+      回归: 矩阵 9/9
 - [ ] **M46** 桌面环境:任务栏/开始菜单雏形
 - [ ] **M47** 多屏/分辨率切换(vbe 枚举)
 - [ ] **M48** 输入法候选窗+fujokit 集成

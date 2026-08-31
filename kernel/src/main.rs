@@ -35,6 +35,7 @@ mod sched;
 mod serial;
 mod shell;
 mod syscall;
+mod term;
 mod vfs;
 mod vga;
 
