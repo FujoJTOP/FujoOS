@@ -6,6 +6,7 @@
 |---|---|---|---|
 | **M0 奠基** | ✅ 已完成 | 格式规范、fujopack/fujorun、识别库、可启动内核、SDK 样本 | 本仓库: 三格式→.run 端到端 + QEMU 启动日志 |
 | **M1 内核芯** | ✅ 已完成 | IDT(15 异常+IRQ0)、PIC/PIT 100Hz、GDT+用户段+TSS、syscall gate(LSTAR/STAR/SFMASK, Linux ABI)、ring3 用户态 iretq 进入、syscall write/exit 直通 | QEMU: PIT ticks=102；ring3 程序 syscall write 打印 + exit 内核接管（提交 cfb0a52 + M1 完成提交） |
+| **M2 linuxsubsys v0** | ✅ 已完成 | 内核 ELF64 装载器(ET_EXEC, PT_LOAD 段复制+BSS 清零, 模块=QEMU -initrd)、Linux syscall 原生执行(write/exit/getpid)、syscall 命名日志、64MiB 恒等页表(全链 U=1) | QEMU: multiboot 模块交付 ELF → 内核解析装载 → ring3 运行 ELF 内 Linux syscall → exit 内核接管（提交见 M2） |
 | M2 linuxsubsys v0 | 6w | ELF 动态加载(含动态链接)、Linux syscall gate 全表、musl/glibc 直跑 | busybox/dash/curl-static 原生运行 |
 | M3 winsubsys v0 | 8w | PE 加载器、ntdll/kernel32/ws2_32 垫片、控制台程序、vcruntime 子集 | mingw hello + 控制台 TUI 应用 |
 | M4 桌面 | 8w | fujocom 合成器 v0、fujokit v0、fujowm、输入/字体/IME | 桌面鼠标键盘窗口流畅, 120Hz |

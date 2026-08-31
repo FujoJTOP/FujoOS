@@ -17,16 +17,12 @@
   cr0.PG|PE = 1                      ; 最后开启分页+长模式
   ljmp 0x08:0x00200000               ; 进入长模式 Rust 入口 (rust64_entry)
 
-页表 (4 KiB 页, 16 MiB 恒等映射 — M1 用 4KB 页, 与主流内核一致):
+页表 (4 KiB 页, 64 MiB 恒等映射 — M2: 覆盖内核+模块装载区+用户区+栈):
   PML4[0] -> PDPT
   PDPT[0] -> PD
-  PD[0]   -> PT0..PT7  (16 MiB / 2 MiB = 8 个页表)
-  PTi[j]  = (i*2MiB + j*4KiB) | flags
-  用户区 0x400000..0x900000: flags=0x87 (P|RW|U|...)
-  其余:                      flags=0x83 (P|RW)
-
-说明: 不再使用 2MiB 大页 (PS=1) —— 在 QEMU TCG 上出现不可解释的
-     注入模式保护故障; 4KB 页是最稳的公共路径。常量与 kernel.ld 一致。
+  PD[0..31] -> PT0..PT31  (64 MiB / 2 MiB = 32 个页表)
+  PTi[j]  = (i*2MiB + j*4KiB) | 0x87
+  所有上级条目 U=1: x86 在页表遍历的每一级检查 U/S (M1 踩坑实录)。
 """
 
 import os
@@ -37,17 +33,17 @@ BLOB_BASE = 0x101000   # .boot_blob 段基址
 PML4 = 0x102000        # BLOB + 0x1000
 PDPT = 0x103000        # BLOB + 0x2000
 PD_BASE = 0x104000     # BLOB + 0x3000
-PT_BASE = 0x108000     # BLOB + 0x7000 (8 x 512 x 8B = 32 KiB)
-GDT = 0x110000         # BLOB + 0xF000 (位于 8 个页表之后)
-GDT_PTR = 0x110018     # BLOB + 0xF018
+PT_BASE = 0x108000     # BLOB + 0x7000 (32 x 512 x 8B = 128 KiB)
+GDT = 0x128000         # BLOB + 0x27000 (位于 32 个页表之后)
+GDT_PTR = 0x128018     # BLOB + 0x27018
 STACK_TOP = 0x300000
 RUST_ENTRY = 0x200000
 
-# 16 MiB 恒等映射, 用户区 4..9 MiB
-MAP_PD_END = 0x1000000          # 16 MiB
+# 64 MiB 恒等映射, 用户区 4..9 MiB
+MAP_PD_END = 0x4000000           # 64 MiB
 USER_LO = 0x400000
 USER_HI = 0x900000
-BLOB_SIZE = 0xF030             # 覆盖 stub+所有表+GDT
+BLOB_SIZE = 0x27040
 
 blob = bytearray(BLOB_SIZE)
 
@@ -87,21 +83,16 @@ emit(b"\x0f\x22\xc0", p); p += 3                                # mov cr0, eax
 emit(b"\xea" + struct.pack("<I", RUST_ENTRY) + struct.pack("<H", 0x08), p); p += 7  # ljmp 0x08:0x200000
 assert p <= BLOB_BASE + 0x1000, "stub too long"
 
-# ================= 页表数据（4 KiB 页, 16 MiB 恒等映射） =================
-# 注意: x86 页表遍历在**每一级**都检查 U/S 位 —— 用户访问要求
-# PML4/PDPT/PD/PTE 全链 U=1, 只设叶级会 #PF (M1 踩坑实录; e=5 U 违规)。
-set64(PML4, PDPT | 0x07)          # PML4[0]: P|RW|U
-set64(PDPT, PD_BASE | 0x07)       # PDPT[0]: P|RW|U
-# PD[0..7] = PT 指针, 任意用途均为用户可见 (16MiB 恒等区)
-for i in range(8):
+# ================= 页表数据（4 KiB 页, 64 MiB 恒等映射） =================
+# x86 页表遍历在**每一级**都检查 U/S —— 用户访问需要 PML4/PDPT/PD/PTE 全链 U=1。
+set64(PML4, PDPT | 0x07)
+set64(PDPT, PD_BASE | 0x07)
+for i in range(32):
     set64(PD_BASE + 8 * i, (PT_BASE + 0x1000 * i) | 0x07)
-# 页表内容
-for i in range(8):
+for i in range(32):
     for j in range(512):
         vaddr = i * 0x200000 + j * 0x1000
-        flags = 0x83                               # P|RW
-        if USER_LO <= vaddr < USER_HI:
-            flags |= 0x04                          # U: 用户区 (M1)
+        flags = 0x87                               # P|RW|U
         set64(PT_BASE + 0x1000 * i + 8 * j, vaddr | flags)  # 恒等映射: 物理 = 虚拟
 
 # ================= GDT 数据 =================

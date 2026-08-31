@@ -21,6 +21,6 @@ python boot\gen_stub32.py
 Write-Host "== [2/4] cargo build (x86_64-unknown-none) =="
 cargo build --release
 
-Write-Host "== [3/4] flatten + QEMU boot =="
+Write-Host "== [3/4] flatten + QEMU boot (with ELF module) =="
 python ..\tools\flatten_elf.py target\x86_64-unknown-none\release\fujo-kernel fujo-kernel.bin --pad 0x110000
-qemu-system-x86_64 -m 128M -kernel fujo-kernel.bin -display none -serial stdio -monitor none -no-reboot
+qemu-system-x86_64 -m 128M -kernel fujo-kernel.bin -initrd ..\sdk\user\user_test.elf -display none -serial stdio -monitor none -no-reboot

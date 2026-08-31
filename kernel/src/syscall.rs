@@ -168,9 +168,11 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
     match nr {
         // write(fd, buf, len)
         1 => user_write(a0, a1, a2),
+        // getpid() (x86-64: 39) — linuxsubsys v0 最小实现
+        39 => 1,
         // exit(code) / exit_group(code) -> 内核接管并停机
         60 | 231 => {
-            serial::write_line("user : sys_exit() — 内核接管, M1 验证完成");
+            serial::write_line("user : sys_exit() — 内核接管, M2 验证完成");
             serial::write_str("timer : pit ticks=");
             print_dec(interrupts::ticks());
             serial::write_line(" (~100 Hz since boot)");
@@ -186,11 +188,18 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
             if c <= 3 {
                 serial::write_str("syscall unimplemented nr=");
                 print_dec(nr);
-                serial::write_line("");
+                serial::write_str(" (");
+                serial::write_str(name_of(nr).unwrap_or("?"));
+                serial::write_line(")");
             }
             -38 // -ENOSYS
         }
     }
+}
+
+/// 从 LINUX_X64_SUBSET 中查 syscall 名 (M2: 日志可读性)
+pub fn name_of(nr: u64) -> Option<&'static str> {
+    LINUX_X64_SUBSET.iter().find(|(n, _)| *n as u64 == nr).map(|(_, s)| *s)
 }
 
 fn user_write(fd: u64, ptr: u64, len: u64) -> i64 {
@@ -263,22 +272,98 @@ fn dump_hex_bytes(addr: u64, n: usize) {
     serial::write_line("");
 }
 
-/// 进入用户态 (M1 单任务): 拷贝测试程序到 0x400000, iretq 到 ring3。
-/// 注: include_bytes 保证在 .rodata, 与程序段一起被恒等映射覆盖。
-pub fn enter_user_test() -> ! {
-    const LOAD: u64 = 0x400000;
+/// 进入用户态 (M2: 优先装载 multiboot 模块中的 ELF 文件; 回退内嵌二进制)。
+pub fn enter_user_test(mbi: u32) -> ! {
+    const LOAD_DEFAULT: u64 = 0x400000;
     const STACK: u64 = 0x600000;
 
-    let bin: &[u8] = include_bytes!("user_test.bin");
-    serial::write_str("test : loading user program @0x400000 (");
-    print_dec(bin.len() as u64);
-    serial::write_line(" bytes)");
-    unsafe {
-        core::ptr::copy_nonoverlapping(bin.as_ptr(), LOAD as *mut u8, bin.len());
+    let mut load_addr: u64 = LOAD_DEFAULT;
+    let mut used_elf = false;
+
+    // ---- M2: ELF 模块装载路径 ----
+    match unsafe { find_module(mbi) } {
+        Some((start, len, name_ptr)) => {
+            // 模块名 (bootloader 提供零终止字符串)
+            let mut name = [0u8; 64];
+            let mut n = 0usize;
+            unsafe {
+                while n < 63 {
+                    let b = name_ptr.add(n).read();
+                    if b == 0 {
+                        break;
+                    }
+                    name[n] = b;
+                    n += 1;
+                }
+            }
+            let name_s = core::str::from_utf8(&name[..n]).unwrap_or("?");
+            serial::write_str("elf  : module '");
+            serial::write_str(name_s);
+            serial::write_str("' @");
+            print_hex(start as u64);
+            print_dec(len as u64);
+            serial::write_line(" bytes");
+
+            match crate::elf_loader::load_elf(start, len) {
+                Ok(entry) => {
+                    serial::write_str("elf  : loaded ET_EXEC, entry=");
+                    print_hex(entry);
+                    serial::write_line("");
+                    load_addr = entry;
+                    used_elf = true;
+                }
+                Err(e) => {
+                    serial::write_str("elf  : FAILED (");
+                    serial::write_str(e);
+                    serial::write_line(") — falling back to embedded bin");
+                }
+            }
+        }
+        None => {
+            serial::write_line("elf  : no boot module (use -initrd) — embedded bin fallback");
+        }
     }
-    // 诊断: dump 用户程序前 16 字节
-    dump_hex_bytes(LOAD, 16);
+
+    // ---- 回退: 内嵌二进制路径 (M1) ----
+    if !used_elf {
+        let bin: &[u8] = include_bytes!("user_test.bin");
+        serial::write_str("test : loading embedded user bin @0x400000 (");
+        print_dec(bin.len() as u64);
+        serial::write_line(" bytes)");
+        unsafe {
+            core::ptr::copy_nonoverlapping(bin.as_ptr(), LOAD_DEFAULT as *mut u8, bin.len());
+        }
+    } else {
+        serial::write_str("test : ELF mapped (no embedded copy) — running module bytes");
+        serial::write_line("");
+    }
+
     serial::write_line("test : iretq -> ring3 (cs=0x23 ss=0x1b, linux-x64 ABI)");
-    unsafe { fujo_enter_user(LOAD, STACK) };
+    unsafe { fujo_enter_user(load_addr, STACK) };
     unreachable!()
+}
+
+/// 解析 multiboot v1 模块表, 返回 (start, len, name)。
+unsafe fn find_module(mbi: u32) -> Option<(u32, u32, *const u8)> {
+    if mbi == 0 {
+        return None;
+    }
+    let p = mbi as *const u32;
+    let flags = p.read();
+    if flags & 0x8 == 0 {
+        return None;
+    }
+    let count = p.add(5).read();
+    let mods_addr = p.add(6).read();
+    if count == 0 || mods_addr == 0 {
+        return None;
+    }
+    let m = mods_addr as *const u32;
+    let start = m.read();
+    let end = m.add(1).read();
+    let name = *m.add(2) as *const u8;
+    if end <= start {
+        return None;
+    }
+    Some((start, end - start, name))
 }

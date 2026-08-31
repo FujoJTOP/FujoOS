@@ -11,6 +11,7 @@
 #![no_main]
 #![allow(static_mut_refs)]
 
+mod elf_loader;
 mod gdt;
 mod interrupts;
 mod serial;
@@ -66,7 +67,7 @@ static MB_HEADER: MultibootHeader = MultibootHeader {
 // ---------------------------------------------------------------------------
 #[used]
 #[link_section = ".boot_blob"]
-static BOOT_BLOB: [u8; 0xF030] = *include_bytes!("../boot_blob.bin");
+static BOOT_BLOB: [u8; 0x27040] = *include_bytes!("../boot_blob.bin");
 
 /// ELF 入口占位（真正入口是引导桩 far-jump 的 rust64_entry）。
 #[no_mangle]
@@ -151,17 +152,8 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     }
     out_line("timer : 100 ticks = 1.0 s elapsed (PIT @100 Hz)");
 
-    // ---- M1: 用户态测试程序 (linux-x64 ABI, 原生 syscall) ----
-    unsafe {
-        out_raw("test : PD[2]=");
-        out_hex_u32((core::ptr::read((0x104000usize as *const u64).add(2)) as u32));
-        out_raw(" PT2[0]=");
-        out_hex_u32((core::ptr::read(0x10A000usize as *const u64)) as u32);
-        out_raw(" tss.rsp0=");
-        out_hex_u32(gdt::debug_tss_rsp0() as u32);
-        out_line("");
-    }
-    syscall::enter_user_test();
+    // ---- M2: 用户态测试 (ELF 模块装载 + Linux ABI syscall) ----
+    syscall::enter_user_test(mbi);
 }
 
 // ---------------------------------------------------------------------------
