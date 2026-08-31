@@ -255,7 +255,13 @@
       trace_show 输出(rng: `nr=1 (write) a0=1 …` / `nr=21251 (trace_count)
       a0=2/3` / counts: read=2 write=11 open=3 close=5) →
       **`M33 RESULT: PASS`**
-- [ ] **M34** 兼容矩阵回归(三格式 × 三子系统, 自动化)
+- [x] **M34** 兼容矩阵回归(三格式 × 三子系统, 自动化) ——
+      **`tools/fujoregress.py`**: 9 用例 × (QEMU 启动→自动注入
+      `os run hermes`→串口日志→断言关键字), 结果 **9/9 PASS**:
+      ELF×linuxsubsys (m30/m33)、ELF(.run)×fujopack (m31)、
+      ELF(+lib)×fujorun (m32)、Mach-O×darwinsubsys (m29)、
+      PE×winsubsys (M3/M26/M27/M30); 单用例 `--only IX`、超时
+      `--timeout`、`--json` 输出; 每次 ~11s, 全程 ~100s
 - [ ] **M35** 性能基准:syscall 延迟/切换开销表
 
 ## Wave 3 · 图形与交互(M36–M50)—— UI 从"演示"变"可用"
