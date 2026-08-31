@@ -354,6 +354,18 @@ pub extern "C" fn fujo_read(fd: u64, buf: u64, len: u64) -> i64 {
     }
 }
 
+/// M26: 文件大小 (kernel32!GetFileSize 直通) —— fd -> data_len。
+#[no_mangle]
+pub extern "C" fn fujo_size(fd: u64) -> i64 {
+    unsafe {
+        if fd >= 3 && (fd as usize) < MAX_OPEN {
+            let f = &*core::ptr::addr_of!(FILES[fd as usize]);
+            return f.data_len as i64;
+        }
+    }
+    -1 // -EBADF
+}
+
 /// 系统调用 close(nr3)。
 #[no_mangle]
 pub extern "C" fn fujo_close(fd: u64) -> i64 {

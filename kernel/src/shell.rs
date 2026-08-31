@@ -110,6 +110,7 @@ pub fn shell(mbi: u32) -> ! {
     out_line("os   :   os run m21      launch syscall-surface demo (M21)");
     out_line("os   :   os run fork      launch fork demo (M22)");
     out_line("os   :   os run busybox   launch static busybox (M23)");
+    out_line("os   :   os run win       launch winsubsys PE demo (M26)");
     out_line("os   :   help             show this list");
     let mut line = [0u8; 64];
     loop {
@@ -171,6 +172,10 @@ pub fn shell(mbi: u32) -> ! {
                     }
                     set_argv_cmd(&words[..wn]);
                     out_line("os   : launching busybox (argv mode) ...");
+                    syscall::enter_user_test(mbi); // > !: 不再返回
+                } else if t1 == "run" && t2 == "win" {
+                    // M26: winsubsys PE32+ (kernel32 垫片家族)
+                    out_line("os   : launching winsubsys PE demo ...");
                     syscall::enter_user_test(mbi); // > !: 不再返回
                 } else {
                     // TEMP-DEBUG

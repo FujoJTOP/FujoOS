@@ -17,6 +17,11 @@ fn shim_syscall_nr(module: &str, function: &str) -> Option<u64> {
     match (module, function) {
         ("KERNEL32.dll", "WriteFile") | ("kernel32.dll", "WriteFile") => Some(0x5001),
         ("KERNEL32.dll", "ExitProcess") | ("kernel32.dll", "ExitProcess") => Some(0x5002),
+        // ---- M26: 垫片家族扩展 ----
+        ("KERNEL32.dll", "ReadFile") | ("kernel32.dll", "ReadFile") => Some(0x5003),
+        ("KERNEL32.dll", "GetFileSize") | ("kernel32.dll", "GetFileSize") => Some(0x5004),
+        ("KERNEL32.dll", "GetCurrentThreadId") | ("kernel32.dll", "GetCurrentThreadId") => Some(0x5005),
+        ("KERNEL32.dll", "CloseHandle") | ("kernel32.dll", "CloseHandle") => Some(0x5006),
         _ => None,
     }
 }
@@ -24,35 +29,39 @@ fn shim_syscall_nr(module: &str, function: &str) -> Option<u64> {
 /// 用户空间蹦床页基址 (0x7F0000..0x800000, 64MiB 恒等映射内, U=1)
 pub const SHIM_PAGE: usize = 0x7F0000;
 
-/// 把蹦床写入 SHIM_PAGE (只执行一次; ID 表: 0=WriteFile 1=ExitProcess)
+/// 把蹦床写入 SHIM_PAGE (只执行一次; ID 表与 shim_syscall_nr 一致:
+/// 0=WriteFile(0x5001) 1=ExitProcess(0x5002) 2=ReadFile(0x5003)
+/// 3=GetFileSize(0x5004) 4=GetCurrentThreadId(0x5005) 5=CloseHandle(0x5006))
 pub unsafe fn install_shims() {
     let p = SHIM_PAGE as *mut u8;
-    // WriteFile(hFile=rcx, buf=rdx, len=r8):
-    //   mov rdi, rcx; mov rsi, rdx; mov rdx, r8;
-    //   mov rax, 0x5001; syscall; ret
-    let wf: [u8; 26] = [
-        0x48, 0x89, 0xCF,                   // mov rdi, rcx
-        0x48, 0x89, 0xD6,                   // mov rsi, rdx
-        0x4C, 0x89, 0xC2,                   // mov rdx, r8
-        0x48, 0xC7, 0xC0, 0x01, 0x50, 0x00, 0x00, // mov rax, 0x5001
-        0x0F, 0x05,                         // syscall
-        0xC3,                               // ret
-        0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, // padding
+    // 通用 trampoline (Win64 调用约定): rcx=arg1, rdx=arg2, r8=arg3, r9=arg4
+    //   mov rdi, rcx; mov rsi, rdx; mov rdx, r8; mov rcx, r9;
+    //   mov rax, <id>; syscall; ret
+    // 每个槽 0x20 字节。
+    let stub: [u8; 32] = [
+        0x50, // push rax (1)
+        0x51, // push rcx (1)
+        0x48, 0x89, 0xCF, // mov rdi, rcx (3)
+        0x48, 0x89, 0xD6, // mov rsi, rdx (3)
+        0x4C, 0x89, 0xC2, // mov rdx, r8 (3)
+        0x48, 0xC7, 0xC0, 0x00, 0x00, 0x00, 0x00, // mov rax, imm32 (7) — imm @14..17
+        0x0F, 0x05, // syscall (2)
+        0x59, // pop rcx (1) — sysretq 用 rcx
+        0x58, // pop rax (1)
+        0xC3, // ret (1)
+        0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, // pad 9
     ];
-    core::ptr::copy_nonoverlapping(wf.as_ptr(), p, 26);
-
-    // ExitProcess(code=rcx):
-    //   mov rdi, rcx; mov rax, 0x5002; syscall; ret
-    let ep: [u8; 33] = [
-        0x48, 0x89, 0xCF,                   // mov rdi, rcx
-        0x48, 0xC7, 0xC0, 0x02, 0x50, 0x00, 0x00, // mov rax, 0x5002
-        0x0F, 0x05,                         // syscall
-        0xC3,                               // ret
-        0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
-        0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
-        0x90, 0x90, 0x90, 0x90,
-    ];
-    core::ptr::copy_nonoverlapping(ep.as_ptr(), p.add(0x20), 28);
+    let ids: [u64; 6] = [0x5001, 0x5002, 0x5003, 0x5004, 0x5005, 0x5006];
+    for (i, id) in ids.iter().enumerate() {
+        let off = i * 0x20;
+        let mut s = stub;
+        // imm32 在 mov rax 的 14..17
+        s[14] = (id & 0xFF) as u8;
+        s[15] = ((id >> 8) & 0xFF) as u8;
+        s[16] = ((id >> 16) & 0xFF) as u8;
+        s[17] = ((id >> 24) & 0xFF) as u8;
+        core::ptr::copy_nonoverlapping(s.as_ptr(), p.add(off), s.len());
+    }
     core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
 }
 
@@ -154,7 +163,16 @@ pub fn load_pe(base: u32, len: u32) -> Result<u64, &'static str> {
 
                     match shim_syscall_nr(dname_s, fname_s) {
                         Some(nr) => {
-                            let id = if nr == 0x5001 { 0 } else { 1 };
+                            // id = shim 槽索引 (与 install_shims ids 表一致)
+                            let id = match nr {
+                                0x5001 => 0,
+                                0x5002 => 1,
+                                0x5003 => 2,
+                                0x5004 => 3,
+                                0x5005 => 4,
+                                0x5006 => 5,
+                                _ => 0,
+                            };
                             let addr = shim_addr(id);
                             (iat as *mut u64).write(addr);
                             syscall::log_shim(dname_s, fname_s, addr);

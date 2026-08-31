@@ -320,6 +320,15 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
             serial::write_line(" (~100 Hz since boot)");
             halt_forever();
         }
+        // ---- M26: winsubsys 垫片家族扩展 ----
+        // kernel32!ReadFile (fd, buf, len) -> 实际读入 n
+        0x5003 => crate::vfs::fujo_read(a0, a1, a2),
+        // kernel32!GetFileSize (fd) -> 文件大小 (vfs 直通)
+        0x5004 => crate::vfs::fujo_size(a0),
+        // kernel32!GetCurrentThreadId -> 当前任务 id+1
+        0x5005 => crate::sched::current_task() as i64 + 1,
+        // kernel32!CloseHandle (fd >= 3 -> close)
+        0x5006 => crate::vfs::fujo_close(a0),
         // exit(code) / exit_group(code) -> 内核接管并停机
         60 | 231 => {
             serial::write_line("user : sys_exit() - kernel takeover, M6 verified");

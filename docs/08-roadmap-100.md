@@ -145,7 +145,20 @@
       `hello from musl on FujoOS (M25)` + `libc: musl 1.2.5 (len=10)`
       + exit(42) 正确返回(末尾 stdout flush 缓冲指针超界日志为
       printf EXIT 前 fflush 残留, 不影响) → **M25 达成**
-- [ ] **M26** winsubsys:kernel32 文件 IO/堆/线程垫片家族
+- [x] **M26** winsubsys:kernel32 文件 IO/堆/线程垫片家族 ——
+      **PE32+ winsubsys 程序(mingw 编译)原生运行**: `os run win` →
+      `m26_win.exe`(PE32+, 子系统=windows-cui) 经 PE 装载 → kernel32 垫片
+      trampoline(0x20 对齐, push rax/rcx + mov 转 syscall 参数 + syscall +
+      pop/ret) 直通内核: **WriteFile**(屏幕输出)、**ReadFile**(stdin
+      fd=3 读 32 字节)、**GetFileSize**(PE 文件字节数回填)、
+      **GetCurrentThreadId**、**CloseHandle** → **M26 RESULT: PASS**;
+      架构: `shim_syscall_nr` 表扩展 6 符号(kernel32.def),
+      通用 32 字节槽生成器(imm32 @14..17, 数组 32 元素);
+      OS 内句柄 = linux 直通 fd(WriteFile→user_write / ReadFile→fujo_read);
+      **修复链**: trampoline stub imm32 写位(误 18..21 → #PF cr2=0x1000000)
+      与旧二进制缓存(entry 0x21f230 确认); 构造: msvcrt 无需(裸
+      WinMain/GetStdHandle 直链 kernel32.def); 回归: M3 hello_win.exe
+      (WriteFile/ExitProcess) 仍 PASS
 - [ ] **M27** mingw 控制台程序原生运行
 - [ ] **M28** vcruntime 最小集
 - [ ] **M29** darwinsubsys:libSystem 薄层;darwin CLI 工具

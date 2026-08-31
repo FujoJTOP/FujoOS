@@ -2,3 +2,7 @@ LIBRARY kernel32.dll
 EXPORTS
     WriteFile
     ExitProcess
+    ReadFile
+    GetFileSize
+    GetCurrentThreadId
+    CloseHandle
