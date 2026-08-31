@@ -156,9 +156,11 @@ pub fn setup() {
         let efer = rdmsr(MSR_EFER);
         wrmsr(MSR_EFER, efer | 0x1); // SCE
 
-        // STAR:  kcs=0x08 @[47:32], user field=0x10 @[63:48]
-        // sysret: CS=0x10+16=0x20, SS=0x10+8=0x18
-        let star = (0x08u64 << 32) | (0x10u64 << 48);
+        // STAR:  kcs=0x08 @[47:32], user field=0x13 @[63:48]
+        // sysret: CS=0x13+16=0x23 (RPL3!), SS=0x13+8=0x1B —— RPL 必须落进 STAR,
+        // 否则 sysret 以 RPL0 返回 -> 用户实际跑在 CPL0 (M13 现场教训:
+        // 无栈切换/中断帧紧凑/U-guard 失效, 三处异常同源)。
+        let star = (0x08u64 << 32) | (0x13u64 << 48);
         wrmsr(MSR_STAR, star);
 
         let lst = fujo_syscall_entry as usize as u64;
@@ -468,6 +470,10 @@ pub fn enter_user_test(mbi: u32) -> ! {
     }
 
     serial::write_line("test : iretq -> ring3 (cs=0x23 ss=0x1b, linux-x64 ABI)");
+    // M13: 双任务模式 (os run threads) —— 装载后克隆第二个任务 (同一镜像, 独立栈)
+    if crate::sched::multi_task() {
+        crate::sched::spawn_tasks(load_addr);
+    }
     unsafe { fujo_enter_user(load_addr, STACK) };
     unreachable!()
 }

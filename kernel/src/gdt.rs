@@ -122,6 +122,16 @@ pub fn kernel_rsp0() -> u64 {
     0x300000
 }
 
+/// M13: 运行时切换 TSS.rsp0 (每任务独立内核栈; 线程切换时更新)。
+pub fn set_rsp0(v: u64) {
+    unsafe {
+        core::ptr::write_volatile(
+            core::ptr::addr_of_mut!(TSS).cast::<u8>().add(4).cast::<u64>(),
+            v,
+        );
+    }
+}
+
 /// 调试: 读取 TSS.rsp0 实际值 (验证 desc 指向的 TSS 数据完好)
 pub fn debug_tss_rsp0() -> u64 {
     unsafe { core::ptr::read_volatile(core::ptr::addr_of!(TSS).cast::<u8>().add(4).cast::<u64>()) }

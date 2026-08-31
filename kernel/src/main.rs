@@ -20,6 +20,7 @@ mod kbd;
 mod macho_loader;
 mod mem;
 mod pe_loader;
+mod sched;
 mod serial;
 mod shell;
 mod syscall;

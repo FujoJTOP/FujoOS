@@ -59,6 +59,7 @@ pub fn shell(mbi: u32) -> ! {
     out_line("");
     out_line("os   : fujo shell v0 - commands:");
     out_line("os   :   os run hermes    launch Hermes CLI (agent + qwen model call)");
+    out_line("os   :   os run threads   launch 2 tasks (M13 timeslice demo)");
     out_line("os   :   help             show this list");
     let mut line = [0u8; 64];
     loop {
@@ -73,8 +74,21 @@ pub fn shell(mbi: u32) -> ! {
                 if t1 == "run" && t2 == "hermes" {
                     out_line("os   : launching hermes (ring3) ...");
                     syscall::enter_user_test(mbi); // > !: 不再返回
+                } else if t1 == "run" && t2 == "threads" {
+                    // M13: 同一镜像双任务, PIT 时间片轮转 (验证抢占调度)
+                    crate::sched::set_multi();
+                    out_line("os   : launching 2 tasks (timeslice round-robin) ...");
+                    syscall::enter_user_test(mbi); // > !: 不再返回
                 } else {
-                    out_line("os   : unknown os subcommand (try: os run hermes)");
+                    // TEMP-DEBUG
+                    out_line("os   : unknown os subcommand (try: os run hermes | os run threads)");
+                    out_raw("dbg  : t1='");
+                    out_raw(t1);
+                    out_raw("' t2='");
+                    out_raw(t2);
+                    out_raw("' full='");
+                    out_raw(cmd);
+                    out_raw("'\n");
                 }
             }
             "help" | "?" => out_line("os   : commands: os run hermes | help"),

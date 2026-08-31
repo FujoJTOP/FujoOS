@@ -115,14 +115,40 @@ fujo_exc_stub_table:
     call fujo_exc
     ud2
 
-    # ---- PIT (IRQ0) —— 计数 + EOI + 返回 ----
+    # ---- PIT (IRQ0) —— 计数 + EOI + 调度钩子 (M13: 时间片轮转) ----
+    # 全程保存 caller-saved (C 调度器会破坏), 切任务时换 rsp 到新帧。
     .p2align 4
     .global fujo_pit_stub
 fujo_pit_stub:
     inc qword ptr [rip + pit_ticks]
     push rax
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push r8
+    push r9
+    push r10
+    push r11
+    mov rdi, 0
+    mov rsi, rsp
+    call fujo_tick_sched
+    push rax          # 先存返回值
     mov al, 0x20
-    out 0x20, al
+    out 0x20, al      # EOI 必须在恢复寄存器前 (mov al 会毁 rax!; M13 现场)
+    pop rax
+    test rax, rax
+    jz 1f
+    mov rsp, [rip + sched_next_rsp]
+1:
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
     pop rax
     iretq
 
