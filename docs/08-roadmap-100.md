@@ -245,7 +245,16 @@
       `os run hermes`(m32_multi.initrd: ELF+catlib.bin)→
       **`m32: lib content: CATLIB-BIN: library module payload from
       fujorun (M32)`** → **`M32 RESULT: PASS`**
-- [ ] **M33** 系统调用追踪(trace 工具 + 计数)
+- [x] **M33** 系统调用追踪(trace 工具 + 计数) —— **内核 trace 面**:
+      fujo 原生 0x5301 `trace_enable(on)` / 0x5302 `trace_show()`
+      (ring 尾部 16 条 nr/a0/tick + 非零计数 12 项) / 0x5303
+      `trace_count(nr)`; 环形缓冲 64×3 (nr, a0, PIT tick) + 计数表
+      256 (nr%256), 默认关(零开销), 开启后每 syscall 登记不改分发;
+      **工具/演示**(m33_trace.elf): enable 后 open/read/close/write 序列
+      → `trace_count(write)>=3 / open>=2 / close>=2` 校验 →
+      trace_show 输出(rng: `nr=1 (write) a0=1 …` / `nr=21251 (trace_count)
+      a0=2/3` / counts: read=2 write=11 open=3 close=5) →
+      **`M33 RESULT: PASS`**
 - [ ] **M34** 兼容矩阵回归(三格式 × 三子系统, 自动化)
 - [ ] **M35** 性能基准:syscall 延迟/切换开销表
 

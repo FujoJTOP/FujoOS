@@ -59,6 +59,13 @@ pub static mut user_gs_base: u64 = 0;
 /// M27: PE 模块 argv0 (__getmainargs 回填, 由装载路径写入)。
 #[no_mangle]
 pub static mut pe_argv0: [u8; 64] = [0; 64];
+/// M33: 系统调用追踪 (默认关; 开关经 0x5301)。
+#[no_mangle]
+pub static mut TRACE_ON: u64 = 0;
+#[no_mangle]
+pub static mut TRACE_COUNTS: [u64; 256] = [0; 256];
+pub static mut TRACE_RING: [(u64, u64, u64); 64] = [(0, 0, 0); 64];
+pub static mut TRACE_POS: usize = 0;
 /// M11: 用户 FPU/SIMD 状态 (syscall 进出保存恢复; 16 对齐 —— fxsave 要求)。
 #[repr(C, align(16))]
 pub struct FpuSave {
@@ -214,7 +221,25 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
     let a4 = unsafe { args.add(4).read() };
     let a5 = unsafe { args.add(5).read() };
 
+    // ---- M33: trace 登记 (开关开启时; 不改分发语义) ----
+    if unsafe { TRACE_ON } != 0 {
+        unsafe {
+            TRACE_COUNTS[(nr % 256) as usize] += 1;
+            TRACE_RING[TRACE_POS % 64] = (nr, a0, crate::interrupts::ticks());
+            TRACE_POS += 1;
+        }
+    }
+
     let res = match nr {
+        // fujo_trace_enable(on) — M33
+        0x5301 => {
+            unsafe { TRACE_ON = a0; }
+            0
+        }
+        // fujo_trace_show() — 打印 ring 尾部 + 非零计数
+        0x5302 => trace_show(),
+        // fujo_trace_count(nr) -> 计数
+        0x5303 => unsafe { TRACE_COUNTS[(a0 % 256) as usize] as i64 },
         // read(fd, buf, len) — M15 VFS
         0 => crate::vfs::fujo_read(a0, a1, a2),
         // write(fd, buf, len)
@@ -425,6 +450,42 @@ pub fn log_shim(dll: &str, func: &str, addr: u64) {
     serial::write_str(" -> trampoline ");
     print_hex(addr);
     serial::write_line("");
+}
+
+/// M33: trace 输出 (最近 16 条 ring + 非零计数前 12)。
+fn trace_show() -> i64 {
+    unsafe {
+        serial::write_line("trace : ---- syscall trace ----");
+        let n = TRACE_POS.min(16);
+        let mut k = 0;
+        while k < n {
+            let (nr, a0, tk) = TRACE_RING[(TRACE_POS + 64 - n + k) % 64];
+            serial::write_str("trace :   nr=");
+            print_dec(nr);
+            serial::write_str(" a0=");
+            print_hex(a0);
+            serial::write_str(" tick=");
+            print_dec(tk);
+            serial::write_line("");
+            k += 1;
+        }
+        serial::write_line("trace : ---- counts (non-zero) ----");
+        let mut c = 0usize;
+        let mut shown = 0usize;
+        while c < 256 && shown < 12 {
+            if TRACE_COUNTS[c] > 0 {
+                serial::write_str("trace :   nr%256=");
+                print_dec(c as u64);
+                serial::write_str(" count=");
+                print_dec(TRACE_COUNTS[c]);
+                serial::write_line("");
+                shown += 1;
+            }
+            c += 1;
+        }
+        serial::write_line("trace : ---- end ----");
+    }
+    0
 }
 
 /// M3 调试: 十六进制日志 (pe_loader 使用)
