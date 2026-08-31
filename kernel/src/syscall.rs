@@ -187,8 +187,14 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
     let a5 = unsafe { args.add(5).read() };
 
     let res = match nr {
+        // read(fd, buf, len) — M15 VFS
+        0 => crate::vfs::fujo_read(a0, a1, a2),
         // write(fd, buf, len)
-        1 => user_write(a0, a1, a2),        // ---- M11: 内存原语 (linux ABI 直通) ----
+        1 => user_write(a0, a1, a2),
+        // open(path, flags, mode) — M15 VFS
+        2 => crate::vfs::fujo_open(a0, a1, a2),
+        // close(fd) — M15 VFS
+        3 => crate::vfs::fujo_close(a0),        // ---- M11: 内存原语 (linux ABI 直通) ----
         // mmap(addr, len, prot, flags, fd, off) — 匿名私有子集
         9 => crate::mem::fujo_mmap(a0, a1, a2, a3, a4, a5),
         // munmap(addr, len) — v0 no-op
@@ -289,6 +295,13 @@ pub fn log_hex(v: u64) {
 }
 
 fn user_write(fd: u64, ptr: u64, len: u64) -> i64 {
+    // M15: fd>=3 先走 VFS (内存盘追加); /dev/tty 与 fd<3 走串口
+    if fd >= 3 {
+        if let Some(n) = crate::vfs::file_write(fd, ptr, len) {
+            return n;
+        }
+        // /dev/tty: 落到串口
+    }
     let _ = fd;
     // 用户地址范围检查: linux/win 低区 (0x400000..0x800000) 或 darwin 区
     // (0x100000000..0x100800000, M6 Mach-O 原生地址)
@@ -370,7 +383,7 @@ pub fn enter_user_test(mbi: u32) -> ! {
     let mut used_module = false;
 
     // ---- M2/M3: 模块装载路径 (ELF 或 PE, 格式嗅探统一路由) ----
-    match unsafe { find_module(mbi) } {
+    match unsafe { module_snapshot().or_else(|| find_module(mbi)) } {
         Some((start, len, name_ptr)) => {
             // 模块名 (bootloader 提供零终止字符串)
             let mut name = [0u8; 64];
@@ -480,9 +493,37 @@ pub fn enter_user_test(mbi: u32) -> ! {
     unreachable!()
 }
 
+/// M15: 引导模块信息 (addr, len) —— VFS /boot/module 后端。
+pub fn boot_module_info(mbi: u32) -> Option<(u64, u64)> {
+    unsafe {
+        find_module(mbi).map(|(s, l, _)| (s as u64, l as u64))
+    }
+}
+
+// 模块快照: 引导期记录一次 (enter 阶段二次解析 mbi 偶发不可靠 —— 快照绕过)
+static mut MOD_SNAP: (u32, u32, u32) = (0, 0, 0);
+
+/// 引导期调用: 记住 (start, len, name_ptr)。
+pub fn remember_module(mbi: u32) {
+    unsafe {
+        if let Some((s, l, n)) = find_module(mbi) {
+            MOD_SNAP = (s, l, n as u32);
+        }
+    }
+}
+
+pub fn module_snapshot() -> Option<(u32, u32, *const u8)> {
+    unsafe {
+        let (s, l, n) = MOD_SNAP;
+        if s == 0 || l == 0 || n == 0 {
+            return None;
+        }
+        Some((s, l, n as *const u8))
+    }
+}
+
 /// 解析 multiboot v1 模块表, 返回 (start, len, name)。
-unsafe fn find_module(mbi: u32) -> Option<(u32, u32, *const u8)> {
-    if mbi == 0 {
+unsafe fn find_module(mbi: u32) -> Option<(u32, u32, *const u8)> {    if mbi == 0 {
         return None;
     }
     let p = mbi as *const u32;

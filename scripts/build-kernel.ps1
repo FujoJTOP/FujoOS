@@ -82,6 +82,15 @@ if (Test-Path "$llvm\clang.exe") {
     Write-Host "  clang missing: crash_demo skipped"
 }
 
+Write-Host "== [0i] build M15 VFS test (ring3, open/read/close) =="
+if (Test-Path "$llvm\clang.exe") {
+    & "$llvm\clang.exe" --target=x86_64-unknown-linux-gnu -O2 -nostdlib -static -fno-pie -no-pie `
+        -fuse-ld=lld -fno-builtin "-Wl,-e,_start" "-Wl,-T,$root\sdk\user\user.ld" `
+        ..\sdk\user\fs_test.c -o ..\sdk\user\fs_test.elf
+} else {
+    Write-Host "  clang missing: fs_test skipped"
+}
+
 Write-Host "== [1/4] generate boot stub (32-bit stub + page tables + GDT) =="
 python boot\gen_stub32.py
 

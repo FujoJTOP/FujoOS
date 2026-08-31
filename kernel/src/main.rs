@@ -24,6 +24,7 @@ mod sched;
 mod serial;
 mod shell;
 mod syscall;
+mod vfs;
 mod vga;
 
 use core::arch::asm;
@@ -179,6 +180,14 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     mem::harden_user_guard();
     mem::demand_zero_init();
     out_line("mem  : virtual memory v0 - user heap 0x800000..0xC00000 (brk/mmap ready)");
+
+    // ---- M15: VFS 内存文件系统 (挂载前记录模块) ----
+    syscall::remember_module(mbi);
+    let mb = syscall::boot_module_info(mbi);
+    if let Some((addr, len)) = mb {
+        vfs::set_boot_module(addr, len);
+    }
+    vfs::init();
 
     // ---- M10.1: 启动 Logo (自绘徽章) -> os shell ----
     // 品牌展示分两段: ① 文本模式徽章 (任何显示/截屏可见, 保持 VGA 文本模式);
