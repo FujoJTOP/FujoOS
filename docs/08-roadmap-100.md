@@ -127,7 +127,15 @@
       argv 字符串放置顺序(逆序防覆盖) + NUL 终结(len=end+2)两个实证 bug;
       剩余 syscall: nr14(rt_sigprocmask)/nr106(mmap 相关) 被优雅忽略;
       **下一步(M24/M25)**: 编译自带 musl 静态 hello 直跑 → 符号表/动态链接
-- [ ] **M24** ELF 动态链接最小化(interp + 符号表)
+- [x] **M24** ELF 动态链接最小化(interp + 符号表) —— **ET_DYN + PT_INTERP 装载**:
+      `elf_loader` 接受 e_type=3(ET_DYN)并识别 PT_INTERP
+      (`elfx : PT_INTERP present (ld.so path recognized)`), 装载段过滤
+      v<0x100000(防破坏内核低址); **动态 ELF**(clang -fPIC -q 链接,
+      含 PT_INTERP/PT_DYNAMIC 记录, 非 PIE 动态)原生执行:
+      `os run busybox` → **`hello from dynamic ELF (M24)`** → sys_exit 正常;
+      说明: v0 为"链接期已定址的动态 ELF"(段按 p_vaddr 装载, 无需真 ld.so;
+      R_X86_64_PC32 文本内相对引用装载后不变); 真 PIE(+ld.so 符号解析)
+      列 M24.5/M28 输入
 - [x] **M25** musl/glibc hello 直跑 —— **musl 1.2.5 hello 原生运行**:
       alpine musl-dev(libc.a 9.4MB 但 strip-debug 后 2.7MB 可链;
       crt1/crti/crtn 同样 strip) + LLVM lld 静态链接

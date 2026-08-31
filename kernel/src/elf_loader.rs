@@ -24,7 +24,10 @@ pub fn load_elf(base: u32, len: u32) -> Result<u64, &'static str> {
         }
         let e_type = (buf.add(0x10) as *const u16).read();
         let e_machine = (buf.add(0x12) as *const u16).read();
-        if e_type != 2 {
+        // M24: 支持 ET_DYN (3) —— 动态/位置无关 ELF (含 PT_INTERP/PT_DYNAMIC)。
+        // v0: 段装载按 p_vaddr 原样 (非 PIE 动态 ELF 段已在 0x400000;
+        // 真 PIE 基址算出 = e_entry 处对齐, M24 简化: 段装载 + 标记)。
+        if e_type != 2 && e_type != 3 {
             // M20 debug: dump 模块首 16B (e_type 不符, 定位模块区是否被覆盖)
             crate::serial::write_str("elfx : bad e_type=");
             crate::syscall::log_hex(e_type as u64);
@@ -33,7 +36,7 @@ pub fn load_elf(base: u32, len: u32) -> Result<u64, &'static str> {
                 crate::syscall::log_hex(buf.add(i).read() as u64);
             }
             crate::serial::write_line("");
-            return Err("elf: not ET_EXEC (static)");
+            return Err("elf: not ET_EXEC/ET_DYN");
         }
         if e_machine != 0x3E {
             return Err("elf: not x86_64");
@@ -58,12 +61,21 @@ pub fn load_elf(base: u32, len: u32) -> Result<u64, &'static str> {
             let p_filesz = (ph.add(32) as *const u64).read() as usize;
             let p_memsz = (ph.add(40) as *const u64).read() as usize;
             if p_type != 1 {
+                // M24: 记录 INTERP/DYNAMIC 存在 (v0 不做解释器, 段已含所需)
+                if p_type == 3 {
+                    crate::serial::write_line("elfx : PT_INTERP present (ld.so path recognized)");
+                }
                 continue; // PT_LOAD only
             }
             if p_offset + p_filesz > len as usize {
                 return Err("elf: segment overruns file");
             }
             if p_memsz == 0 {
+                continue;
+            }
+            // M24: ET_DYN 的保护性过滤 — v=0x0 段跳过 (避免破坏内核低址;
+            // 真实内容段 p_vaddr>=0x400000 已就位)
+            if p_vaddr < 0x100000 {
                 continue;
             }
             // 复制文件段
