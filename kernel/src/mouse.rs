@@ -62,6 +62,12 @@ pub fn init() {
         if ms_inb(0x64) & 1 != 0 {
             let _ = ms_inb(0x60);
         }
+        // PH 清空 0x60: ACK/残余字节在 IRQ12 开启前全部排空 (M37 实证:
+        // 0xFA 污染状态机 -> 坐标被假包打满 65535 -> 命中全失败)
+        while ms_inb(0x64) & 1 != 0 {
+            let _ = ms_inb(0x60);
+        }
+        MS_STATE = 0;
         // PIC: master IRQ1 恢复 + IRQ2 (cascade) 开; slave IRQ4 (IRQ12) 开
         let m = ms_inb(0x21);
         ms_outb(0x21, (m & !0x02) & !0x04);
@@ -113,14 +119,13 @@ pub extern "C" fn fujo_ms_irq() {
                     }
                 }
                 if id != FOCUS_ID {
+                    crate::wmsg::notify_focus_changed(FOCUS_ID, id);
                     FOCUS_ID = id;
-                    if id != 0xFFFF_FFFF {
-                        serial::write_str("mouse: focus -> ");
-                        crate::syscall::debug_dec(id as u64);
-                        serial::write_line("");
-                    } else {
-                        serial::write_line("mouse: focus -> none");
-                    }
+                }
+                // M37: 移动/按钮消息投递 (焦点窗口)
+                crate::wmsg::notify_moved(MS_X, MS_Y, MS_BTN, FOCUS_ID);
+                if MS_PKT[0] & 7 != 0 {
+                    crate::wmsg::notify_button(MS_X, MS_Y, MS_BTN, FOCUS_ID);
                 }
             }
         }

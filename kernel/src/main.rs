@@ -25,6 +25,7 @@ mod kobj;
 mod macho_loader;
 mod mem;
 mod mouse;
+mod wmsg;
 mod pe_loader;
 mod sched;
 mod serial;

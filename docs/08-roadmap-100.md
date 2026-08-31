@@ -290,7 +290,22 @@
       整个 AUX 序列禁 IRQ1 下执行+恢复; ② 删 F4 导致鼠标无包(QEMU
       ps2 需 enable reporting);
       回归: 兼容矩阵 9/9
-- [ ] **M37** 消息环(win32k 等价):消息队列、窗口类、z-order
+- [x] **M37** 消息环(win32k 等价):消息队列、窗口类、z-order ——
+      **wmsg.rs**: 窗口类注册(0x5520, 名→id 查重)、窗口创建(0x5521,
+      class/x/y/w/h→win id, 表序=z-order 尾顶层)、环形消息队列
+      (64×5-u32, 非阻塞 0x5522 getmsg)、置顶(0x5523, z 表移尾)、
+      移除(0x5524); 消息种类 WM_CREATE/ENTER/LEAVE/MOUSEMOVE/BUTTON/
+      DESTROY/ZORDER; **mouse.rs→wmsg 联动**(坐标/焦点/按钮→消息投递
+      焦点窗口); **实测**: `WM_CREATE win1/win2/win3` 经 getmsg 全
+      **3/3 取出** + z-order 置顶消息(m37_wm.elf 窗口类+3 窗) →
+      **M37 RESULT: PASS**;
+      **实证修复链**: ① 窗口创建逐次注册鼠标矩形互相覆盖(只剩最后
+      一个 → 命中试全失) → WINS 表整体重建 refresh_rects; ② 独立
+      计数器静态被写坏(值 0x72696CE9 垃圾) → 表改用哨兵扫描
+      (id 0xFFFF_FFFF 空位)不依赖计数; ③ 8042 ACK/残余字节污染
+      状态机使坐标打满 65535 → IRQ12 开前排空 0x60 + 状态重置;
+      ④ IRQ 内串口打印拖慢 handler 引发包竞态 → 剔除, 观测经用户消息流;
+      回归: 兼容矩阵 9/9
 - [ ] **M38** 窗口管理:重叠/焦点/拖动/关闭
 - [ ] **M39** 字体升级:更多字形/缩放/抗锯齿
 - [ ] **M40** IME 预留(中文输入框架骨架)

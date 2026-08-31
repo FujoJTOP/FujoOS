@@ -378,6 +378,12 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5121 => crate::ipc::fujo_sigkill(a0, a1),
         // fujo_sigret() -> 0
         0x5122 => crate::ipc::fujo_sigret(),
+        // ---- M37: 消息环 (win32k 等价: 窗口类/窗口/消息队列/z-order) ----
+        0x5520 => crate::wmsg::fujo_wm_class(a0),
+        0x5521 => crate::wmsg::fujo_wm_create(a0 as u32, a1 as u32, a2 as u32, a3 as u32, a4 as u32),
+        0x5522 => crate::wmsg::fujo_wm_getmsg(a0),
+        0x5523 => crate::wmsg::fujo_wm_top(a0 as u32),
+        0x5524 => crate::wmsg::fujo_wm_remove(a0 as u32),
         // ---- M36: PS/2 鼠标 (位置/按键/命中测试/焦点) ----
         0x5410 => crate::mouse::fujo_mouse_info(a0),
         0x5411 => crate::mouse::fujo_mouse_rects(a0, a1),
