@@ -12,6 +12,7 @@
 #![allow(static_mut_refs)]
 
 mod ai;
+mod a11y;
 mod ata;
 mod clip;
 mod desk;

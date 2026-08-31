@@ -408,7 +408,13 @@
       → **fujokit kt_list 装载候选**(选中校验)+ **候选窗渲染**
       (font 两行 "1: China"/"2: Nation" 于 backbuffer) → commit(0) →
       `m48: commit='中国'` → **M48 RESULT: PASS**; 回归: 矩阵 9/9
-- [ ] **M49** 无障碍:高对比/大字模式
+- [x] **M49** 无障碍:高对比/大字模式 —— **a11y.rs**: 0x5D01 a11y_set
+      (0 正常 / 1 高对比调色板反转 fg↔bg+surface+ink / 2 大字 /
+      3 高对比+大字)、0x5D02 查询; **font_text 大字联动**(scale+1,
+      a11y::scale_boost);
+      **m49_a11y.elf 实测**: 高对比 `fg=ffffffff bg=ff000000`(反转) →
+      大字渲染采样 `large px=ffffffff` → **M49 RESULT: PASS**;
+      回归: 矩阵 9/9
 - [ ] **M50** GUI 基准:窗口开关/拖动帧率表
 
 ## Wave 4 · 游戏与性能(M51–M70)

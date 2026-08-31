@@ -167,7 +167,7 @@ fn draw_char(x: u32, y: u32, ch: u8, scale: u32, color: u32) {
 
 /// 0x5601: 文本渲染 (x, y, scale 1..=4, color, str ptr) -> 字符数。
 pub fn fujo_font_text(x: u64, y: u64, scale: u64, color: u64, strp: u64) -> i64 {
-    let scale = scale.clamp(1, 4) as u32;
+    let scale = (scale.clamp(1, 4) + crate::a11y::scale_boost() as u64) as u32;
     let mut cx = x as u32;
     let mut n = 0i64;
     loop {
