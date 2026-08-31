@@ -403,7 +403,11 @@
       **m47_vbe.elf 实测**: 三模式逐一切换+读回:
       `mode0->1024x768 / mode1->640x480 / mode2->1280x1024 (rc=0)` →
       收尾回 1024x768 → **M47 RESULT: PASS**; 回归: 矩阵 9/9
-- [ ] **M48** 输入法候选窗+fujokit 集成
+- [x] **M48** 输入法候选窗+fujokit 集成 —— **IME 候选流程 + 候选窗**
+      组装: ime(0x5701-0x5706)拼音输入 → 候选取回(candidates=2)
+      → **fujokit kt_list 装载候选**(选中校验)+ **候选窗渲染**
+      (font 两行 "1: China"/"2: Nation" 于 backbuffer) → commit(0) →
+      `m48: commit='中国'` → **M48 RESULT: PASS**; 回归: 矩阵 9/9
 - [ ] **M49** 无障碍:高对比/大字模式
 - [ ] **M50** GUI 基准:窗口开关/拖动帧率表
 
