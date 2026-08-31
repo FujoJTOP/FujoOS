@@ -90,10 +90,9 @@ void _start(void) {
     /* 3. /boot/module (initrd 前 32 字节 hex) */
     fd = sys3(2, (long)"/boot/module", 0, 0);
     long r = sys3(0, fd, (long)buf, 32);
-    puts("fs: read /boot/module 32B = ");
-    for (long i = 0; i < r && i < 32; i++) {
-        phex((int64_t)(unsigned char)buf[i]);
-        putc(' ');
+    puts("fs: read /boot/module 32B raw = ");
+    if (r > 0) {
+        sys3(1, 1, (long)buf, r);
     }
     puts("\n");
 

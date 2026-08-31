@@ -21,7 +21,12 @@
       + 转场幸存者帧, pf 桩双退出路径) —— **"一个进程崩溃不影响其他" 实测闭环**:
       `task 1 about to CRASH → proc: task 1 terminated → task 0 持续运行`;
       fork/exec 雏形 = M14b(进程克隆/镜像重载, 下一刀)
-- [ ] **M15 VFS + 内存盘**:initrd 挂载、fd/打开表;用户态 read/write/open
+- [x] **M15 VFS + 内存盘**: 文件表(fd≥3)+ 内存文件系统 —— `/boot/module`(initrd 拷入
+      内核缓冲)、《/proc/meminfo》(引导时生成真值)、《/tmp/hello.txt》(内存盘读写、
+      write 追加+回读)、《/dev/tty》(串口); Linux ABI open(2)/read(0)/close(3) 直通;
+      实测: meminfo read=77 / ramdisk write+append readback=43 / module 32B=ELF 头 /
+      ENOENT=-2; **修复: 镜像 1.18MB 超 0x120000 装载范围(尾部覆盖模块区/bss 损坏
+      → bad magic + 切片恐慌) → load_end/bss_end=0x230000 + pad 0x130000
 - [ ] **M16 fujofs**:极简本地文件系统(FAT-like);重启持久化
 - [ ] **M17 .run 升级**:资源节(图标/清单/权限声明)+ 多文件打包
 - [ ] **M18 IPC 原语**:管道/共享内存/信号;`ls | grep` 式管道

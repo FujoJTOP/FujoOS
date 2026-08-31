@@ -61,13 +61,13 @@ struct MultibootHeader {
 static MB_HEADER: MultibootHeader = MultibootHeader {
     magic: 0x1BAD_B002,
     flags: 0x0001_0003,
-    checksum: 0xE451_4FFB,
-    header_addr: 0x0010_0000,
+    checksum: 0xE451_4FFB,    header_addr: 0x0010_0000,
     load_addr: 0x0010_0000,
     // 注意: 必须覆盖整个镜像(rodata/data/bss)。内核增长时要同步扩大,
-    // 否则尾部段不被加载 -> 字符串/内嵌二进制为垃圾 RAM (M1 踩坑实录)。
-    load_end_addr: 0x0022_0000,
-    bss_end_addr: 0x0022_0000,
+    // 否则尾部段不被加载 -> 字符串/内嵌二进制为垃圾 RAM (M1 踩坑实录);
+    // M15 又踩: 镜像 1.18MB 已超 0x120000 -> 尾部覆盖引导模块区 (bad magic)。
+    load_end_addr: 0x0023_0000,
+    bss_end_addr: 0x0023_0000,
     entry_addr: 0x0010_1000,
 };
 
@@ -125,6 +125,16 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     let msg = info.message();
     let mut w = SerialWriter;
     let _ = core::write!(w, "        message: {msg}\n");
+    if let Some(loc) = info.location() {
+        let mut w2 = SerialWriter;
+        let _ = core::write!(
+            w2,
+            "        at {}:{}:{}\n",
+            loc.file(),
+            loc.line(),
+            loc.column()
+        );
+    }
     loop {
         crate::hlt();
     }
