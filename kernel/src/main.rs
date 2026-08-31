@@ -13,6 +13,7 @@
 
 mod elf_loader;
 mod gdt;
+mod graphics;
 mod interrupts;
 mod pe_loader;
 mod serial;
@@ -68,7 +69,7 @@ static MB_HEADER: MultibootHeader = MultibootHeader {
 // ---------------------------------------------------------------------------
 #[used]
 #[link_section = ".boot_blob"]
-static BOOT_BLOB: [u8; 0x27040] = *include_bytes!("../boot_blob.bin");
+static BOOT_BLOB: [u8; 0x2D040] = *include_bytes!("../boot_blob.bin");
 
 /// ELF 入口占位（真正入口是引导桩 far-jump 的 rust64_entry）。
 #[no_mangle]
@@ -153,7 +154,14 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     }
     out_line("timer : 100 ticks = 1.0 s elapsed (PIT @100 Hz)");
 
-    // ---- M2: 用户态测试 (ELF 模块装载 + Linux ABI syscall) ----
+    // ---- M4: fujocom 显示栈 (Bochs VBE 1024x768x32 LFB + 双缓冲合成器) ----
+    if graphics::init() {
+        graphics::demo();
+    } else {
+        out_line("gfx  : framebuffer unavailable (VBE not present), desktop skipped");
+    }
+
+    // ---- M2/M3: 用户态测试 (ELF/PE 模块装载 + ABI syscall) ----
     syscall::enter_user_test(mbi);
 }
 

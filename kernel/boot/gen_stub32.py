@@ -1,5 +1,5 @@
 #! /usr/bin/env python3
-"""gen_stub32.py — 生成 FujoOS 32 位引导桩 + 恒等页表 (kernel/boot_blob.bin)
+"""gen_stub32.py — 生成 FujoOS 32 位引导桩 + 页表 (kernel/boot_blob.bin)
 
 本脚本把下列汇编手写为机器码并输出 (纯 Python 标准库, 无外部工具):
   .stub32  (blob 偏移 0x0000, 物理 0x101000)  可执行代码
@@ -11,39 +11,37 @@
   mov edi, eax                       ; eax = multiboot magic (0x2BADB002)
   mov esi, ebx                       ; ebx = multiboot info 指针
   mov eax, PML4 / mov cr3, eax
-  cr4.PAE = 1                        ; bts eax,5
-  EFER.LME = 1                       ; rdmsr 0xC0000080 / bts eax,8 / wrmsr
-  lgdt [GDT_PTR]                     ; 自建 GDT: 0x08=64位码段, 0x10=64位数据段
-  cr0.PG|PE = 1                      ; 最后开启分页+长模式
-  ljmp 0x08:0x00200000               ; 进入长模式 Rust 入口 (rust64_entry)
+  cr4.PAE = 1
+  EFER.LME = 1
+  lgdt [GDT_PTR]
+  cr0.PG|PE = 1
+  ljmp 0x08:0x00200000               ; 进入长模式 Rust 入口
 
-页表 (4 KiB 页, 64 MiB 恒等映射 — M2: 覆盖内核+模块装载区+用户区+栈):
-  PML4[0] -> PDPT
-  PDPT[0] -> PD
-  PD[0..31] -> PT0..PT31  (64 MiB / 2 MiB = 32 个页表)
-  PTi[j]  = (i*2MiB + j*4KiB) | 0x87
-  所有上级条目 U=1: x86 在页表遍历的每一级检查 U/S (M1 踩坑实录)。
+地址空间 (M4: 显卡 LFB 在 0xFD000000, 需要 3-4GB 段):
+  PML4[0] -> PDPT  (4 KiB 页, 64 MiB 低地址恒等: 内核+模块+用户区+栈)
+  PML4[3] -> PDPT3 (2 MiB 大页, 0xFC000000..0xFFFFFFFF 恒等: PCI/显卡 LFB)
+  x86 每级 U/S 都检查 -> 全链 U=1 (M1 踩坑实录)。
 """
 
 import os
 import struct
 
 # ---- 布局常量（与 kernel/kernel.ld 一致） ----
-BLOB_BASE = 0x101000   # .boot_blob 段基址
+BLOB_BASE = 0x101000
 PML4 = 0x102000        # BLOB + 0x1000
 PDPT = 0x103000        # BLOB + 0x2000
 PD_BASE = 0x104000     # BLOB + 0x3000
 PT_BASE = 0x108000     # BLOB + 0x7000 (32 x 512 x 8B = 128 KiB)
-GDT = 0x128000         # BLOB + 0x27000 (位于 32 个页表之后)
-GDT_PTR = 0x128018     # BLOB + 0x27018
+PDPT3 = 0x128000       # BLOB + 0x27000
+PD3 = 0x129000         # BLOB + 0x28000 (4 项 PT 指针: 0xFD000000 区, 4KiB 页)
+PT3_BASE = 0x12A000    # BLOB + 0x29000 (4 x 512 x 8B = 16KiB: 0xFD000000..0xFD800000)
+GDT = 0x12C000         # BLOB + 0x2B000
+GDT_PTR = 0x12C018     # BLOB + 0x2B018
 STACK_TOP = 0x300000
 RUST_ENTRY = 0x200000
 
-# 64 MiB 恒等映射, 用户区 4..9 MiB
-MAP_PD_END = 0x4000000           # 64 MiB
-USER_LO = 0x400000
-USER_HI = 0x900000
-BLOB_SIZE = 0x27040
+MAP_PD_END = 0x4000000           # 64 MiB (低地址 4KiB 映射)
+BLOB_SIZE = 0x2D040
 
 blob = bytearray(BLOB_SIZE)
 
@@ -60,7 +58,7 @@ def set64(addr: int, val: int) -> None:
     blob[o:o + 8] = struct.pack("<Q", val)
 
 
-# ================= 引导桩（顺序发射, blob 偏移 0） =================
+# ================= 引导桩 =================
 p = BLOB_BASE
 emit(b"\xfa", p); p += 1                                        # cli
 emit(b"\xbc" + struct.pack("<I", STACK_TOP), p); p += 5         # mov esp, STACK_TOP
@@ -80,23 +78,31 @@ emit(b"\x0f\x20\xc0", p); p += 3                                # mov eax, cr0
 emit(b"\x0f\xba\xe8\x1f", p); p += 4                            # bts eax, 31  (CR0.PG)
 emit(b"\x0f\xba\xe8\x00", p); p += 4                            # bts eax, 0   (CR0.PE)
 emit(b"\x0f\x22\xc0", p); p += 3                                # mov cr0, eax
-emit(b"\xea" + struct.pack("<I", RUST_ENTRY) + struct.pack("<H", 0x08), p); p += 7  # ljmp 0x08:0x200000
+emit(b"\xea" + struct.pack("<I", RUST_ENTRY) + struct.pack("<H", 0x08), p); p += 7  # ljmp
 assert p <= BLOB_BASE + 0x1000, "stub too long"
 
-# ================= 页表数据（4 KiB 页, 64 MiB 恒等映射） =================
-# x86 页表遍历在**每一级**都检查 U/S —— 用户访问需要 PML4/PDPT/PD/PTE 全链 U=1。
-set64(PML4, PDPT | 0x07)
+# ================= 低 64 MiB: 4 KiB 页恒等映射 =================
+set64(PML4 + 0 * 8, PDPT | 0x07)
 set64(PDPT, PD_BASE | 0x07)
 for i in range(32):
     set64(PD_BASE + 8 * i, (PT_BASE + 0x1000 * i) | 0x07)
 for i in range(32):
     for j in range(512):
         vaddr = i * 0x200000 + j * 0x1000
-        flags = 0x87                               # P|RW|U
-        set64(PT_BASE + 0x1000 * i + 8 * j, vaddr | flags)  # 恒等映射: 物理 = 虚拟
+        set64(PT_BASE + 0x1000 * i + 8 * j, vaddr | 0x87)
 
-# ================= GDT 数据 =================
-# 0x00: null / 0x08: 64-bit code / 0x10: 64-bit data
+# ================= 显卡 LFB 区: 4KiB 页映射 0xFD000000..0xFD800000 =================
+# (M4: 2MiB 大页在本环境未得验证; 4KiB 页是共同可用的安全路径)
+set64(PML4 + 3 * 8, PDPT3 | 0x07)
+set64(PDPT3, PD3 | 0x07)
+for j in range(4):
+    set64(PD3 + 8 * (8 + j), (PT3_BASE + 0x1000 * j) | 0x07)  # PD 索引 8..11 -> PT3[0..3]
+for j in range(4):
+    for k in range(512):
+        vaddr = 0xFD000000 + (j * 0x200000 + k * 0x1000)
+        set64(PT3_BASE + 0x1000 * j + 8 * k, vaddr | 0x87)
+
+# ================= GDT =================
 set64(GDT + 0x00, 0x0000_0000_0000_0000)
 set64(GDT + 0x08, 0x00AF_9B00_0000_FFFF)
 set64(GDT + 0x10, 0x00CF_9300_0000_FFFF)
@@ -108,4 +114,4 @@ out = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "boot_blob.
 with open(out, "wb") as f:
     f.write(blob)
 print(f"wrote {out}: {len(blob)} bytes  (stub {BLOB_BASE:#x}+{p - BLOB_BASE:#x}, "
-      f"rust entry {RUST_ENTRY:#x}, 4KiB pages 0..{MAP_PD_END:#x})")
+      f"low {MAP_PD_END:#x} 4KiB + 3-4GiB 2MiB identity)")

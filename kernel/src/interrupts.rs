@@ -60,13 +60,16 @@ extern "C" {
 
 core::arch::global_asm!(r#"
     .text
-    # ---- 异常桩: 每个桩固定 7 字节: push imm8(2B) + jmp rel32(5B) ----
+    # ---- 异常桩: 每个桩固定 14 字节: mov rdi,N(7B) + call rel32(5B) + ud2(2B) ----
+    # ⚠️ jmp 会被汇编器优化为 rel8 短跳(桩变 4 字节); call 恒为 rel32,
+    # 定长版本才是可用的定址表 (M4 踩坑实录)。
     .p2align 4
     .global fujo_exc_stub_table
 fujo_exc_stub_table:
     .macro EXCN n
-    .byte 0x6a, \n
-    jmp fujo_exc_common
+    mov rdi, \n
+    call fujo_exc
+    ud2
     .endm
     EXCN 0
     EXCN 1
@@ -83,12 +86,6 @@ fujo_exc_stub_table:
     EXCN 12
     EXCN 13
     EXCN 14
-fujo_exc_common:
-    push rbp
-    mov rbp, rsp
-    mov rdi, [rbp + 8]
-    call fujo_exc
-    ud2
 
     # ---- PIT (IRQ0) —— 计数 + EOI + 返回 ----
     .p2align 4
@@ -159,15 +156,15 @@ pub fn init() {
         for i in 0..15usize {
             // volatile: 防死存储消除 (优化器陷阱, 同 gdt.rs)
             let e = (core::ptr::addr_of_mut!(IDT) as *mut IdtEntry).add(i);
-            core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_lo), (stub_base + (i as u64) * 7) as u16);
+            core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_lo), (stub_base + (i as u64) * 14) as u16);
             core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).sel), 0x08u16);
             core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).ist), 0u8);
             core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).attr), 0x8Eu8);
             core::ptr::write_volatile(
                 core::ptr::addr_of_mut!((*e).off_mid),
-                ((stub_base + (i as u64) * 7) >> 16) as u16,
+                ((stub_base + (i as u64) * 14) >> 16) as u16,
             );
-            core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_hi), ((stub_base + (i as u64) * 7) >> 32) as u32);
+            core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_hi), ((stub_base + (i as u64) * 14) >> 32) as u32);
             core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).zero), 0u32);
         }
         let e = (core::ptr::addr_of_mut!(IDT) as *mut IdtEntry).add(0x20);

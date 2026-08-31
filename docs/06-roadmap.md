@@ -8,6 +8,7 @@
 | **M1 内核芯** | ✅ 已完成 | IDT(15 异常+IRQ0)、PIC/PIT 100Hz、GDT+用户段+TSS、syscall gate(LSTAR/STAR/SFMASK, Linux ABI)、ring3 用户态 iretq 进入、syscall write/exit 直通 | QEMU: PIT ticks=102；ring3 程序 syscall write 打印 + exit 内核接管（提交 cfb0a52 + M1 完成提交） |
 | **M2 linuxsubsys v0** | ✅ 已完成 | 内核 ELF64 装载器(ET_EXEC, PT_LOAD 段复制+BSS 清零, 模块=QEMU -initrd)、Linux syscall 原生执行(write/exit/getpid)、syscall 命名日志、64MiB 恒等页表(全链 U=1) | QEMU: multiboot 模块交付 ELF → 内核解析装载 → ring3 运行 ELF 内 Linux syscall → exit 内核接管（提交见 M2） |
 | **M3 winsubsys v0** | ✅ 已完成 | 内核 PE32+ 装载器(MZ/PE 解析、节映射、导入目录绑定)、用户态垫片蹦床(import→shim→fujo 原生 syscall)、kernel32!WriteFile/ExitProcess、格式嗅探统一路由 PE/ELF | QEMU: 真实 PE32+(kernel32.lib 导入表) → IAT 绑定蹦床 → ring3 执行 PE → WriteFile 垫片打印 → ExitProcess 接管；ELF 路径回归通过（提交见 M3） |
+| **M4 fujocom v0** | ✅ 已完成(内核图形核心) | Bochs VBE 驱动(0x1CE/0x1CF 寄存器表修正+0xB0C5 识别)、PCI 总线扫描(0xCF8/0xCFC)、3-4GB 恒等页表(LFB 0xFD000000)、双缓冲合成器+5x7 位图字体+窗口/按钮/光标绘制、像素回读+帧校验和、异常桩定长修复(rel8 短跳致 IDT 错位) | QEMU: VBE id=0xB0C5 + LFB PCI BAR + 合成演示(center/title 像素精确回读, checksum=0x184528F8) + M3 回归；已知限制: QEMU TCG 对 std-VGA 高阶 RAM 区 guest 访问 #PF(monitor 物理读有效, 真硬件/KVM 待验证), present() 保留后端开关 |
 | M2 linuxsubsys v0 | 6w | ELF 动态加载(含动态链接)、Linux syscall gate 全表、musl/glibc 直跑 | busybox/dash/curl-static 原生运行 |
 | M3 winsubsys v0 | 8w | PE 加载器、ntdll/kernel32/ws2_32 垫片、控制台程序、vcruntime 子集 | mingw hello + 控制台 TUI 应用 |
 | M4 桌面 | 8w | fujocom 合成器 v0、fujokit v0、fujowm、输入/字体/IME | 桌面鼠标键盘窗口流畅, 120Hz |
