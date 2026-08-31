@@ -415,7 +415,12 @@
       **m49_a11y.elf 实测**: 高对比 `fg=ffffffff bg=ff000000`(反转) →
       大字渲染采样 `large px=ffffffff` → **M49 RESULT: PASS**;
       回归: 矩阵 9/9
-- [ ] **M50** GUI 基准:窗口开关/拖动帧率表
+- [x] **M50** GUI 基准:窗口开关/拖动帧率表 —— **m50_bench.elf**(rdtsc +
+      gettimeofday 校准 cyc/us=817): **A. 窗口开关 create+remove ×100:
+      216 us/op**(TCG 软仿真); **B. 拖动帧 wm_move+采样 ×100: 6 us/frame
+      → ~166k fps**(名义值, QEMU TCG); 说明: QEMU 虚拟数值, KVM/native
+      对照留 M57; → **M50 RESULT: PASS**;
+      **WAVE 3 (M36–M50) 全部完成**
 
 ## Wave 4 · 游戏与性能(M51–M70)
 
