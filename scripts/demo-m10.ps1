@@ -14,6 +14,7 @@
 param(
     [switch]$NoBuild,        # skip clang/cargo/flatten build
     [switch]$Interactive,    # open HMP monitor (127.0.0.1:4567) for sendkey injection
+    [switch]$AutoRun,        # headless demo: inject 'os run hermes' after 9s (default off)
     [int]$MonitorPort = 4567
 )
 $ErrorActionPreference = 'Stop'
@@ -60,8 +61,15 @@ Start-Sleep -Milliseconds 500
 Write-Host "  model server PID=$($srv.Id) waiting for QEMU COM2 (127.0.0.1:4000)"
 
 Write-Host '== [3] QEMU boot (COM1=log, COM2=model link) =='
-Write-Host '  boot: logo ~2.5s -> os shell; type "os run hermes" (or wait 10s auto-run)'
-Write-Host '  expect hermes banner + classify ... [engine=qwen] within ~20s'
+Write-Host '  boot: logo ~2.5s -> os shell (command-driven: type "os run hermes")'
+Write-Host '  type it in ANOTHER terminal:'
+Write-Host "    powershell -ExecutionPolicy Bypass -File $root\scripts\demo-m10-keys.ps1 -Command \"os run hermes\""
+if ($AutoRun) {
+    Write-Host '  -AutoRun: will inject "os run hermes" after ~9s'
+} else {
+    Write-Host '  no auto-run: Hermes starts ONLY after you type the command'
+}
+Write-Host '  expect hermes banner + classify ... [engine=qwen] within seconds after typing'
 Write-Host '  Ctrl+C exits QEMU and recycles the model server process'
 $qargs = @('-m', '128M',
            '-kernel', "$root\kernel\fujo-kernel.bin",
@@ -69,14 +77,32 @@ $qargs = @('-m', '128M',
            '-serial', 'stdio',
            '-serial', 'tcp:127.0.0.1:4000,server=on,wait=off',
            '-display', 'none', '-no-reboot')
-if ($Interactive) {
-    $qargs += @('-monitor', "telnet:127.0.0.1:$MonitorPort,server,nowait")
-    Write-Host "  interactive: in another terminal run:"
-    Write-Host "    powershell -ExecutionPolicy Bypass -File $root\scripts\demo-m10-keys.ps1 -Command \"open file\""
-    Write-Host "    powershell -ExecutionPolicy Bypass -File $root\scripts\demo-m10-keys.ps1 -Command \"exit\""
+# 始终启用 HMP monitor: 无它则无处输入 (display none)
+$qargs += @('-monitor', "telnet:127.0.0.1:$MonitorPort,server,nowait")
+
+# 竞态辅助: 后台向 shell 注入命令的脚本体 (AutoRun 时启用)
+$inject = {
+    Start-Sleep -Seconds 9
+    try {
+        $t = New-Object System.Net.Sockets.TcpClient
+        $t.Connect('127.0.0.1', $MonitorPort)
+        $s = $t.GetStream()
+        $w = New-Object System.IO.StreamWriter($s)
+        $w.AutoFlush = $true
+        $w.NewLine = "`r`n"
+        foreach ($k in @('o','s','spc','r','u','n','spc','h','e','r','m','e','s','ret')) {
+            $w.WriteLine("sendkey $k")
+            Start-Sleep -Milliseconds 140
+        }
+        $w.Close(); $t.Close()
+    } catch { }
+}
+if ($AutoRun) {
+    Start-Job -ScriptBlock $inject | Out-Null
 }
 try {
     & qemu-system-x86_64 @qargs
 } finally {
+    Get-Job | Stop-Job -ErrorAction SilentlyContinue; Get-Job | Remove-Job -Force -ErrorAction SilentlyContinue
     if ($srv -and -not $srv.HasExited) { Stop-Process -Id $srv.Id -Force -ErrorAction SilentlyContinue }
 }

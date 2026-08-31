@@ -69,14 +69,18 @@ pub fn init() {
 }
 
 /// IRQ1 中断处理 (asm stub 以符号 fujo_kbd_irq 调用; 最小化操作)。
+/// M10.1: 环读/环写全部 volatile —— 非 volatile 静态读会被 LLVM 提升出
+/// 轮询循环 (与 ticks() 死循环同源: shell 收不到按键, 而用户 syscall 路径因
+/// ABI 边界天然屏蔽提升, 故此前 REPL 正常而内核轮询收不到)。
 #[no_mangle]
 pub extern "C" fn fujo_kbd_irq() {
     unsafe {
         let sc = serial::inb(0x60);
-        let t = KBD_TAIL;
-        if (t + 1) % BUF_SIZE != KBD_HEAD {
-            KBD_BUF[t] = sc;
-            KBD_TAIL = (t + 1) % BUF_SIZE;
+        let t = core::ptr::read_volatile(core::ptr::addr_of!(KBD_TAIL));
+        let h = core::ptr::read_volatile(core::ptr::addr_of!(KBD_HEAD));
+        if (t + 1) % BUF_SIZE != h {
+            core::ptr::write_volatile(core::ptr::addr_of_mut!(KBD_BUF[t]), sc);
+            core::ptr::write_volatile(core::ptr::addr_of_mut!(KBD_TAIL), (t + 1) % BUF_SIZE);
         }
         serial::outb(0x20, 0x20); // EOI master
     }
@@ -155,15 +159,17 @@ fn print_hex64(v: u64) {
     serial::write_str(core::str::from_utf8(&buf).unwrap());
 }
 
-/// 轮询一个已解码按键 (无则 None)。Agent/主循环使用。
+/// 轮询一个已解码按键 (无则 None)。Agent/主循环/shell 使用 (volatile 读)。
 pub fn try_poll() -> Option<char> {
     unsafe {
-        if KBD_TAIL == KBD_HEAD {
+        let h = core::ptr::read_volatile(core::ptr::addr_of!(KBD_HEAD));
+        let t = core::ptr::read_volatile(core::ptr::addr_of!(KBD_TAIL));
+        if t == h {
             return None;
         }
-        let t = KBD_HEAD;
-        KBD_HEAD = (t + 1) % BUF_SIZE;
-        decode(KBD_BUF[t])
+        let sc = core::ptr::read_volatile(core::ptr::addr_of!(KBD_BUF[h]));
+        core::ptr::write_volatile(core::ptr::addr_of_mut!(KBD_HEAD), (h + 1) % BUF_SIZE);
+        decode(sc)
     }
 }
 

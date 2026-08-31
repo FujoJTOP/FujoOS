@@ -76,17 +76,18 @@ pub fn uart2_init() {
     }
 }
 
-/// IRQ3 处理 (asm 桩 fujo_ser2_stub 调用): 排空入环 + EOI。
+/// IRQ3 处理 (asm 桩 fujo_ser2_stub 调用): 排空入环 + EOI (volatile 环读写)。
 #[no_mangle]
 pub extern "C" fn fujo_ser2_irq() {
     unsafe {
         let mut got = 0u32;
         while inb(SER2 + 5) & 1 != 0 {
             let b = inb(SER2 + 0);
-            let t = SER2_TAIL;
-            if (t + 1) % SER2_BUF_SIZE != SER2_HEAD {
-                SER2_BUF[t] = b;
-                SER2_TAIL = (t + 1) % SER2_BUF_SIZE;
+            let t = core::ptr::read_volatile(core::ptr::addr_of!(SER2_TAIL));
+            let h = core::ptr::read_volatile(core::ptr::addr_of!(SER2_HEAD));
+            if (t + 1) % SER2_BUF_SIZE != h {
+                core::ptr::write_volatile(core::ptr::addr_of_mut!(SER2_BUF[t]), b);
+                core::ptr::write_volatile(core::ptr::addr_of_mut!(SER2_TAIL), (t + 1) % SER2_BUF_SIZE);
             }
             got += 1;
             if got > 128 {
@@ -100,10 +101,12 @@ pub extern "C" fn fujo_ser2_irq() {
 /// 轮询读一个字节 (先取 IRQ3 环, 再直接读 UART LSR/RBR —— IRQ 不可靠时保底)。
 pub fn ser2_poll() -> Option<u8> {
     unsafe {
-        if SER2_HEAD != SER2_TAIL {
-            let h = SER2_HEAD;
-            SER2_HEAD = (h + 1) % SER2_BUF_SIZE;
-            return Some(SER2_BUF[h]);
+        let h = core::ptr::read_volatile(core::ptr::addr_of!(SER2_HEAD));
+        let t = core::ptr::read_volatile(core::ptr::addr_of!(SER2_TAIL));
+        if h != t {
+            let b = core::ptr::read_volatile(core::ptr::addr_of!(SER2_BUF[h]));
+            core::ptr::write_volatile(core::ptr::addr_of_mut!(SER2_HEAD), (h + 1) % SER2_BUF_SIZE);
+            return Some(b);
         }
         if inb(SER2 + 5) & 1 != 0 {
             return Some(inb(SER2 + 0));
