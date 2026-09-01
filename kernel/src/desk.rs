@@ -54,10 +54,10 @@ fn font_line(x: u32, y: u32, scale: u32, color: u32, text: &str) {
             continue; // M107: 控制字符/非 ASCII 跳过 (下溢 panic 实证)
         }
         let g = font::GLYPHS[(b - 0x20) as usize];
-        // 字形 7 列 (bit6..0), 与 font::draw_char 一致 (M108: 回退 5 列误改)
-        for gy in 0..5u32 {
-            for gx in 0..7u32 {
-                if (g[gy as usize] >> (6 - gx)) & 1 != 0 {
+        // 字形 8 列 x 8 行 (bit7..0, VGA 8x8 字模; M108 升级 5x7->8x8)
+        for gy in 0..8u32 {
+            for gx in 0..8u32 {
+                if (g[gy as usize] >> (7 - gx)) & 1 != 0 {
                     for sy in 0..scale {
                         for sx in 0..scale {
                             setp(
@@ -166,7 +166,7 @@ static HERMES_ELF: &[u8] = include_bytes!("../../sdk/hermes/hermes-high.elf");
 static SHELL_ELF: &[u8] = include_bytes!("../../sdk/linux/m107_tty-high.elf");
 
 const TTY_ROWS: usize = 24;
-const TTY_COL: usize = 64;
+const TTY_COL: usize = 40; // 窗口 640px / 8x8×2(16px) = 40 列
 static mut TTY_LINES: [[u8; TTY_COL]; TTY_ROWS] = [[0; TTY_COL]; TTY_ROWS];
 static mut TTY_ROW: usize = 0; // 当前写入行 (环形)
 static mut TTY_ROW_N: usize = 0;
@@ -176,8 +176,8 @@ static mut TTY_TITLE: [u8; 24] = [0; 24];
 static mut WIN_PID: u64 = 0; // wm 窗口 id (槽+1)
 static mut WX: u32 = 30;
 static mut WY: u32 = 40;
-static mut WW: u32 = 340;
-static mut WH: u32 = 230;
+static mut WW: u32 = 680;   // 40 列 x 16px + 边距 (M108: 8x8×2 字体加窗)
+static mut WH: u32 = 460;   // 24 行 x 18px + 标题栏 (M108)
 
 /// wm 窗口类 id (缓存注册)。
 static mut CLASS_ID: i64 = 0;
@@ -279,7 +279,7 @@ fn tty_draw_window() {
             tn += 1;
         }
         let title = core::str::from_utf8(&ttl[..tn]).unwrap_or("?");
-        font_line(WX + 8, WY + 5, 1, 0x000000, title);
+        font_line(WX + 8, WY + 4, 2, 0x000000, title);
         // 滚动 24 行 (旧行自底), 基础字体 8px 高
         // M108: 逐字节过滤渲染 (≥0x80/控制字节必跳过 —— ASCII 才可画;
         // from_utf8 会把 0xD0 0xAF 等按多字节 UTF-8 正常返回, 但 font_line
@@ -300,7 +300,7 @@ fn tty_draw_window() {
                     }
                 }
             }
-            font_line(WX + 6, WY + 28 + (r as u32) * 8, 1,
+            font_line(WX + 6, WY + 24 + (r as u32) * 18, 2,
                       0x000000,
                       core::str::from_utf8(&clean[..cn]).unwrap_or(""));
         }

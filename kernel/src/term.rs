@@ -111,15 +111,15 @@ fn palette_to_u32(c: u16) -> u32 {
     VGA[(c & 0x0F) as usize]
 }
 
-/// 渲染单字符 (7x5·scale, 用 font GLYPHS —— 字形表 7 列 bit6..0)。
+/// 渲染单字符 (8x8·scale, 用 font GLYPHS —— VGA 8x8 字模 bit7..0)。
 fn draw_char_block(x: u32, y: u32, ch: u8, scale: u32, color: u32) {
     if ch < 0x20 {
         return;
     }
     let g = font::GLYPHS[(ch - 0x20) as usize];
-    for gy in 0..5u32 {
-        for gx in 0..7u32 {
-            if (g[gy as usize] >> (6 - gx)) & 1 != 0 {
+    for gy in 0..8u32 {
+        for gx in 0..8u32 {
+            if (g[gy as usize] >> (7 - gx)) & 1 != 0 {
                 for sy in 0..scale {
                     for sx in 0..scale {
                         setp(x + gx * scale + sx, y + gy * scale + sy, color);
