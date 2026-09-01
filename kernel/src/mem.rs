@@ -249,8 +249,7 @@ fn frame_alloc_zero() -> Option<u64> {
 }
 
 /// 按需零页: 用户堆区首写 -> 分配零帧 -> 置 PTE -> invlpg -> true (iretq 重试)。
-fn demand_zero(cr2: u64) -> bool {
-    unsafe {
+fn demand_zero(cr2: u64) -> bool {    unsafe {
         if cr2 < USER_HEAP_BASE || cr2 >= USER_HEAP_BASE + USER_HEAP_LEN {
             return false;
         }
@@ -292,6 +291,143 @@ fn demand_zero(cr2: u64) -> bool {
     }
 }
 
+// ---------------------------------------------------------------------------
+// M86 · 权重 mmap 对象: 模型权重入资源 (可作 .run 资源节), 内核按需页
+// ---------------------------------------------------------------------------
+
+/// 权重库区 (backbuffer 0xF00000 后; M66 缓存 0xF10000..0xF28000 之后)。
+const WLIB_BASE: u64 = 0xF30000;
+const WLIB_CAP: u64 = 0x2000; // 8KiB 权重库
+const WMAP_MAX: usize = 2;
+
+static mut WLIB_LEN: u64 = 0;
+static mut WMAP_VA: [u64; WMAP_MAX] = [0; WMAP_MAX];
+static mut WMAP_LEN: [u64; WMAP_MAX] = [0; WMAP_MAX];
+static mut WMAP_ON: [bool; WMAP_MAX] = [false; WMAP_MAX];
+static mut WPF: u64 = 0; // 权重页按需装入次数
+static mut W_PAGES: u64 = 0;
+
+/// 0x7C01: 载入权重库 (拷贝到 WLIB)。
+pub fn fujo_wmap_load(ptr: u64, len: u64) -> i64 {
+    unsafe {
+        let m = len.min(WLIB_CAP);
+        for i in 0..m {
+            // 恒等映射区: 虚拟=物理
+            ((WLIB_BASE as *mut u8).add(i as usize)).write((ptr as *const u8).add(i as usize).read());
+        }
+        WLIB_LEN = m;
+    }
+    0
+}
+
+/// 0x7C02: 登记权重映射区 (va 须在需求段 0x800000..0xC00000, 页对齐)。
+pub fn fujo_wmap_res(va: u64, len: u64) -> i64 {
+    unsafe {
+        if va < USER_HEAP_BASE || va + len > USER_HEAP_BASE + USER_HEAP_LEN {
+            return -22; // -EINVAL
+        }
+        if len > WLIB_LEN || len > WLIB_CAP {
+            return -12; // -ENOMEM
+        }
+        let mut slot = None;
+        for i in 0..WMAP_MAX {
+            if !WMAP_ON[i] {
+                slot = Some(i);
+                break;
+            }
+        }
+        match slot {
+            Some(i) => {
+                WMAP_VA[i] = va;
+                WMAP_LEN[i] = len;
+                WMAP_ON[i] = true;
+                serial::write_str("m86  : weight-map va=0x");
+                print_hex(va);
+                serial::write_str(" len=");
+                print_dec(len);
+                serial::write_line(" (demand pages)");
+            }
+            None => return -12,
+        }
+    }
+    0
+}
+
+/// 0x7C03: (pfa, pages, wlen, maps)。
+pub fn fujo_wmap_stats(ptr: u64) -> i64 {
+    unsafe {
+        let w = ptr as *mut u64;
+        w.write(WPF);
+        w.add(1).write(W_PAGES);
+        w.add(2).write(WLIB_LEN);
+        let mut maps = 0u64;
+        for i in 0..WMAP_MAX {
+            if WMAP_ON[i] {
+                maps += 1;
+            }
+        }
+        w.add(3).write(maps);
+    }
+    0
+}
+
+/// #PF 钩子 (demand_zero 之前): 权重映射区 → 从 WLIB 拷贝页。
+fn wmap_fault(cr2: u64) -> bool {
+    unsafe {
+        for i in 0..WMAP_MAX {
+            if !WMAP_ON[i] {
+                continue;
+            }
+            let va = WMAP_VA[i];
+            let len = WMAP_LEN[i];
+            if cr2 >= va && cr2 < va + len {
+                let off = (cr2 - va) as usize;
+                let pt_idx = off >> 12; // 逐页
+                let page_no = ((cr2 & !0xFFF) - va) as usize; // 页序
+                // PTE 表定位 (同 demand_zero: 0x800000..0xC00000=PT_HEAP0/1)
+                let base_idx = (cr2 - USER_HEAP_BASE) as usize >> 12;
+                let (table, idx) = if base_idx < 512 {
+                    (core::ptr::addr_of_mut!(PT_HEAP0).cast::<u64>(), base_idx)
+                } else {
+                    (core::ptr::addr_of_mut!(PT_HEAP1).cast::<u64>(), base_idx - 512)
+                };
+                let pte_addr = (table as *mut u64).add(idx);
+                if core::ptr::read_volatile(pte_addr) & 1 != 0 {
+                    return false;
+                }
+                let phys = frame_alloc_zero();
+                match phys {
+                    Some(p) => {
+                        // 从 WLIB 拷贝该页 (src = WLIB_BASE + page_no*4096)
+                        for k in 0..512usize {
+                            ((p as *mut u64).add(k)).write(
+                                ((WLIB_BASE + (page_no as u64) * 0x1000) as *const u64).add(k).read(),
+                            );
+                        }
+                        core::ptr::write_volatile(pte_addr, p | 0x7);
+                        core::arch::asm!(
+                            "invlpg [{0}]",
+                            in(reg) cr2,
+                            options(nomem, nostack, preserves_flags)
+                        );
+                        WPF += 1;
+                        W_PAGES += 1;
+                        if WPF <= 8 {
+                            serial::write_str("m86  : wmap page va=0x");
+                            print_hex(cr2 & !0xFFF);
+                            serial::write_line(" (from weight lib)");
+                        }
+                        let _ = pt_idx;
+                        return true;
+                    }
+                    None => return false,
+                }
+            }
+        }
+    }
+    false
+}
+
 /// #PF 处理 (asm 桩 fujo_pf_stub 调用; regs 布局见桩注释)。
 /// 用户堆区首写 -> 按需零页 -> 返回 (桩 iretq 重试原指令, 进程继续);
 /// 未处理 -> 诊断 + 停机 (与旧行为一致, 但带 cr2/err/rip)。
@@ -313,6 +449,10 @@ pub extern "C" fn fujo_pf_handler(_vec: u64, regs: *const u64) {
         // —— Linux 语义: 匿名映射未写页被读也应返回零页; 原实现仅覆盖 write,
         // 导致 B 在 A 写共享页之前读 -> 误判致命崩溃 (M18 回归实证)。
         let _ = write;
+        // M86: 权重映射区按需页 (demand-zero 前)
+        if user && !present && wmap_fault(cr2) {
+            return;
+        }
         if user && !present && demand_zero(cr2) {
             return; // 桩: pop 寄存器 + iretq -> 重试原指令
         }

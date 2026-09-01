@@ -295,6 +295,10 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x7B01 => crate::dump::fujo_dump_arm(a0),
         0x7B02 => crate::dump::fujo_dump_read(a0, a1),
         0x7B03 => crate::dump::fujo_dump_info(a0),
+        // ---- M86: 权重 mmap 对象 ----
+        0x7C01 => crate::mem::fujo_wmap_load(a0, a1),
+        0x7C02 => crate::mem::fujo_wmap_res(a0, a1),
+        0x7C03 => crate::mem::fujo_wmap_stats(a0),
         // read(fd, buf, len) — M15 VFS
         0 => crate::vfs::fujo_read(a0, a1, a2),
         // write(fd, buf, len)

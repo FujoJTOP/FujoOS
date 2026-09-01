@@ -788,7 +788,18 @@
 
 ## Wave 6 · AI OS 深化(M86–M95)—— 独有层(文档 07 四件套落地)
 
-- [ ] **M86** 权重作 mmap 对象:模型入 .run 资源,内核 mmap 按需页
+- [x] **M86** 权重作 mmap 对象:模型入 .run 资源,内核 mmap 按需页
+      - **mem.rs 扩展**: 权重库 WLIB=0xF30000 (8KiB, backbuffer/
+        页缓存区后); 映射区表 WMAP×2 (va/len/on)。
+      - **接口**: 0x7C01 wmap_load(ptr,len) 权重复制入库 /
+        0x7C02 wmap_res(va,len) 登记权重 VA (需求段, 页对齐) /
+        0x7C03 wmap_stats(ptr) → (pfa, pages, wlen, maps)。
+      - **按需页**: #PF 钩子 wmap_fault (demand-zero 前): cr2∈权重
+        区 → 从 WLIB 拷贝页 (frame_alloc_zero + PTE) → iretq 重试;
+        与 M12 demand-zero 同 PT 路径。
+      - **m86_wmap.elf 实测**: blob (i&0xFF pattern) → res
+        0xB90000 → 读 4KB → `sum 一致 pfa=1 pages=1 wlen=4096` →
+        **M86 RESULT: PASS**; 文档: docs/35-wmap.md
 - [ ] **M87** 模型卡:权限/计费/审计元数据(资源节)
 - [ ] **M88** agent 一等进程:会话/检查点/恢复
 - [ ] **M89** fujoctx 升级:窗口焦点/文件变更/syscall 摘要注入
