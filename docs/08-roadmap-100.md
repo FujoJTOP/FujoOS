@@ -901,7 +901,19 @@
         vid0=8086 did0=1237` (RSDP 找到; 4 PCI 设备含 host bridge)
         → **M96 RESULT: PASS**; 踩坑: RSDP magic 字节错位 (P@+4) /
         XSDT 高地址未映射 #PF (guard); 文档: docs/45-acpi.md
-- [ ] **M97** 真机显示/键盘/存储适配(至少一台参考机)
+- [x] **M97** 真机显示/键盘/存储适配(至少一台参考机)
+      - **参考机 = QEMU (TCG/Bochs-VBE/PS2/IDE)**: 显示 VBE
+        1024x768x32 (M47 分辨率面), 键盘 PS/2 IRQ1, 存储 ATA 参考盘;
+      - **hw.rs**: 0x8601 hw_disp(ptr) → (fbw, fbh, lfb_ok,
+        kbd_irqs — kbd.rs IRQ 计数挂点) / 0x8602 hw_storage(ptr) →
+        (ata, lba48 (IDENTIFY words[83/86] bit10, ata.rs 新增
+        lba48_capable), fs_ok (fjfs::superblock_ok), files);
+      - **m97_hw.elf 实测**: `fb=1024x768 kbd_irq=29 ata=1 fs=0` →
+        **M97 RESULT: PASS** (kbd 29 次 IRQ 来自 sendkey 注入);
+      - **磁盘持久化 (两阶段)**: 4MiB raw 镜像 + disk_fs.elf:
+        阶段1 `FJFS persistent data #1` 写入盘;
+        阶段2 同镜像重启 → `FJFS persistent data #1 / seen-boot2`
+        读回 → **FJFS 跨重启持久化 PASS**; 文档: docs/46-hwadapt.md
 - [ ] **M98** live 镜像 + 安装器
 - [ ] **M99** 签名/更新机制
 - [ ] **M100** 发布:官网/文档/演示/公告

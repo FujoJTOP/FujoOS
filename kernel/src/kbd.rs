@@ -74,6 +74,7 @@ pub fn init() {
 /// ABI 边界天然屏蔽提升, 故此前 REPL 正常而内核轮询收不到)。
 #[no_mangle]
 pub extern "C" fn fujo_kbd_irq() {
+    crate::hw::kbd_note(); // M97: 键盘 IRQ 计数 (hw 汇总面)
     unsafe {
         let sc = serial::inb(0x60);
         let t = core::ptr::read_volatile(core::ptr::addr_of!(KBD_TAIL));

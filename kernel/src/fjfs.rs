@@ -330,3 +330,20 @@ pub fn list() {
         serial::write_line(" files in volume");
     }
 }
+
+/// M97: 卷就绪状态 + 文件数 (hw 汇总面)。
+pub fn superblock_ok() -> bool {
+    unsafe { VOLUME_OK }
+}
+
+pub fn file_count() -> u64 {
+    unsafe {
+        let mut n = 0u64;
+        for e in ROOT.iter() {
+            if e.size > 0 {
+                n += 1;
+            }
+        }
+        n
+    }
+}

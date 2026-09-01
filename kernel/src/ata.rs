@@ -63,6 +63,7 @@ pub fn init() {
                     *w = inw();
                 }
                 let words = ((ident[83] & 0x0400) != 0) || ((ident[86] & 0x0400) != 0);
+                LBA48 = words;
                 ATA_PRESENT = true;
                 serial::write_str("ata  : drive present (identify 0x");
                 print_hex(ident[0] as u64);
@@ -72,6 +73,13 @@ pub fn init() {
             }
         }
     }
+}
+
+/// M97: IDENTIFY words[83|86] bit10 探测的 48-bit 能力。
+static mut LBA48: bool = false;
+
+pub fn lba48_capable() -> bool {
+    unsafe { LBA48 }
 }
 
 fn inw() -> u16 {

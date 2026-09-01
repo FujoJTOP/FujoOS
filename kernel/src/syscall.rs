@@ -336,6 +336,9 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x8501 => crate::acpi::fujo_acpi_info(a0),
         0x8502 => crate::acpi::fujo_acpi_dump(a0, a1),
         0x8503 => crate::acpi::fujo_pci_scan(a0),
+        // ---- M97: 真机 hw 适配面 ----
+        0x8601 => crate::hw::fujo_hw_disp(a0),
+        0x8602 => crate::hw::fujo_hw_storage(a0),
         // read(fd, buf, len) — M15 VFS
         0 => crate::vfs::fujo_read(a0, a1, a2),
         // write(fd, buf, len)

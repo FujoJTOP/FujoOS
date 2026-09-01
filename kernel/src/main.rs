@@ -35,6 +35,7 @@ mod fujr;
 mod gamemode;
 mod game2;
 mod gl;
+mod hw;
 mod hvm;
 mod gdt;
 mod graphics;
