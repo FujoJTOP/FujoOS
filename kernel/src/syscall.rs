@@ -403,6 +403,9 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x6C05 => crate::pcache::fujo_pc_flush(),
         0x6C06 => crate::pcache::fujo_pc_evict(),
         0x6C07 => crate::pcache::fujo_pc_info(a0),
+        // ---- M67: 中断合并/减轻 ----
+        0x6D01 => crate::irq::fujo_irq_set_window(a0),
+        0x6D02 => crate::irq::fujo_irq_cost_stats(a0),
         // ---- M60: 存档沙箱 ----
         0x6701 => crate::save::fujo_save_write(a0, a1, a2),
         0x6702 => crate::save::fujo_save_read(a0, a1, a2),

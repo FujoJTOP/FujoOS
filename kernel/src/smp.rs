@@ -144,6 +144,7 @@ fn lapic_id() -> u32 {
 
 /// PIT 中断侧钩子 (sched 桩每 tick 调; 先于任何切换逻辑)。
 pub fn intr_note() {
+    crate::irq::note(); // M67: 中断合并/成本记账
     unsafe {
         IRQ_INJ += 1;
         let m = IRQ_ROUTE & 3;

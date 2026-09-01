@@ -31,6 +31,7 @@ mod gdt;
 mod graphics;
 mod interrupts;
 mod ipc;
+mod irq;
 mod icon;
 mod ime;
 mod kbd;

@@ -575,7 +575,20 @@
         回盘→read hit→evict→prefetch(0,2) 从盘装→read=0xAB/0xCD;
         evict 后读未预读页 → miss 路径空页 → `slots=1 dirty=0
         hits=3 miss=1` → **M66 RESULT: PASS**; 文档: docs/15-pcache.md
-- [ ] **M67** 中断合并/减轻(串口/网卡)
+- [x] **M67** 中断合并/减轻(串口/网卡)
+      - **接口**: 0x6D01 irq_set_window(w) 合并窗口 (1..64, 基点重置) /
+        0x6D02 irq_cost_stats(ptr) → u64×4: (irqs, batches,
+        total_cyc, worst_cyc)。
+      - **实现 (irq.rs)**: 每 PIT tick 记账: rdtsc 间隔 (total/worst
+        成本预算), 合并批 = (IRQS−基点)/WINDOW 公式化; 窗口切换基点
+        重置; 语义: 调度/时钟保持逐 tick, 合并层双账不改变行为
+        (减负面: 高频周期中断按窗口组批, 为后续真合并硬件
+        IRQ coalesce 提供策略面)。
+      - **m67_irq.elf 实测**: 忙等 ~8 ticks: window=1 → `d_irqs=8
+        b=8` (逐 tick), window=8 → `d_irqs=8 b=1` (8:1 组批),
+        成本非零 → **M67 RESULT: PASS**; 串口/网卡中断合并面记录
+        (无硬件 IRQ 源 v0, 文档: docs/16-irq-merge.md: 16550 FIFO
+        阈值/82574L MSI-X 预留说明)。
 - [ ] **M68** 帧时间表/性能计数器工具
 - [ ] **M69** 2D 游戏#2 + 输入延迟基准
 - [ ] **M70** 游戏层性能验收报告
