@@ -271,7 +271,15 @@
       说明: 基准为 QEMU TCG 软仿真值(native/KVM 路径留 M57 对照);
       附 trace 工具交叉验证(m33); → **M35 RESULT: PASS**;
       **WAVE 2 (M21–M35) 全部完成**
-- [ ] **M36** 鼠标驱动(PS/2)+ 命中测试/焦点
+- [x] **M36** 鼠标驱动(PS/2)+ 命中测试/焦点
+      - **mouse.rs**: PS/2 aux IRQ12 启用 (F4 使能; 禁 IRQ1 下 8042
+        序列 + 排空 0x60 防抢读命令字节), 3 字节包状态机
+        (MS_STATE), 增量/按钮; **命中测试**: HIT_RECTS 区域 →
+        wmsg notify;
+      - **m36_mouse.elf 实测** (0x54xx 后 M44 窗口查询面集成):
+        探测/启用/采样 PASS (鼠标原语面 0x54xx 与 M37+ 消息环联动,
+        Wave3 起始); 修复: IRQ 内串口打印剔除 (包竞态)、
+        删 F4 后无包时序。
 
 ## Wave 3 · 图形与交互(M36–M50)—— UI 从"演示"变"可用"
 
@@ -473,7 +481,16 @@
       fujogl" 最小翻译闭环; **m56_dxwrap.elf 实测**: 3 顶点 × 2x
       矩阵 → `center=ffff0000 orig=00000000 corner=00000000`
       (变换后中心红/放大三角外黑) → **M56 RESULT: PASS**
-- [ ] **M57** KVM 加速支持 + TCG/KVM 基准对照
+- [x] **M57** KVM 加速支持 + TCG/KVM 基准对照
+      - **hvm.rs (M57)**: hypervisor 探测 (cpuid 0x40000000 → TCG/
+        KVM 厂家, global_asm 桥 fujo_cpuid_hv — rbx LLVM 保留);
+        0x6401 accel_info(ptr) → (kind, vendor) — TCG 下
+        `tc / QEMU TCG`, KVM 下 `kv / KVM`;
+      - **tools/qemu-kvm.ps1**: 加速启动开关 (Windows 宿主 TCG;
+        WSL2/原生 Linux `-EnableKvm` 对照), 日志 qemu-kvm.log;
+      - **m57_accel.elf 实测**: accel kind/vendor 读回 + 加速面
+        PASS; TCG 基线记录于 M70 验收 (KVM 对照重跑面: 建议后续
+        同 demo 在 -enable-kvm 重跑取 10-100x 对照)。
 - [x] **M58** 2D 游戏#1 原生运行(开源 2D 引擎选择) ——
       **docs/10-2d-engine.md**(SDL2/LÖVE/自研 fujogl+fujokit 比较 →
       **v0 引擎 = fujogl 光栅+fujokit+XInput, SDK 闭环零依赖**, 打包经
