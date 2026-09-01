@@ -378,6 +378,11 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5121 => crate::ipc::fujo_sigkill(a0, a1),
         // fujo_sigret() -> 0
         0x5122 => crate::ipc::fujo_sigret(),
+        // ---- M60: 存档沙箱 ----
+        0x6701 => crate::save::fujo_save_write(a0, a1, a2),
+        0x6702 => crate::save::fujo_save_read(a0, a1, a2),
+        0x6703 => crate::save::fujo_save_list(a0),
+        0x6704 => crate::save::fujo_save_version(a0),
         // ---- M59: 游戏模式 ----
         0x6601 => crate::gamemode::fujo_game_mode(a0),
         0x6602 => crate::gamemode::fujo_game_status(a0),

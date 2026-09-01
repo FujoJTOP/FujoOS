@@ -488,7 +488,14 @@
       **m59_gamemode.elf 实测**: `mode=1 ticks=1537 heap=8388608` →
       `fullscreen rc=0 mode=1024x768` → **M59 RESULT: PASS**; 回归: 矩阵
       9/9
-- [ ] **M60** 存档沙箱(权限目录+版本化)
+- [x] **M60** 存档沙箱(权限目录+版本化) —— **save.rs**: 存档命名空间与
+      VFS 隔离(权限: 仅经 save 原语, 无路径越权面), 8 槽 × 8KiB,
+      每槽版本头 [magic "SAV1"][version][len]: 0x6701 write /
+      0x6702 read(版本校验: 新版拒绝) / 0x6703 list / 0x6704 version;
+      **m60_save.elf 实测**: `read n=10 data='hello-save' version=2` →
+      slot0=10 slot1=-1(未用) → **M60 RESULT: PASS**;
+      **★BSS 治理**: save 表 64KB 使内核超 pad(0x270000) →
+      pad 0x180000 + MB_HEADER 0x0028_0000(矩阵 8/9→9/9); 脚本同步
 - [ ] **M61** 图形加速:blit/缩放硬件路径
 - [ ] **M62** 着色器内核评估(compute 子集)
 - [ ] **M63** 音频混音器/效果链
