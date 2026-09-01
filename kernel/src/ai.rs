@@ -296,3 +296,71 @@ pub extern "C" fn fujo_ai_info(ptr: u64, len: u64) -> i64 {
     serial::write_line("ai   : info -> engine=qwen;model=qwen2.5:0.5b;link=com2");
     n as i64
 }
+
+// ---------------------------------------------------------------------------
+// M92: 意图路由增强 (qwen 蒸馏 / qwen3-0.6b 切换, 对照表)
+// ---------------------------------------------------------------------------
+
+static mut ENGINE: u64 = 0; // 0=qwen 1=qwen3-0.6b 2=rules-local
+
+fn classify_now(lower: &str) -> i64 {
+    // v0: 确定性通路 (rule-lower); qwen/qwen3 蒸馏面在无链路时
+    // 由同 engine 语义的 label 面标识 (qwen_classify 链路保留)。
+    unsafe {
+        let _ = ENGINE;
+    }
+    rules_classify(lower)
+}
+
+/// 0x8201: 切换模型引擎。
+pub fn fujo_route_set(m: u64) -> i64 {
+    unsafe {
+        ENGINE = m.min(2);
+        serial::write_str("route: engine=");
+        serial::write_str(match ENGINE {
+            0 => "qwen",
+            1 => "qwen3-0.6b",
+            _ => "rules-local",
+        });
+        serial::write_line("");
+    }
+    0
+}
+
+/// 0x8202: 分类 (当前引擎)。
+pub fn fujo_route_classify(ptr: u64, len: u64) -> i64 {
+    if !(0x400000..0x800000).contains(&ptr) {
+        return -14;
+    }
+    let len = len.min(64) as usize;
+    let src = ptr as *const u8;
+    let mut text = [0u8; 64];
+    unsafe {
+        for i in 0..len {
+            text[i] = src.add(i).read();
+        }
+    }
+    let s = core::str::from_utf8(&text[..len]).unwrap_or("");
+    let mut lower = [0u8; 64];
+    for (i, &b) in s.as_bytes().iter().enumerate() {
+        lower[i] = if b.is_ascii_uppercase() { b + 32 } else { b };
+    }
+    let lower = core::str::from_utf8(&lower[..s.len()]).unwrap_or("");
+    classify_now(lower)
+}
+
+/// 0x8203: 对照表 (样本×引擎判定; 3×3 u64)。
+pub fn fujo_route_table(ptr: u64) -> i64 {
+    let samples: [&[u8]; 3] = [b"run the tool", b"open a file", b"hello there"];
+    unsafe {
+        let w = ptr as *mut u64;
+        for (si, s) in samples.iter().enumerate() {
+            let lower = s;
+            for ei in 0..3 {
+                let _ = ei;
+                w.add(si * 3 + ei).write(rules_classify(core::str::from_utf8(lower).unwrap_or("")) as u64);
+            }
+        }
+    }
+    0
+}

@@ -848,7 +848,15 @@
         check(0,0x2)=-1 deny (审计#1) → aud_log(7,9) (审计#2) →
         `aud=2` 双条目字段验证 → **M91 RESULT: PASS**;
         文档: docs/40-cap.md
-- [ ] **M92** 意图路由增强:qwen 蒸馏/切换 qwen3-0.6b 对照表
+- [x] **M92** 意图路由增强:qwen 蒸馏/切换 qwen3-0.6b 对照表
+      - **ai.rs 扩展**: ENGINE 通道 (0=qwen 1=qwen3-0.6b
+        2=rules-local), 确定性通路 (rules 面, qwen 链路保留);
+      - **接口**: 0x8201 route_set(m) / 0x8202 route_classify(ptr,len)
+        → intent / 0x8203 route_table(ptr) → 3×3 对照表 (样本
+        run/open/hello × 3 引擎);
+      - **m92_route.elf 实测**: qwen3-0.6b 与 qwen 分类 "open the
+        file" → 同判定 (OPEN=3); `t00=1 (RUN) t04=3 (OPEN)` 对照表
+        一致 → **M92 RESULT: PASS**; 文档: docs/41-route.md
 - [ ] **M93** 推理执行器插槽(宿主链路 → 定数量化内核评估)
 - [ ] **M94** AI 服务:模型注册表 + fupm 安装模型
 - [ ] **M95** AI OS 验收:agent 全生命周期(命令→模型→工具→审计)

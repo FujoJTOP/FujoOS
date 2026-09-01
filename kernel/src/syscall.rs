@@ -319,6 +319,10 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x8102 => crate::capability::fujo_cap_check(a0, a1),
         0x8103 => crate::capability::fujo_aud_log(a0, a1),
         0x8104 => crate::capability::fujo_aud_read(a0, a1),
+        // ---- M92: 意图路由增强 ----
+        0x8201 => crate::ai::fujo_route_set(a0),
+        0x8202 => crate::ai::fujo_route_classify(a0, a1),
+        0x8203 => crate::ai::fujo_route_table(a0),
         // read(fd, buf, len) — M15 VFS
         0 => crate::vfs::fujo_read(a0, a1, a2),
         // write(fd, buf, len)
