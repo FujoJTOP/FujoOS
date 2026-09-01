@@ -41,6 +41,7 @@ mod mouse;
 mod wmsg;
 mod xinput;
 mod pe_loader;
+mod pcache;
 mod save;
 mod sched;
 mod serial;
@@ -252,6 +253,7 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     // 文本徽章展示完毕 -> 切图形层画几何徽章
     let gfx_ok = graphics::init();
     crate::smp::init(); // M64: CPUID 核探测 + 亲和/均衡统计就位
+    crate::pcache::init(); // M66: 页缓存/模拟盘清零
     if !gfx_ok {
         out_line("gfx  : framebuffer unavailable (VBE not present), geometry logo skipped");
     } else {

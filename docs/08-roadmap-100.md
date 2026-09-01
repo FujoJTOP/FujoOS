@@ -562,7 +562,19 @@
         忙循环 (PIT 用户态中断可触发): core0 段 `r0=8 r1=0`, core1
         段 `r0=0 r1=8`, 轮转段 `4/4` (掩码分散正确) →
         **M65 RESULT: PASS**; 文档: docs/14-tss-irq.md
-- [ ] **M66** 页缓存/预读(内存盘→真盘)
+- [x] **M66** 页缓存/预读(内存盘→真盘)
+      - **接口**: 0x6C01 alloc(n) / 0x6C02 write(blk,ptr) /
+        0x6C03 read(blk,ptr) (miss→盘同步) / 0x6C04 prefetch(start,n)
+        (顺序预读窗口) / 0x6C05 flush() 脏页回盘 / 0x6C06 evict() /
+        0x6C07 info(ptr) → (slots, dirty, hits, miss)。
+      - **实现**: 16 页槽 (元数据 256B BSS; 数据区常量
+        0xF10000..0xF20000, 模拟盘 0xF24000..0xF28000 —— 启动格式化
+        清零; 0xD00000 区实测与 backbuffer 0xC00000..0xF00000 重叠
+        (0x5A=窗口边框色 0x30305A 字节序, 见文档 15), 迁出修复)。
+      - **m66_pcache.elf 实测**: alloc(3)→write 0xAB/0xCD→flush=2
+        回盘→read hit→evict→prefetch(0,2) 从盘装→read=0xAB/0xCD;
+        evict 后读未预读页 → miss 路径空页 → `slots=1 dirty=0
+        hits=3 miss=1` → **M66 RESULT: PASS**; 文档: docs/15-pcache.md
 - [ ] **M67** 中断合并/减轻(串口/网卡)
 - [ ] **M68** 帧时间表/性能计数器工具
 - [ ] **M69** 2D 游戏#2 + 输入延迟基准

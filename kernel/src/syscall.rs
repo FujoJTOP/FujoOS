@@ -395,6 +395,14 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x6B02 => crate::smp::fujo_tss_info(a0),
         0x6B04 => crate::smp::fujo_irq_route(a0),
         0x6B05 => crate::smp::fujo_irq_stats(a0),
+        // ---- M66: 页缓存/预读 ----
+        0x6C01 => crate::pcache::fujo_pc_alloc(a0),
+        0x6C02 => crate::pcache::fujo_pc_write(a0, a1),
+        0x6C03 => crate::pcache::fujo_pc_read(a0, a1),
+        0x6C04 => crate::pcache::fujo_pc_prefetch(a0, a1),
+        0x6C05 => crate::pcache::fujo_pc_flush(),
+        0x6C06 => crate::pcache::fujo_pc_evict(),
+        0x6C07 => crate::pcache::fujo_pc_info(a0),
         // ---- M60: 存档沙箱 ----
         0x6701 => crate::save::fujo_save_write(a0, a1, a2),
         0x6702 => crate::save::fujo_save_read(a0, a1, a2),
@@ -611,6 +619,11 @@ pub fn log_hex(v: u64) {
 /// M36: 十进制日志 (鼠标/其他模块使用)
 pub fn debug_dec(v: u64) {
     print_dec(v);
+}
+
+/// M66: 十六进制日志 (页缓存诊断)
+pub fn debug_hex(v: u64) {
+    print_hex(v);
 }
 
 fn user_write(fd: u64, ptr: u64, len: u64) -> i64 {    // M15: fd>=3 先走 VFS (内存盘追加); /dev/tty 与 fd<3 走串口
