@@ -778,7 +778,13 @@
         `dump: captured minidump #1 vec=6 rip=0x40041a` →
         `count=1 vec=6 n=120` → **M84 RESULT: PASS**;
         文档: docs/33-dump.md
-- [ ] **M85** 工具链验收:hello/gui/game 一键构建运行
+- [x] **M85** 工具链验收:hello/gui/game 一键构建运行
+      - **scripts/onebuild.ps1**: templates (hello/game/gui) →
+        clang ELF → fujopack .run → QEMU 依次验证日志断言
+        ("template app"/"template frame loop"/"fujokit skeleton");
+        参数: -BuildOnly / -Kernel。
+      - **实测**: `onebuild: 3/3 PASS (hello/gui/game build+run)`;
+        文档: docs/34-onebuild.md; **Wave 5 (M71–M85) 完成**。
 
 ## Wave 6 · AI OS 深化(M86–M95)—— 独有层(文档 07 四件套落地)
 
