@@ -323,6 +323,10 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x8201 => crate::ai::fujo_route_set(a0),
         0x8202 => crate::ai::fujo_route_classify(a0, a1),
         0x8203 => crate::ai::fujo_route_table(a0),
+        // ---- M93: 推理执行器插槽 ----
+        0x8301 => crate::infer::fujo_infer_run(a0, a1, a2, a3),
+        0x8302 => crate::infer::fujo_infer_slot(a0),
+        0x8303 => crate::infer::fujo_infer_set(a0),
         // read(fd, buf, len) — M15 VFS
         0 => crate::vfs::fujo_read(a0, a1, a2),
         // write(fd, buf, len)

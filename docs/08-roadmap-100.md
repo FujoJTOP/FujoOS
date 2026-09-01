@@ -857,7 +857,16 @@
       - **m92_route.elf 实测**: qwen3-0.6b 与 qwen 分类 "open the
         file" → 同判定 (OPEN=3); `t00=1 (RUN) t04=3 (OPEN)` 对照表
         一致 → **M92 RESULT: PASS**; 文档: docs/41-route.md
-- [ ] **M93** 推理执行器插槽(宿主链路 → 定数量化内核评估)
+- [x] **M93** 推理执行器插槽(宿主链路 → 定数量化内核评估)
+      - **infer.rs**: 双模式执行器: 0=host-link (COM2 模型服务
+        中继) 1=local-kernel (确定性响应 `fujo-infer-local:
+        recv=N tokens intent=X`);
+      - **接口**: 0x8301 infer_run(ptr,len,out,cap) → 响应长度 /
+        0x8302 infer_slot(ptr) → (mode, calls, tokens, last_ms) /
+        0x8303 infer_set(mode);
+      - **m93_infer.elf 实测**: local run "pending status?" → n1=46
+        (intent=QUERY); host 模式同面; `calls=2 tokens=21` →
+        **M93 RESULT: PASS**; 文档: docs/42-infer.md
 - [ ] **M94** AI 服务:模型注册表 + fupm 安装模型
 - [ ] **M95** AI OS 验收:agent 全生命周期(命令→模型→工具→审计)
 

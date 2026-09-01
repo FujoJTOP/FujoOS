@@ -42,6 +42,7 @@ mod ipc;
 mod irq;
 mod icon;
 mod ime;
+mod infer;
 mod kbd;
 mod kobj;
 mod ld;
