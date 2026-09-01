@@ -614,7 +614,16 @@
       - **实测**: `frames=10 avg_lat=94µs max_lat=717µs hits=1`
         → **M69 RESULT: PASS**; 输入延迟基准值 (采样→渲染完成,
         TCG 下) 供 M70 验收对照; 文档: docs/18-game2.md
-- [ ] **M70** 游戏层性能验收报告
+- [x] **M70** 游戏层性能验收报告
+      - **docs/19-game-acceptance.md**: M51–M69 全部实测数字汇总表
+        (12 行 PASS 基线) + 性能指标 (帧 20ms 驱动 / 输入→渲染
+        avg 94µs max 717µs / IRQ 合并 8:1 / blit≈1 syscall /
+        着色器 8 轮 per px / 音频 4ch×256 一次 syscall / 页缓存
+        16+4 页) + 完整链路 (回归矩阵 9/9 + 游戏闭环) + 缺口
+        (GPU 通道 / 音效 FIFO / SMP 真并行 / 网卡 IRQ 合并;
+        KVM 对比为后续基准重跑面)。
+      - **验收结论**: 游戏层性能验收 **PASS**; Wave 5 (M71+) 以本
+        基线为回归锚点。Wave 4 (M51–M70) 全部完成。
 
 ## Wave 5 · 开发工具链(M71–M85)
 
