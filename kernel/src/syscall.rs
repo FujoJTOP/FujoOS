@@ -291,6 +291,10 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x7A01 => crate::leak::fujo_leak_begin(),
         0x7A02 => crate::leak::fujo_leak_end(a0),
         0x7A03 => crate::leak::fujo_leak_stats(a0),
+        // ---- M84: 崩溃转储 ----
+        0x7B01 => crate::dump::fujo_dump_arm(a0),
+        0x7B02 => crate::dump::fujo_dump_read(a0, a1),
+        0x7B03 => crate::dump::fujo_dump_info(a0),
         // read(fd, buf, len) — M15 VFS
         0 => crate::vfs::fujo_read(a0, a1, a2),
         // write(fd, buf, len)

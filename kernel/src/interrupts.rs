@@ -393,6 +393,8 @@ pub extern "C" fn fujo_exc2(vec: u64, regs: *mut u64) -> i64 {
             let rip = regs.add(10 + e).read();
             serial::write_str(" rip=");
             crate::syscall::log_hex(rip);
+            // M84: 崩溃转储 (minidump, 隔离转场/停机前捕获)
+            crate::dump::note_exc(vec, regs, e as u64);
             // M14: 终止当前任务 + 转场幸存者
             if crate::sched::terminate_current_and_next() {
                 return 1;

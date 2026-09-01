@@ -22,6 +22,7 @@ mod dbg;
 mod desk;
 mod dxwrap;
 mod display;
+mod dump;
 mod editor;
 mod elf_loader;
 mod fjfs;

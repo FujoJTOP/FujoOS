@@ -768,7 +768,16 @@
         (unreleased slots)` (泄漏可检) → free 全部 → `delta -4
         (freed below baseline)` / after-free delta=0 →
         **M83 RESULT: PASS**; 文档: docs/32-leak.md
-- [ ] **M84** 崩溃转储(minidump 雏形)
+- [x] **M84** 崩溃转储(minidump 雏形)
+      - **dump.rs**: 用户异常捕获 (挂接 fujo_exc2 用户分支, 隔离
+        转场前): 布局 120B `FUJDUMP\0 + vec + rip + cr2 + rsp + cs +
+        regs8 + count`;
+      - **接口**: 0x7B01 dump_arm(on) / 0x7B02 dump_read(ptr,cap) →
+        B 数 / 0x7B03 dump_info(ptr) → (count, vec, rip, cr2)。
+      - **m84_dump.elf 实测**: fork → 子 ud2 (#UD vec6) 崩溃隔离 →
+        `dump: captured minidump #1 vec=6 rip=0x40041a` →
+        `count=1 vec=6 n=120` → **M84 RESULT: PASS**;
+        文档: docs/33-dump.md
 - [ ] **M85** 工具链验收:hello/gui/game 一键构建运行
 
 ## Wave 6 · AI OS 深化(M86–M95)—— 独有层(文档 07 四件套落地)
