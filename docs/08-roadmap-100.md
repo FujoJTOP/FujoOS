@@ -750,7 +750,15 @@
         参数 -Src/-Mac/-Win/-Out; PE 路径重建 kernel32.lib (dlltool);
       - **实测**: `cross-build: 3/3 PASS` (app.elf/app.macho/app.exe);
         文档: docs/30-cross-build.md。
-- [ ] **M82** 单元测试框架(kernel 内断言自检)
+- [x] **M82** 单元测试框架(kernel 内断言自检)
+      - **utest.rs**: 注册表 (8 槽函数指针), 用例: strlen/strcmp/
+        hex 解析/整数数学/strrev/bits/行模型 (7 个纯函数);
+      - **接口**: 0x7901 ut_run() → 全跑 (pass-fail 返回) /
+        0x7902 ut_info(ptr) → (pass, fail, total, allpass);
+        启动注册 "ut: unit-test suite registered (7 cases)"。
+      - **m82_ut.elf 实测**: `ut: run done pass=7 fail=0` →
+        `pass=7 fail=0 total=7` → **M82 RESULT: PASS**;
+        文档: docs/31-utest.md
 - [ ] **M83** 内存泄漏检测(分配器统计)
 - [ ] **M84** 崩溃转储(minidump 雏形)
 - [ ] **M85** 工具链验收:hello/gui/game 一键构建运行

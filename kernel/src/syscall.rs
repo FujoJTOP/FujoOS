@@ -284,6 +284,9 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x7801 => crate::perf::fujo_win_begin(a0),
         0x7802 => crate::perf::fujo_win_end(a0),
         0x7803 => crate::perf::fujo_win_read(a0),
+        // ---- M82: 单元测试框架 ----
+        0x7901 => crate::utest::fujo_ut_run(),
+        0x7902 => crate::utest::fujo_ut_info(a0),
         // read(fd, buf, len) — M15 VFS
         0 => crate::vfs::fujo_read(a0, a1, a2),
         // write(fd, buf, len)
