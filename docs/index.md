@@ -9,7 +9,7 @@
 |----|------|
 | 内核 | x86_64 长模式 · IDT/GDT/TSS · PIT 100Hz · 抢占式多任务 (PIT round-robin, 亲和性/均衡统计) |
 | 内存 | 虚拟内存 v0 · 按需零页 · 帧分配器 · U-位硬化 · 权重 mmap 按需页 |
-| ABI | ELF64 / Mach-O / PE32+ 第一公民 · Linux x86-64 39 syscalls · darwin/win32 shim 家族 |
+| ABI | ELF64 / Mach-O / PE32+ 加载器子集 (静态样例原地运行) · Linux x86-64 39 syscalls · darwin/win32 shim 家族 |
 | 存储 | ATA PIO + FJFS 4MiB 卷 (格式化/持久化) · 页缓存/预读 · 存档沙箱 8×8KiB |
 | 图形 | VBE 1024x768x32 + LFB · 5x7 位图字体 · 软件光栅 (rect/tri/line) · blit/scale · 着色器 VM |
 | 输入 | PS/2 键盘 IRQ1 · 鼠标 IRQ12 (8042 序列/命中测试) · XInput · IME |

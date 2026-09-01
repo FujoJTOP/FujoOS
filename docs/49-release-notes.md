@@ -14,7 +14,7 @@ FujoOS 是一个零第三方依赖的 x86_64 原生操作系统内核:
 | 面 | 指标 |
 |----|------|
 | 里程碑 | M1–M100 全部完成 (Wave1 内核 · Wave2 ABI · Wave3 桌面 · Wave4 游戏 · Wave5 工具链 · Wave6 AI OS · Wave7 交付) |
-| ABI | ELF64/Mach-O/PE32+ 三格式第一公民 (Linux 39 syscalls + shim 家族) |
+| ABI | ELF64/Mach-O/PE32+ 三格式加载器子集, 静态无 libc 样例验证 (Linux 39 syscalls + shim 家族) |
 | 回归 | 兼容矩阵 9/9 · fujoci 38 用例 (37/38+重测全过; 抽样单例偶发) · onebuild 3/3 |
 | 持久化 | FJFS 双阶段跨重启读回 PASS · 安装器 bootcount 递增 PASS · 更新签名校验/篡改拒绝 PASS |
 | AI OS | 四件套闭环: mmap 权重/模型卡/fujoctx/审计; 生命周期 PASS |
