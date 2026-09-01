@@ -40,3 +40,26 @@ m95: M95 RESULT: PASS
 | M95 | 全生命周期 | PASS |
 
 **AI OS 独有层 (文档 07 四件套: mmap 权重/模型卡/fujoctx/审计) 闭环。**
+
+---
+
+# 44-Ext · Five-AI 回归 (M115 · Wave 7)
+
+状态: ✅ 完成。验收: QEMU 串口 `M115 RESULT: PASS`, demo `sdk/linux/m115_five.c`,
+模型 qwen2.5:7b (宿主 Ollama; 缺失时规则降级)。
+
+## 五职能对照表 (基线=规则语义 / 模型=Qwen 2.5 7b)
+
+| 职能 | 接口 | 基线 | 模型实测 | 判定 |
+|------|------|------|----------|------|
+| A 异常哨兵 | 0x8304 | 10/0 (规则) | hits=10 fp=0 (100 样本) | PASS |
+| B 计划-执行 | 0x8305 | A2 1;A5 1 规则 | ok=2 fail=0 verify=1 | PASS |
+| C I/O 预测 | 0x8306 | LRU=0/30 | model=10/30 | PASS (≥基线) |
+| D 自然语言配置 | 0x8307 + 0x6601 | POL 规则 | applied=3, 执行面拒绝 -1 | PASS |
+| E 环境侦察 | 0x8308 | desktop/2 规则 | SCENE=desktop PROFILE=2, cfg(6)=2 | PASS |
+| 链路 (M95 面) | 0x5101 | — | intent=1 (RUN) | PASS |
+
+**结论: 五条 AI 系统职能闭环; 模型输出皆为"提示", 规则为兜底 — 两者对照保持
+"基线保底 ≥8/10、模型追优" 的双轨验收。**
+
+详见 [53-m112.md](53-m112.md) / [54-m113.md](54-m113.md) / [55-m114.md](55-m114.md)。
