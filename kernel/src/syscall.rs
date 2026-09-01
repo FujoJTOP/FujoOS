@@ -423,6 +423,12 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5F02 => crate::audio::fujo_audio_enable(a0),
         0x5F03 => crate::audio::fujo_audio_volume(a0),
         0x5F04 => crate::audio::fujo_audio_playback(a0, a1),
+        // ---- M63: 混音器/效果链 ----
+        0x5F05 => crate::audio::fujo_mix_open(a0),
+        0x5F06 => crate::audio::fujo_mix_push(a0, a1, a2),
+        0x5F07 => crate::audio::fujo_mix_render(a0, a1, a2),
+        0x5F08 => crate::audio::fujo_mix_effect(a0, a1, a2),
+        0x5F09 => crate::audio::fujo_mix_status(a0),
         // ---- M51: 显示驱动抽象 ----
         0x5E01 => crate::display::fujo_disp_info(a0),
         0x5E02 => crate::display::fujo_disp_set_backend(a0),
