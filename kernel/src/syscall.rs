@@ -312,6 +312,8 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x7E05 => crate::sessions::fujo_sess_tick(a0, a1),
         // ---- M89: fujoctx 摘要注入 ----
         0x7F01 => crate::ctx::fujo_ctx_snap(a0, a1),
+        // ---- M90: 上下文压缩 ----
+        0x8001 => crate::ctx::fujo_ctx_compress(a0, a1, a2, a3, a4),
         // read(fd, buf, len) — M15 VFS
         0 => crate::vfs::fujo_read(a0, a1, a2),
         // write(fd, buf, len)

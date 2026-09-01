@@ -57,3 +57,39 @@ pub fn fujo_ctx_snap(ptr: u64, cap: u64) -> i64 {
     }
     pos as i64
 }
+
+// ---------------------------------------------------------------------------
+// M90: 上下文压缩 (fujoctx 链: 截断+摘要窗口策略; 委托宿主大模型面)
+// ---------------------------------------------------------------------------
+
+const MID: &[u8] = b"[...ctx-compressed...]";
+
+/// 0x8001: 压缩: 保留头 win 字节 + 尾 win/2 字节, 中间替换标记。
+pub fn fujo_ctx_compress(src: u64, len: u64, dst: u64, cap: u64, win: u64) -> i64 {
+    let len = len as usize;
+    let win = (win as usize).min(len / 3).max(8);
+    let srcb = unsafe { core::slice::from_raw_parts(src as *const u8, len) };
+    let b = dst as *mut u8;
+    let cap = cap as usize;
+    let mut pos = 0usize;
+
+    // 头部
+    for i in 0..win.min(cap) {
+        unsafe { b.add(i).write(srcb[i]) };
+    }
+    pos = win.min(cap);
+    // 中间标记
+    for &c in MID.iter() {
+        if pos < cap {
+            unsafe { b.add(pos).write(c) };
+            pos += 1;
+        }
+    }
+    // 尾部
+    let tail = (win / 2).min(len - win).max(1);
+    for i in 0..tail.min(cap.saturating_sub(pos)) {
+        unsafe { b.add(pos).write(srcb[len - tail + i]) };
+        pos += 1;
+    }
+    pos as i64
+}

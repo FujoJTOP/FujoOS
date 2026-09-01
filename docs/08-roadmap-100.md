@@ -830,7 +830,14 @@
       - **m89_ctx.elf 实测**: `ctx1=fujoctx v1 win_focus=0 files=0
         syscalls=2 ticks=1748` (字段解析/递减检查) →
         **M89 RESULT: PASS**; 文档: docs/38-fujoctx.md
-- [ ] **M90** 上下文压缩:委托宿主大模型(fujoctx 链)
+- [x] **M90** 上下文压缩:委托宿主大模型(fujoctx 链)
+      - **ctx.rs 扩展**: 0x8001 ctx_compress(src,len,dst,cap,win):
+        头部保留 win 字节 + 中间标记 `[...ctx-compressed...]` +
+        尾部 win/2 字节 (截断+摘要窗口策略; v0 本地策略, 替换点=
+        宿主大模型摘要链的委托面);
+      - **m90_ctx.elf 实测**: 4KB (AAAA..B..ZZZZ) → `in=4096
+        out=790` (512+22+256), 头 AAAA/尾 ZZZZ/中标记校验 →
+        **M90 RESULT: PASS**; 文档: docs/39-ctxcompress.md
 - [ ] **M91** 权限与审计(四件套④):能力表 + 审计日志
 - [ ] **M92** 意图路由增强:qwen 蒸馏/切换 qwen3-0.6b 对照表
 - [ ] **M93** 推理执行器插槽(宿主链路 → 定数量化内核评估)
