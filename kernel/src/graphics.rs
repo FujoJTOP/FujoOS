@@ -150,7 +150,27 @@ pub fn init() -> bool {
         vbe_io(0x0002, H as u16); // YRES
         vbe_io(0x0003, 32);       // BPP
         vbe_io(0x0004, 0x41);     // ENABLE | LFB
+        // M108: VGA 显示仲裁 —— QEMU GTK/SDL 显示平面读 VGA 图形模式,
+        // 仅 Bochs VBE ENABLE 不够; 需 VGA 序列器 Mode=4 (平面模式) 使
+        // 显示读 LFB 而不是文本平面 (QEMU 9.2 std-vga 实测: 否则 GTK 显示
+        // 文本平面残帧/乱码, 而 screendump/pmemsave 读 LFB 正常)。
+        serial::outb(0x3C4, 0x01); // sequencer index = clocking mode
+        serial::outb(0x3C5, 0x0E); // D8|4|2 (dotclock|shift4|shift8: 16色图形)
+        serial::outb(0x3C4, 0x0F); // sequencer index = memory mode
+        serial::outb(0x3C5, 0x0A); // extended|sequential|1 (平面访问)
         let id = vbe_get(0x0000);
+        // 读回模式状态确认切换 (M108: GTK 乱码排查 —— 缺此确认时
+        // VBE 未生效, QEMU 停留在 VGA 文本模式, 屏幕显示 80x25 残留)。
+        let en = vbe_get(0x0004);
+        let xr = vbe_get(0x0001);
+        let yr = vbe_get(0x0002);
+        serial::write_str("gfx  : vbe en=");
+        print_hex(en as u64);
+        serial::write_str(" res=");
+        print_hex(xr as u64);
+        serial::write_str("x");
+        print_hex(yr as u64);
+        serial::write_line("");
         // LFB 物理地址在 PCI BAR0 (VGA 设备 0x1234:0x1111)
         let lfb = find_vga_lfb();
 
@@ -165,6 +185,10 @@ pub fn init() -> bool {
         if lfb == 0 {
             return false;
         }
+        if en & 1 == 0 {
+            // VBE 未使能: 文本模式残留 (GTK 将显示乱码字符屏)
+            serial::write_line("gfx  : WARNING vbe not enabled (display stays text mode)");
+ }
         // LFB 终端投映: QEMU TCG 对 std-VGA 高阶 RAM 区 (0xFD000000) 的历史
         // #PF 记录见 M4 —— 但那是未映射场景 (无 PML4[3]); 本桩已映射
         // 0xFD000000..0xFD800000 (4KiB 页, gen_stub32.py), QEMU 实测可写。

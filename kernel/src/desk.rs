@@ -268,15 +268,38 @@ fn tty_draw_window() {
             setp(WX, WY + y, 0x000000);
             setp(WX + WW - 1, WY + y, 0x000000);
         }
-        let title = core::str::from_utf8(&TTY_TITLE[..]).unwrap_or("?");
+        // 标题: 截取到 NUL (TTY_TITLE 24B, 后段为填充 0, from_utf8 对
+        // NUL 后无问题, 但统一走 ASCII 过滤更稳)。
+        let ttl = &TTY_TITLE[..];
+        let mut tn = 0usize;
+        while tn < 24 && TTY_TITLE[tn] != 0 {
+            tn += 1;
+        }
+        let title = core::str::from_utf8(&ttl[..tn]).unwrap_or("?");
         font_line(WX + 8, WY + 5, 1, 0x000000, title);
         // 滚动 24 行 (旧行自底), 基础字体 8px 高
+        // M108: 逐字节过滤渲染 (≥0x80/控制字节必跳过 —— ASCII 才可画;
+        // from_utf8 会把 0xD0 0xAF 等按多字节 UTF-8 正常返回, 但 font_line
+        // 对非 ASCII 跳过, 避免 UTF-8 半字符/乱码)。截取到 NUL 止。
         let visible = TTY_ROW_N.min(TTY_ROWS);
         for r in 0..visible {
             let line = TTY_LINES[(TTY_ROW + TTY_ROWS + 1 - visible + r) % TTY_ROWS];
+            let mut clean = [0u8; TTY_COL + 1];
+            let mut cn = 0usize;
+            for &c in line.iter() {
+                if c == 0 {
+                    break;
+                }
+                if c >= 0x20 && c <= 0x7E {
+                    if cn < TTY_COL {
+                        clean[cn] = c;
+                        cn += 1;
+                    }
+                }
+            }
             font_line(WX + 6, WY + 28 + (r as u32) * 8, 1,
                       0x000000,
-                      core::str::from_utf8(&line[..]).unwrap_or(""));
+                      core::str::from_utf8(&clean[..cn]).unwrap_or(""));
         }
         crate::graphics::present();
     }
