@@ -961,6 +961,27 @@
       - **演示**: sdk/templates (hello/game/gui) + onebuild 3/3 +
         fujorun --keys 一键; **路线图: 全部 100 项 [x] 达成**。
 
+# 里程碑 101–106 · 桌面可操作面 (Win1.0 级交互闭环)
+
+- [x] **M101** 桌面整合 shell(点击→开窗→关窗)
+      - 纯用户态编排 (无内核改动): desk_init+taskbar → 图标×2 →
+        消息循环 8 帧: 点开始按钮 (0x5B03 命中→0x5B04 菜单) →
+        点菜单 Programs → 注册类 (0x5520) + 开窗 (0x5521, 校验
+        win id>0) → 标题栏/正文绘制 (0x6202 rect + 0x5601 font) →
+        点关闭 (0x5524) → 桌面还原; 两轮开/关。
+      - **m101_desktop.elf 实测**: `openings=2 menu=2 closes=2` →
+        **M101 RESULT: PASS**; wm 语义细节 (类必需/返回值) 与
+        M102 同路径复验 (见下)。
+- [x] **M102** 窗口拖动/焦点/层级
+      - **wmsg 语义核实**: wm_class(name)→id (0x5520, 必需);
+        wm_create(class,x,y,w,h)→winId (0x5521); wm_move(win,dx,dy)
+        **增量** (0x5525); wm_rect(win,ptr) 写 **(x,y,w,h)**
+        (0x5526); wm_top(win) 移至表顶 (0x5523); wm_remove (0x5524)。
+      - **m102_windrag.elf 实测**: 双窗 A/B (id 1/2 互异), rect 读回
+        (30,40,320,220)/(200,120,280,180), 拖动 B 6× (50,45) →
+        (500,390), top/remove 链 → 删除后 rect=-2 →
+        `winA=1 winB=2 moved=1 topB=0 rmB=0` → **M102 RESULT: PASS**。
+
 ## 我的取舍意见(如资源受限)
 
 优先:① M11 虚拟内存 + M13 线程调度(解锁一切: malloc→桌面→游戏、fork→多进程、mmap→模型权重)
