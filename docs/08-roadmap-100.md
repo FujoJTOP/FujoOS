@@ -627,7 +627,23 @@
 
 ## Wave 5 · 开发工具链(M71–M85)
 
-- [ ] **M71** 系统内汇编器(最小 .s 编译)
+- [x] **M71** 系统内汇编器(最小 .s 编译)
+      - **asm.rs 两遍汇编器**: pass1 扫描 label 地址 (L0..L15) +
+        指令长度; pass2 生成字节码。
+      - **指令子集**: nop/ret/int3/syscall; mov(r64,imm64|r64);
+        add/sub/xor/cmp(r64,imm8|r64); inc/dec; push/pop;
+        jmp/je/jne (rel32, 与本地 label)。寄存器 rax..rdi 7 个;
+        立即: 0x.. / 十进制 / $-前缀; 伪指令 .text/.byte/.word/.quad;
+        `#`/`;` 注释; 操作数逗号容错。
+      - **接口**: 0x7001 asm_assemble(src,n,dst,cap) →
+        字节数 (负=err) / 0x7002 asm_verify(ptr,n) → 解码指令数
+        (遇 ret 停)。
+      - **m71_asm.elf 实测**: 7 指令程序 (nop/mov rax,0x42/xor/
+        add/jcc/inc/ret) → `n=28` (1+10+3+4+6+3+1), je rel32=0
+        (L0 紧跟), 字节检查 b0=90 b18=0F b19=84 b20=0 b24=48
+        b25=FF b27=C3, `inst=7` → **M71 RESULT: PASS**;
+        踩坑: 操作数逗号、label-only 行注册、jcc 字节序 0F 84、
+        mov imm 二次元位; 文档: docs/20-asm-tool.md
 - [ ] **M72** 系统内链接器(ELF 静态最小)
 - [ ] **M73** 迷你编辑器(vi 子集)
 - [ ] **M74** fujocc 编译壳(表驱动, 跨 ABI 选项)

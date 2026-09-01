@@ -15,6 +15,7 @@ mod ai;
 mod a11y;
 mod ata;
 mod audio;
+mod asm;
 mod blit;
 mod clip;
 mod desk;
