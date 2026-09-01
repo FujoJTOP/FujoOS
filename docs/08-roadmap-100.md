@@ -745,7 +745,11 @@
         快速开始教程 (Hello/游戏/GUI/多文件) + 验证链。
       - **sdk/templates/**: hello.tpl.c (最小 _start 入口) /
         game.tpl.c (帧循环 + 延迟上报) / gui.tpl.c (fujokit 骨架)。
-- [ ] **M81** 交叉编译工具链一键脚本(win/mac/linux 三源)
+- [x] **M81** 交叉编译工具链一键脚本(win/mac/linux 三源)
+      - **scripts/cross-build.ps1**: 一键三目标 (ELF/Mach-O/PE32+),
+        参数 -Src/-Mac/-Win/-Out; PE 路径重建 kernel32.lib (dlltool);
+      - **实测**: `cross-build: 3/3 PASS` (app.elf/app.macho/app.exe);
+        文档: docs/30-cross-build.md。
 - [ ] **M82** 单元测试框架(kernel 内断言自检)
 - [ ] **M83** 内存泄漏检测(分配器统计)
 - [ ] **M84** 崩溃转储(minidump 雏形)
