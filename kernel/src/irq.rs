@@ -31,6 +31,7 @@ fn rdtsc() -> u64 {
 /// PIT tick 侧钩子 (smp::intr_note 调; M67 合并/成本记账)。
 pub fn note() {
     let now = rdtsc();
+    crate::perf::bump(0); // M68: 性能计数器 PIT IRQ
     unsafe {
         if LAST_TSC != 0 {
             let d = now - LAST_TSC;

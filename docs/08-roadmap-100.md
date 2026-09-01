@@ -589,7 +589,20 @@
         成本非零 → **M67 RESULT: PASS**; 串口/网卡中断合并面记录
         (无硬件 IRQ 源 v0, 文档: docs/16-irq-merge.md: 16550 FIFO
         阈值/82574L MSI-X 预留说明)。
-- [ ] **M68** 帧时间表/性能计数器工具
+- [x] **M68** 帧时间表/性能计数器工具
+      - **接口**: 0x6E01 perf_frame_mark() 帧边界标记 (µs 间隔入
+        环形 64 表) / 0x6E02 perf_frame_stats(ptr) → (frames, avg,
+        max, sum) / 0x6E03 perf_counter_enable(id,on) /
+        0x6E04 perf_counter_read(ptr) → u64×8。
+      - **实现 (perf.rs)**: 帧表经由 timer 校准 (两阶段 cyc/us;
+        记录 `calibrated cyc/us≈2495` 于首个 mark); 计数器挂钩:
+        0=PIT IRQ (irq::note), 1=syscall (dispatch 顶),
+        2=ctx-switch (sched 切换点), 默认启用 0/1;
+        修复: 帧数递增原以 min(N,63) 清零 — 改 F_N+=1 上限 64。
+      - **m68_perf.elf 实测**: 5×mark 隔 20M 忙循环 → `frames=4
+        avg=83092µs max=85231µs` (来自 first-mark 差值 4 条); 计数器
+        差分: `d_irq=8 d_sys=1` → **M68 RESULT: PASS**;
+        文档: docs/17-perf.md
 - [ ] **M69** 2D 游戏#2 + 输入延迟基准
 - [ ] **M70** 游戏层性能验收报告
 

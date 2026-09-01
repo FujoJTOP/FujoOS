@@ -230,6 +230,9 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         }
     }
 
+    // ---- M68: 性能计数器 syscall ----
+    crate::perf::bump(1);
+
     let res = match nr {
         // fujo_trace_enable(on) — M33
         0x5301 => {
@@ -406,6 +409,11 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         // ---- M67: 中断合并/减轻 ----
         0x6D01 => crate::irq::fujo_irq_set_window(a0),
         0x6D02 => crate::irq::fujo_irq_cost_stats(a0),
+        // ---- M68: 帧时间表/性能计数器 ----
+        0x6E01 => crate::perf::fujo_perf_frame_mark(),
+        0x6E02 => crate::perf::fujo_perf_frame_stats(a0),
+        0x6E03 => crate::perf::fujo_perf_counter_enable(a0, a1),
+        0x6E04 => crate::perf::fujo_perf_counter_read(a0),
         // ---- M60: 存档沙箱 ----
         0x6701 => crate::save::fujo_save_write(a0, a1, a2),
         0x6702 => crate::save::fujo_save_read(a0, a1, a2),
