@@ -84,21 +84,37 @@ static void kt_textbox_init(kt_textbox *t, int id, int x, int y, int w, int h)
     t->text[0] = 0;
 }
 
-static int kt_textbox_append(kt_textbox *t, char ch)
+static int kt_textbox_insert(kt_textbox *t, char ch)
 {
     if (t->len < 63 && ch >= 32 && ch < 127) {
-        t->text[t->len++] = ch;
+        int i;
+        for (i = t->len; i > t->caret; i--) t->text[i] = t->text[i - 1];
+        t->text[t->caret] = ch;
+        t->len++;
         t->text[t->len] = 0;
-        t->caret = t->len;
-        return 1;
-    }
-    if (ch == 8 && t->len > 0) { /* backspace */
-        t->len--;
-        t->text[t->len] = 0;
-        t->caret = t->len;
+        t->caret++;
         return 1;
     }
     return 0;
+}
+
+static int kt_textbox_backspace(kt_textbox *t)
+{
+    if (t->caret > 0) {
+        int i;
+        t->caret--;
+        for (i = t->caret; i < t->len - 1; i++) t->text[i] = t->text[i + 1];
+        t->len--;
+        t->text[t->len] = 0;
+        return 1;
+    }
+    return 0;
+}
+
+static int kt_textbox_append(kt_textbox *t, char ch)
+{
+    if (ch == 8) return kt_textbox_backspace(t);
+    return kt_textbox_insert(t, ch);
 }
 
 /* ---- 列表 ---- */
@@ -144,6 +160,71 @@ static int kt_list_click(kt_list *l, int x, int y, int down)
             l->selected = row;
             return row;
         }
+    }
+    return -1;
+}
+
+/* --- M103: 菜单栏 / 对话框 (标准消息循环模板件) --- */
+
+typedef struct {
+    int count;
+    char *items[8];
+    int selected; /* -1 = 无 */
+} kt_menu;
+
+static void kt_menu_init(kt_menu *m)
+{
+    int i;
+    m->count = 0;
+    m->selected = -1;
+    for (i = 0; i < 8; i++) m->items[i] = 0;
+}
+
+static void kt_menu_add(kt_menu *m, const char *item)
+{
+    if (m->count < 8) m->items[m->count++] = (char *)item;
+}
+
+static int kt_menu_click(kt_menu *m, int x, int y, int down)
+{
+    /* 菜单栏: 顶部 22px 高, 每项 ~64px 宽 */
+    if (down && y < 22) {
+        int idx = x / 64;
+        if (idx >= 0 && idx < m->count) {
+            m->selected = idx;
+            return idx;
+        }
+    }
+    return -1;
+}
+
+typedef struct {
+    char *title;
+    char *text;
+    kt_button ok;
+    kt_button cancel;
+    int result; /* -1 未选, 1=OK, 0=Cancel */
+} kt_dialog;
+
+static void kt_dialog_init(kt_dialog *d, int x, int y, int w, int h,
+                           const char *title, const char *text)
+{
+    d->title = (char *)title;
+    d->text = (char *)text;
+    d->result = -1;
+    kt_button_init(&d->ok, 1, x + 12, y + h - 40, 70, 26, "OK");
+    kt_button_init(&d->cancel, 2, x + w - 82, y + h - 40, 70, 26, "Cancel");
+}
+
+static int kt_dialog_click(kt_dialog *d, int x, int y, int down)
+{
+    if (kt_button_click(&d->ok, x, y, down)) {
+        d->result = 1;
+        return 1;
+    }
+    if (kt_button_click(&d->cancel, x, y, down)) {
+        d->result = 0;
+        return 0;
     }
     return -1;
 }

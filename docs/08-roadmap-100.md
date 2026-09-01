@@ -981,6 +981,36 @@
         (30,40,320,220)/(200,120,280,180), 拖动 B 6× (50,45) →
         (500,390), top/remove 链 → 删除后 rect=-2 →
         `winA=1 winB=2 moved=1 topB=0 rmB=0` → **M102 RESULT: PASS**。
+- [x] **M103** fujokit 菜单栏/对话框 (标准消息循环模板)
+      - fujokit.h 扩展: kt_menu (项表 8/点击返回 idx, 栏高 22px
+        项宽 64px) + kt_dialog (标题/正文/OK/Cancel 双钮, result=
+        1/0/-1);
+      - **m103_menu.elf 实测**: 菜单点击 Edit(idx1) → 对话框 OK×2
+        + Cancel×1 → `menu_sel=1 ok_hits=2 cancel=1` →
+        **M103 RESULT: PASS**; 踩坑: 点击 x=128 落在 Help(idx2) —
+        命中语义按 64px 项宽。
+- [x] **M104** 文本框光标/输入/退格 (kit_textbox 集成)
+      - fujokit.h caret 化: kt_textbox_insert (caret 处插入 + 后段
+        右移) / kt_textbox_backspace (删 caret-1 字符 + 左移);
+        append(8) → backspace 转发, 语义标准 (BSD/Emacs 型);
+      - **m104_textbox.elf 实测**: "Hi" → caret=0 → 插 'X' (中部)
+        → 退格（删 caret-1='X'）→ 尾部插 's' → `text='sHi'
+        caret=1` → **M104 RESULT: PASS**。
+- [x] **M105** 图形程序文件打开/保存对话框 (FJFS 后端)
+      - 用户态组合: kt_dialog (Save As/Open 动作 + OK 按钮命中) →
+        VFS 磁盘文件: open /disk/hello.txt → write → close (flush
+        盘) → open O_RDONLY → read 对比;
+      - **m105_filedlg.elf 实测**: `fd=3 wn=25 rn=25` 内容一致 →
+        **M105 RESULT: PASS** (VFS v0 磁盘面单文件 hello.txt,
+        后续多文件列 M107+)。
+- [x] **M106** 操作回归: 桌面交互全链 (M101-105 集成)
+      - **m106_operate.elf**: ①桌面+菜单+开窗/关窗 ②窗口拖动(增量
+        move) ③菜单栏 Edit+对话框 OK ④文本框 caret 插删 ⑤文件
+        保存/打开/读回 — 5 段串联, 全真原语/库调用;
+      - 实测: `1..5=TTTTT` → **M106 RESULT: PASS**; 窗口 id 槽复用
+        (remove 后 create 同 id) 记录: id 语义=槽+1, 非单调。
+      - **桌面可操作面 (M101-M106) 完成**: Win1.0 级交互闭环在
+        QEMU 参考机达成 (docs/50-desktop.md)。
 
 ## 我的取舍意见(如资源受限)
 
