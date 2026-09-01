@@ -195,6 +195,8 @@ pub fn desk_launch(which: u64) -> i64 {
 }
 
 /// 0x5B11: (tty_pid, tty_row_n, win_pid, tty_col_pos)。
+/// M108: 调用即重绘 TTY 窗口 (代理轮询驱动实时刷新 —— M107 内核主循环
+/// 每 16 tick 重绘的等价物; 内核桌面模式无影响)。
 pub fn desk_state(ptr: u64) -> i64 {
     unsafe {
         let w = ptr as *mut u64;
@@ -202,6 +204,9 @@ pub fn desk_state(ptr: u64) -> i64 {
         w.add(1).write(TTY_ROW_N as u64);
         w.add(2).write(WIN_PID);
         w.add(3).write(TTY_COL_POS as u64);
+        if TTY_PID != 0 {
+            tty_draw_window();
+        }
     }
     0
 }
@@ -231,9 +236,14 @@ fn tty_put_char(c: u8) {
 }
 
 /// 用户任务 write(fd=1) 钩子 (syscall::user_write 调): 当前程序 TTY 入行。
+/// 门控: 仅窗口程序任务自身 (TTY_PID-1) 的写入计入 —— M108 代理与窗口
+/// 程序同调 write(1), 代理的 m108 日志不得伪造 TTY 行 (否则 "rows>0" 假阳性)。
 pub fn tty_feed(ptr: u64, len: u64) {
     unsafe {
         if TTY_PID == 0 {
+            return;
+        }
+        if crate::sched::current_task() as u64 + 1 != TTY_PID {
             return;
         }
         for i in 0..len as usize {

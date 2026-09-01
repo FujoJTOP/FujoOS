@@ -54,4 +54,17 @@ python "$root\tools\fujorun.py" pack -i "$root\sdk\linux\m32_lib.elf" `
     --lib "$root\sdk\linux\catlib.bin" -o "$root\sdk\build\m32_multi.initrd"
 Write-Host "samples: pack ok"
 
+# --- M107/M108: 桌面会话样本 (高地址窗口程序 user-high.ld @0x1000000; 代理 user.ld @0x400000) ---
+$TH = "-Wl,-T,$root\sdk\user\user-high.ld"
+& "$llvm\clang.exe" --target=x86_64-unknown-linux-gnu -O2 -nostdlib -static `
+    -fno-pie -no-pie -fuse-ld=lld -fno-builtin "-Wl,-e,_start" $TH `
+    "$root\sdk\hermes\hermes.c" -o "$root\sdk\hermes\hermes-high.elf"
+if ($LASTEXITCODE -ne 0) { throw "build failed: hermes-high" }
+& "$llvm\clang.exe" --target=x86_64-unknown-linux-gnu -O2 -nostdlib -static `
+    -fno-pie -no-pie -fuse-ld=lld -fno-builtin "-Wl,-e,_start" $TH `
+    "$root\sdk\linux\m107_tty.c" -o "$root\sdk\linux\m107_tty-high.elf"
+if ($LASTEXITCODE -ne 0) { throw "build failed: m107_tty-high" }
+Build-Elf 'm108_desk'
+Write-Host "samples: desktop session ok (hermes-high / tty-high / m108_desk)"
+
 Write-Host "build-samples: ALL OK"

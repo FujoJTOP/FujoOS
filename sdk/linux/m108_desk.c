@@ -40,11 +40,20 @@ void _start(void)
 
     /* 合成双击序列 (无真鼠标也验证): 40 ticks 后自动 launch Hermes,
        120 ticks 后 launch Shell (替换) — 行走 0x5B10 真路径 */
-    long t0 = sys3(0x6101, 0, 0, 0) / 1000; /* ms 起点 */
+    /* 两阶段计时 (timer.rs 契约): 0x6100 arm → 跨 syscall 边界等 PIT tick
+       (用户态 IF=1, 内核 syscall 期被 SFMASK 屏蔽不可等) → 0x6101 校准后单调。
+       arm 后多轮轻 syscall, 使校准在 t0 采样前完成。 */
+    (void)sys3(0x6100, 0, 0, 0);
+    {
+        int i;
+        for (i = 0; i < 30; i++) {
+            (void)sys3(0x6104, 1000, 0, 0);
+        }
+    }
+    long t0 = sys3(0x6101, 0, 0, 0) / 1000;
     int launched = 0, rows_seen = 0, pass = 0;
     for (;;) {
-        long now = sys3(0x6101, 0, 0, 0) / 1000;
-        long dt = now - t0;
+        long dt = sys3(0x6101, 0, 0, 0) / 1000 - t0;
         if (dt >= 40 && launched == 0) {
             long rc = sys3(0x5B10, 0, 0, 0); /* Hermes */
             launched = 1;
@@ -74,11 +83,12 @@ void _start(void)
             }
         }
         if (dt >= 600 && !pass) {
-            pass = 1;
             if (rows_seen) {
+                pass = 1;
                 static const char p2[] = "m108: M108 RESULT: PASS\n";
                 wr(p2, sizeof(p2) - 1);
-            } else {
+            } else if (dt >= 3000) {
+                pass = 1;
                 static const char p3[] = "m108: M108 RESULT: FAIL\n";
                 wr(p3, sizeof(p3) - 1);
             }

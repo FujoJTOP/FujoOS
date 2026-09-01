@@ -197,11 +197,13 @@ static mut PT_HEAP1: PtAligned = PtAligned([0; 512]); // 0xA00000..0xC00000
 
 /// M108: 高地址映射 PT (0x1000000..0x1080000, 恒等 P=1 U=1) —
 /// 窗口程序 (user-high.ld) 装载区, 与桌面代理 0x400000 共存。
-#[repr(C, align(4096))]
+/// (对齐已在 PtAligned 结构体上; repr 属性不可作用于 static —— M108 修复)
 pub static mut PT_HIGH: PtAligned = PtAligned([0; 512]);
 static mut HIGH_MAPPED: bool = false;
 
 /// M108: 一次性映射高址 2MiB (物理恒等, U=1)。
+/// 同时保留物理帧 0x1000000..0x1080000 (512 帧) —— 窗口程序驻留区,
+/// 帧分配器 (demand-zero) 不得复用, 否则按需零页会覆盖窗口程序镜像。
 pub fn map_high_user() {
     unsafe {
         if HIGH_MAPPED {
@@ -220,9 +222,18 @@ pub fn map_high_user() {
         }
         write_cr3_flush();
         HIGH_MAPPED = true;
+        // 高区帧保留 (物理 0x1000000..0x1080000 = 位图帧 0..511)
+        for i in 0..512usize {
+            let byte = i / 8;
+            let bit = i % 8;
+            core::ptr::write_volatile(
+                core::ptr::addr_of_mut!(FRAME_BITMAP[byte]),
+                core::ptr::read_volatile(core::ptr::addr_of!(FRAME_BITMAP[byte])) | (1 << bit),
+            );
+        }
         serial::write_str("m108 : high user map PD[8] (old ");
         print_hex(old & 0xFFF);
-        serial::write_line(") - 2MiB U=1 armed");
+        serial::write_line(") - 2MiB U=1 + 512 frames reserved");
     }
 }
 

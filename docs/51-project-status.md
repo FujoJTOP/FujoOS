@@ -21,12 +21,13 @@
 |----|------|
 | M1–M100 里程碑 (docs/08-roadmap-100.md) | ✅ 全部完成 (90 项 `[x]`, 每项实现→构建→QEMU验证→提交推送) |
 | M101–M106 桌面可操作面 | ✅ 完成 (Win1.0 级交互闭环: 桌面→点击→开窗/拖动/菜单/文本框/文件对话框/集成回归) |
-| M107 桌面会话 v0 (内核态) | 🔶 进行中: boot 直接进桌面/双击命中/窗口打开-替换链/TTY 行缓冲已工作; 窗口"程序执行"等待用户态轮转 |
-| M108 用户态桌面代理 + 高地址窗口程序 | 🔶 代码在途 (方案已定: 代理 0x400000, 窗口程序 0x1000000 高区, PIT 用户态轮转) |
-| 代理/程序镜像 | hermes-high.elf / m107_tty-high.elf 已编译; user-high.ld 已建; 内核对高区映射(0x5B10/0x5B11)已实现 |
+| M107 桌面会话 v0 (内核态) | ✅ 完成 (无模块 boot 直进图形桌面; 合成/真鼠标双击链; 保留为无模块回退路径) |
+| M108 用户态桌面代理 + 高地址窗口程序 | ✅ 完成 (代理=任务0 + 窗口程序=任务1 双用户态 PIT 轮转; 0x5B10 启动/替换; TTY 行读回) — **PASS** |
+| 代理/程序镜像 | m108_desk.elf / hermes-high.elf / m107_tty-high.elf; user-high.ld; 内核对高区映射(0x5B10/0x5B11) + 帧保留 |
 
 **验证现状(最近)**: 兼容矩阵 9/9, CI 38 用例, onebuild 3/3, FJFS 两阶段持久化,
-M101-106 各 PASS, M107 "desktop shell up → Hermes window opened → window alive"。
+M101-106 各 PASS, **M107 PASS + M108 PASS** (用户态双任务轮转 → 窗口程序
+TTY 行 rows>0 → 完整 PASS)。
 
 ## 3. 架构分层
 
@@ -75,8 +76,8 @@ M101-106 各 PASS, M107 "desktop shell up → Hermes window opened → window al
 4. FJFS **多簇写往返**记录为已知 (M99 修复单簇读回 + ATA PIO 写等待)。
 5. ACPI 表体 >64MiB 未映射 (M96 guard)。
 6. 系统内编译器 = C 子集 (单函数)。
-7. M107/M108 桌面会话: 内核桌面主循环版"程序执行"受限于内核态 hlt
-   (PIT 仅在用户态切换) — M108 方案(用户态代理+高地址)正在落地。
+7. M107 内核桌面主循环版"程序执行"仍受限于内核态 hlt (PIT 仅在用户态切换)
+   → 该路径仅无模块回退; **M108 用户态代理+高地址窗口程序已解除此限制**。
 
 ## 7. 使用
 
@@ -90,17 +91,22 @@ qemu-system-x86_64 -m 256M -kernel kernel/fujo-kernel.bin -initrd sdk/linux/m106
   -drive file=disk.img,format=raw,if=ide -serial file:qemu.log -display none -no-reboot
 # (demo 自动执行, 无需 monitor 注入; 看 qemu.log 中 RESULT)
 
+# M108 桌面会话 (用户态代理 + 高地址窗口程序; 无注入)
+qemu-system-x86_64 -m 256M -kernel kernel/fujo-kernel.bin -initrd sdk/linux/m108_desk.elf `
+  -serial file:qemu.log -display none -no-reboot
+# (看 qemu.log 中 "m108: M108 RESULT: PASS")
+
 # 回归
 python tools/fujoregress.py; python tools/ci.py; pwsh scripts/onebuild.ps1
 ```
 
 ## 8. 下一步 (按优先级)
 
-1. **M108 收尾**: 用户态桌面代理 (`m108_desk.c` 已写) + 高地址窗口程序
-   (hermes-high/tty-high 已编) — 验证双任务轮转 → TTY 行 → 完整 PASS。
+1. ✅ **M108 收尾完成**: 用户态桌面代理 + 高地址窗口程序双任务轮转 →
+   TTY 行读回 → `m108: M108 RESULT: PASS` (QEMU 串口断言)。
 2. M109 真鼠标注入回归 (PS/2 包) / GUI 显示 (`-display gtk`) 人工可操作。
 3. FJFS 多簇写修复; ACPI 高内存表映射; 系统内编译器扩展。
 4. KVM 对照基准重跑 (m58/m69/m101 同帧)。
 
 > 里程碑打卡与逐项文档: docs/08-roadmap-100.md (M1-100) +
-> docs/50-desktop.md (M101-106) + 本文件 (M107+ 进行中)。
+> docs/50-desktop.md (M101-108) + 本文件 (M107 起)。

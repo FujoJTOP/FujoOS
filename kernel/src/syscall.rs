@@ -783,8 +783,9 @@ fn user_write(fd: u64, ptr: u64, len: u64) -> i64 {    // M15: fd>=3 先走 VFS 
     // M23b 更新: 0x800000..0xC00000 是 musl/glibc mmap 堆 (busybox stdout
     // 缓冲即落此处; 旧界 0x800000 拒绝 -> write EFAULT, 实证)。
     let in_low = ptr >= 0x400000 && ptr <= 0xC00000;
+    let in_high = ptr >= 0x1000000 && ptr <= 0x1080000; // M108: 高地址窗口程序 (user-high.ld)
     let in_darwin = ptr >= 0x100000000 && ptr <= 0x100800000;
-    if !in_low && !in_darwin {
+    if !in_low && !in_darwin && !in_high {
         serial::write_line("syscall write: bad user pointer");
         return -14; // -EFAULT
     }
@@ -2170,6 +2171,11 @@ pub fn enter_user_test(mbi: u32) -> ! {
             serial::write_line("");
         }
     }
+    // M108: 桌面代理模式 —— 代理登记为任务 0 (首次 PIT 用户态中断以真实现场
+    // 覆盖 saved_rsp; 此后 0x5B10 生成的窗口程序 = 任务 1+, PIT 双任务轮转)。
+    if crate::sched::proxy_mode() {
+        crate::sched::spawn_proxy(load_addr);
+    }
     unsafe { fujo_enter_user(load_addr, user_rsp) };
     unreachable!()
 }
@@ -2184,6 +2190,32 @@ pub fn boot_module_info(mbi: u32) -> Option<(u64, u64)> {
 /// M98: 引导期快照值 (安装器使用; 0 = 无模块)。
 pub fn boot_module_vals() -> (u64, u64) {
     unsafe { (MOD_SNAP.0 as u64, MOD_SNAP.1 as u64) }
+}
+
+/// M108: 是否桌面代理模块 (名称含 "m108_desk" —— QEMU initrd 名字透传)。
+pub fn boot_module_is_desk_proxy() -> bool {
+    unsafe {
+        if MOD_SNAP.2 == 0 {
+            return false;
+        }
+        let mut nb = [0u8; 64];
+        let mut n = 0usize;
+        while n < 63 {
+            let b = (MOD_SNAP.2 as *const u8).add(n).read();
+            if b == 0 {
+                break;
+            }
+            nb[n] = b;
+            n += 1;
+        }
+        let s = core::str::from_utf8(&nb[..n]).unwrap_or("");
+        s.contains("m108_desk")
+    }
+}
+
+/// M108: 引导模块存在 (路由判据: 其余模块走 shell 注入路径)。
+pub fn boot_module_present() -> bool {
+    unsafe { MOD_SNAP.0 != 0 && MOD_SNAP.1 != 0 }
 }
 
 // 模块快照: 引导期记录一次 (enter 阶段二次解析 mbi 偶发不可靠 —— 快照绕过)

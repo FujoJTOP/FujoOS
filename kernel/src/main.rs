@@ -289,7 +289,17 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     }
     serial::write_line("");
 
-    // ---- M107: 桌面会话 (boot 直接进图形桌面; 双击图标开窗口程序) ----
+    // ---- 引导路由 ----
+    // M108: boot 模块 = m108_desk.elf -> 用户态桌面代理 (自驱动; 无命令注入)
+    if syscall::boot_module_is_desk_proxy() {
+        crate::sched::set_proxy_mode();
+        syscall::enter_user_test(mbi); // > !: 不再返回
+    }
+    // 其他模块: os shell (经典注入路径; fujoci/fujoregress 兼容)
+    if syscall::boot_module_present() {
+        crate::shell::shell(mbi); // > !: 不再返回
+    }
+    // 无模块: M107 内核态桌面 (boot 直接进图形桌面; 双击图标开窗口程序)
     crate::desk::desktop_main(mbi); // > ! (无命令注入依赖)
 
     // ---- 不可达: M2/M3/M6 用户态测试 (shell 之前的直启路径已废止) ----

@@ -81,6 +81,22 @@ pub fn multi_task() -> bool {
     unsafe { MULTI }
 }
 
+/// M108: 用户态桌面代理模式 (boot 模块 = m108_desk.elf)。
+/// 代理先登记为任务 0 (kstack 0x380000 / 用户栈 0x5FFFF8),
+/// 窗口程序经 0x5B10 生成任务 1+ (kstack 0x340000 / 用户栈 0x63FFF8),
+/// 两者同在用户态, PIT 时间片轮转 —— 双任务真实执行。
+pub static mut PROXY_MODE: bool = false;
+
+pub fn set_proxy_mode() {
+    unsafe {
+        PROXY_MODE = true;
+    }
+}
+
+pub fn proxy_mode() -> bool {
+    unsafe { PROXY_MODE }
+}
+
 /// M59: 游戏模式 (前台调度标记; PIT 切换对游戏任务给独占轮)。
 pub static mut GAME_MODE: bool = false;
 
@@ -325,20 +341,27 @@ pub fn spawn_tasks(entry: u64) {
     }
 }
 
-/// M107: 桌面窗口程序任务 (独立内核栈 0x380000, 用户栈 0x600000)。
+/// M107: 桌面窗口程序任务 (kstack 0x380000 / M108 代理模式 0x340000)。
 /// 返回任务索引 (0 合法); 表满返回 usize::MAX。
 pub fn spawn_single(entry: u64) -> usize {
     unsafe {
+        // M108: 用户态代理模式下窗口程序用独立内核栈/用户栈 (与代理隔离;
+        // M107 内核桌面保持原 0x380000/0x5FFFF8)。
+        let (kstk, ustk) = if PROXY_MODE {
+            (0x340000u64, 0x63FFF8u64)
+        } else {
+            (0x380000u64, 0x5FFFF8u64)
+        };
         if TASK_COUNT == 0 {
-            spawn(0x380000, 0x5FFFF8, entry);
+            spawn(kstk, ustk, entry);
             CUR = 0;
-            gdt::set_rsp0(0x380000);
+            gdt::set_rsp0(kstk);
             serial::write_line("sched: desktop window task spawned");
             return 0;
         }
         for i in 0..MAX_TASKS {
             if TASKS[i].state == TASK_DEAD {
-                spawn_at(i, 0x380000, 0x5FFFF8, entry);
+                spawn_at(i, kstk, ustk, entry);
                 serial::write_str("sched: window task revived slot ");
                 print_dec(i as u64);
                 serial::write_line("");
@@ -349,11 +372,37 @@ pub fn spawn_single(entry: u64) -> usize {
             return usize::MAX;
         }
         let idx = TASK_COUNT;
-        spawn_at(idx, 0x380000, 0x5FFFF8, entry);
+        spawn_at(idx, kstk, ustk, entry);
         serial::write_str("sched: window task slot ");
         print_dec(idx as u64);
         serial::write_line("");
         idx
+    }
+}
+
+/// M108: 用户态桌面代理登记为任务 0 (当前隐式任务 = 代理本身)。
+/// saved_rsp 为占位: 首次 PIT 用户态中断时 fujo_tick_sched 以真实现场覆盖
+/// (与 M22 fork 父任务登记同模式); 代理在任务 0 上持续运行, 0x5B10 生成任务 1+。
+pub fn spawn_proxy(entry: u64) -> usize {
+    unsafe {
+        if TASK_COUNT != 0 {
+            return usize::MAX;
+        }
+        TASKS[0] = Task {
+            saved_rsp: 0,
+            kstack_top: 0x380000,
+            state: TASK_RUNNABLE,
+            sig_handler: 0,
+            sig_pending: false,
+            sig_active: false,
+        };
+        TASK_COUNT = 1;
+        CUR = 0;
+        gdt::set_rsp0(0x380000);
+        serial::write_str("sched: desktop proxy = task 0 (entry=");
+        print_hex(entry);
+        serial::write_line(") - PIT round-robin armed");
+        0
     }
 }
 

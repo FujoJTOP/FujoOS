@@ -55,3 +55,25 @@ desk_init + taskbar("FujoOS 1.0")  → 图标×2 (0x5904)
 M101-106 合计: 桌面整合 shell → 窗口拖动/层级 → 菜单/对话框 →
 文本框编辑 → 文件对话框(持久) → 集成回归, 全部 QEMU 真原语验证。
 窗口 id 语义记录: 槽+1 (remove 后复用, 非单调计数)。
+
+## M107/M108 桌面会话 (boot → 图形桌面 → 双用户态任务)
+
+| 里程碑 | 交付 | 实测 |
+|--------|------|------|
+| M107 | 内核态桌面主循环 (无模块 boot 直进桌面; 合成/真鼠标双击链) | `desktop shell up → window opened → alive` PASS (ttl 待用户态轮转) |
+| M108 | **用户态桌面代理** (m108_desk.elf @0x400000, initrd 自启动无注入) + **高地址窗口程序** (hermes-high / tty-high @0x1000000, user-high.ld) | Hermes launch ok → Shell 替换 ok → 窗口程序写 TTY 行 (rows=14) → **M108 RESULT: PASS** |
+
+M108 关键机制:
+- **代理 = 任务 0**: `enter_user_test` 前 `sched::spawn_proxy` 登记 (kstack 0x380000 /
+  用户栈 0x5FFFF8; 首次 PIT 用户态中断以真实现场覆盖 saved_rsp)。
+- **窗口程序 = 任务 1+**: 0x5B10 `desk_launch` → 0x1000000 高区装载
+  (mem::map_high_user: PD[8]→PT_HIGH, 2MiB U=1, 同步保留 512 帧防
+  demand-zero 复用) → 独立 kstack 0x340000 / 用户栈 0x63FFF8。
+- **PIT 双任务轮转**: 两任务同在用户态, cs==0x23 中断切换 (M107 内核态
+  hlt 主循环切换不了用户任务的限制由此解除)。
+- **TTY 行门控**: 仅窗口程序任务自身 (TTY_PID-1) 的 write(1) 计入 TTY_LINES,
+  代理日志不伪造 rows (0x5B11 读回)。
+- 代理内存模型: 与 M22 fork 同款"隐式任务 → 首次 PIT 覆盖帧"登记。
+
+M108 时序修复 (实测): 校准前采样 t0 会因 cyc/us 突变产生 dt 跳变 → 先
+0x6100 arm + 30×0x6104 轻等 (跨 syscall 边界让 PIT tick 落地) 再取 t0。
