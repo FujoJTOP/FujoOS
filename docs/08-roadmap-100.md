@@ -867,7 +867,16 @@
       - **m93_infer.elf 实测**: local run "pending status?" → n1=46
         (intent=QUERY); host 模式同面; `calls=2 tokens=21` →
         **M93 RESULT: PASS**; 文档: docs/42-infer.md
-- [ ] **M94** AI 服务:模型注册表 + fupm 安装模型
+- [x] **M94** AI 服务:模型注册表 + fupm 安装模型
+      - **modelreg.rs**: 注册表 4 槽 {name[16], size, active, calls},
+        数据区 0xF38000 (4×8KB, 恒等映射内核侧);
+      - **接口**: 0x8401 fupm_install(ptr,size,name) /
+        0x8402 reg_list(ptr) (size/active/calls/数据指针) /
+        0x8403 reg_active(idx) 单槽激活 / 0x8404 fupm_remove(idx);
+      - **m94_fupm.elf 实测**: install qwen3-0.6b (4096B) + tiny-lm
+        (2048B) → active #1 → remove #1 → `s0=4096 s1=2048
+        active=1` → **M94 RESULT: PASS**; 踩坑: 用户态读内核数据
+        区 (#PF, U=0) — 指针校验限区; 文档: docs/43-modelreg.md
 - [ ] **M95** AI OS 验收:agent 全生命周期(命令→模型→工具→审计)
 
 ## Wave 7 · 交付(M96–M100)

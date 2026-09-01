@@ -327,6 +327,11 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x8301 => crate::infer::fujo_infer_run(a0, a1, a2, a3),
         0x8302 => crate::infer::fujo_infer_slot(a0),
         0x8303 => crate::infer::fujo_infer_set(a0),
+        // ---- M94: 模型注册表 + fupm ----
+        0x8401 => crate::modelreg::fujo_fupm_install(a0, a1, a2),
+        0x8402 => crate::modelreg::fujo_reg_list(a0),
+        0x8403 => crate::modelreg::fujo_reg_active(a0),
+        0x8404 => crate::modelreg::fujo_fupm_remove(a0),
         // read(fd, buf, len) — M15 VFS
         0 => crate::vfs::fujo_read(a0, a1, a2),
         // write(fd, buf, len)
