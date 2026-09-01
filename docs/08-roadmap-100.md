@@ -822,7 +822,14 @@
         弄脏 → load 恢复 A → save B(0xBB) → load gen=2 →
         `active=1 ck=128 gen=2 tok=150` → **M88 RESULT: PASS**;
         文档: docs/37-sessions.md
-- [ ] **M89** fujoctx 升级:窗口焦点/文件变更/syscall 摘要注入
+- [x] **M89** fujoctx 升级:窗口焦点/文件变更/syscall 摘要注入
+      - **ctx.rs**: 摘要行 `fujoctx v1 win_focus=N files=N
+        syscalls=N ticks=N` (字段: 焦点窗口占位 0 / VFS 写计数
+        (vfs::fs_writes) / M68 syscall 计数 / PIT ticks);
+      - **接口**: 0x7F01 ctx_snap(ptr, cap) → 长度;
+      - **m89_ctx.elf 实测**: `ctx1=fujoctx v1 win_focus=0 files=0
+        syscalls=2 ticks=1748` (字段解析/递减检查) →
+        **M89 RESULT: PASS**; 文档: docs/38-fujoctx.md
 - [ ] **M90** 上下文压缩:委托宿主大模型(fujoctx 链)
 - [ ] **M91** 权限与审计(四件套④):能力表 + 审计日志
 - [ ] **M92** 意图路由增强:qwen 蒸馏/切换 qwen3-0.6b 对照表

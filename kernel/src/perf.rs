@@ -39,6 +39,11 @@ pub fn bump(id: usize) {
     }
 }
 
+/// M89: syscall 计数 (fujoctx 摘要面)。
+pub fn sys_delta() -> u64 {
+    unsafe { CTR[1] }
+}
+
 /// 0x6E01: 帧边界标记 (µs 间隔入表)。
 pub fn fujo_perf_frame_mark() -> i64 {
     let now = timer::fujo_timer_us() as u64;

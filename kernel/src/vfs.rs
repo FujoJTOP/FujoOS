@@ -250,6 +250,12 @@ pub extern "C" fn fujo_open_startup_module() -> i64 {
 /// M32: 多模块库表 (/lib/<name> -> 模块字节)。由 fujorun 多模块解析注册。
 static mut LIBS: [([u8; 16], u64, u64); 8] = [([0; 16], 0, 0); 8];
 static mut LIB_COUNT: usize = 0;
+/// M89: 文件写计数 (fujoctx 摘要面)。
+static mut WRITES: u64 = 0;
+
+pub fn fs_writes() -> u64 {
+    unsafe { WRITES }
+}
 
 /// M32: 库模块注册 (多模块 initrd 解析器调用)。
 pub fn fujo_lib_register(name: &str, addr: u64, len: u64) {
@@ -518,6 +524,7 @@ pub extern "C" fn fujo_lseek(fd: u64, off: i64, whence: u64) -> i64 {
 /// 文件写入 (fd>=3): 内存盘追加; /dev/tty 与 fd<3 由调用方走串口。
 pub fn file_write(fd: u64, ptr: u64, len: u64) -> Option<i64> {
     unsafe {
+        WRITES += 1;
         if fd < 3 || (fd as usize) >= MAX_OPEN {
             return None;
         }
