@@ -91,8 +91,11 @@ PLAN_TPL = (
     "Tool vocab: A1=KILL pid A2=ISOLATE pid A3=LAUNCH entry A4=SET_CFG key val "
     "A5=RESUME pid A6=ACK\n"
     "Output at most 3 actions separated by ';' as PLAN=A<id> <a0> <a1>;A<id> <a0> <a1>\n"
-    "Example goal 'isolate task 1 then resume it' -> PLAN=A2 1;A5 1\n"
+    'Goal "isolate task 1 then resume it" -> PLAN=A2 1;A5 1\n'
+    'Goal "set anomaly threshold to 70" -> PLAN=A4 1 70\n'
+    'Goal "kill task 2" -> PLAN=A1 2\n'
     "If no action is needed: PLAN=A6 0\n"
+    "Only output the PLAN= line.\n"
 )
 
 IO_TPL = (
@@ -148,12 +151,10 @@ def ollama_io(seq: str) -> tuple:
 def ollama_nlc(text: str) -> tuple:
     try:
         s = ollama_generate(NLC_TPL.format(text=text))
-        m = re.findall(r"\bPOL\s*=\s*([0-9A-Za-z]+(?::[0-9]+;?)+)", s, re.I)
-        if m:
-            return m[-1].strip(), MODEL
-        m2 = re.findall(r"\bPOL\s*=\s*([0-9A-Za-z:;]+)", s, re.I)
-        if m2:
-            return m2[-1].strip(), MODEL
+        pairs = re.findall(r"POL\s*=\s*(\d+)\s*:\s*(\d+)", s)
+        if pairs:
+            pol = ";".join(f"POL={k}:{v}" for k, v in pairs)
+            return pol, MODEL
         return None, MODEL + "-unparsed:" + s.strip()[:20]
     except Exception as exc:  # noqa: BLE001
         print(f"[server] nlc backend failed: {exc}", flush=True)

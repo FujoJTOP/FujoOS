@@ -671,3 +671,566 @@ pub extern "C" fn fujo_anom_run(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 
     serial::write_line("");
     0
 }
+
+// ---------------------------------------------------------------------------
+// M113 · B 计划-执行器 (goal → 工具向量 → cap_exec → verify)
+// ---------------------------------------------------------------------------
+
+/// 模型路径: 目标文本 → shm kind=3 → "PLAN=A2 1;A5 1"。
+fn plan_llm(goal: &[u8]) -> Option<([u8; 96], usize)> {
+    let seq = shm_send_req(SHM_KIND_PLAN, goal);
+    let (line, ln, _el) = wait_rsp(seq)?;
+    Some((line, ln))
+}
+
+/// 规则降级计划 (demo 基线): isolate/resume/kill/threshold → 对应 A 动作。
+fn rules_plan(goal: &[u8], buf: &mut [u8]) -> usize {
+    let s = core::str::from_utf8(goal).unwrap_or("");
+    let pid = first_digit(goal).unwrap_or(0);
+    let mut pos = 0usize;
+    if s.contains("isolate") {
+        pos += push_action(buf, pos, 2, pid, 0);
+        if s.contains("resume") {
+            pos += push_action(buf, pos, 5, pid, 0);
+        }
+    } else if s.contains("resume") {
+        pos += push_action(buf, pos, 5, pid, 0);
+    } else if s.contains("kill") {
+        pos += push_action(buf, pos, 1, pid, 0);
+    } else if s.contains("threshold") {
+        pos += push_action(buf, pos, 4, 1, 70);
+    } else {
+        pos += push_action(buf, pos, 6, 0, 0);
+    }
+    pos
+}
+
+fn push_action(buf: &mut [u8], pos: usize, act: u64, a0: u64, a1: u64) -> usize {
+    let mut p = pos;
+    let hdr = b"A";
+    for &c in hdr.iter() {
+        if p < buf.len() - 1 {
+            buf[p] = c;
+            p += 1;
+        }
+    }
+    let mut num = [0u8; 20];
+    let n = dec_digits(act, &mut num);
+    for &c in num[..n].iter() {
+        if p < buf.len() - 1 {
+            buf[p] = c;
+            p += 1;
+        }
+    }
+    for &c in b" ".iter() {
+        if p < buf.len() - 1 {
+            buf[p] = c;
+            p += 1;
+        }
+    }
+    let n = dec_digits(a0, &mut num);
+    for &c in num[..n].iter() {
+        if p < buf.len() - 1 {
+            buf[p] = c;
+            p += 1;
+        }
+    }
+    if a1 != 0 {
+        for &c in b" ".iter() {
+            if p < buf.len() - 1 {
+                buf[p] = c;
+                p += 1;
+            }
+        }
+        let n = dec_digits(a1, &mut num);
+        for &c in num[..n].iter() {
+            if p < buf.len() - 1 {
+                buf[p] = c;
+                p += 1;
+            }
+        }
+    }
+    for &c in b";".iter() {
+        if p < buf.len() - 1 {
+            buf[p] = c;
+            p += 1;
+        }
+    }
+    p - pos
+}
+
+fn first_digit(text: &[u8]) -> Option<u64> {
+    for &b in text {
+        if b.is_ascii_digit() {
+            let mut v = (b - b'0') as u64;
+            // 连续数字 (pid 可能多位)
+            return Some(v);
+        }
+    }
+    None
+}
+
+/// 解析 "A<act> <a0> <a1>" 形式的动作令牌。
+fn parse_action(tok: &[u8]) -> (u64, u64, u64) {
+    let mut act = 0u64;
+    let mut a0 = 0u64;
+    let mut a1 = 0u64;
+    let mut i = 0usize;
+    if i < tok.len() && tok[i] == b'A' {
+        i += 1;
+        while i < tok.len() && tok[i].is_ascii_digit() {
+            act = act * 10 + (tok[i] - b'0') as u64;
+            i += 1;
+        }
+    }
+    while i < tok.len() && tok[i] == b' ' {
+        i += 1;
+    }
+    while i < tok.len() && tok[i].is_ascii_digit() {
+        a0 = a0 * 10 + (tok[i] - b'0') as u64;
+        i += 1;
+    }
+    while i < tok.len() && tok[i] == b' ' {
+        i += 1;
+    }
+    while i < tok.len() && tok[i].is_ascii_digit() {
+        a1 = a1 * 10 + (tok[i] - b'0') as u64;
+        i += 1;
+    }
+    (act, a0, a1)
+}
+
+/// 0x8305: 计划-执行器关闭环。goal → (模型/规则) → 动作向量 →
+/// cap_exec 逐项执行 → out = {n_ok, n_fail, verify(1=全成功)}。
+#[no_mangle]
+pub extern "C" fn fujo_plan_run(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 {
+    if !(0x400000..0x800000).contains(&ptr) || !(0x400000..0x800000).contains(&out) {
+        return -14; // -EFAULT
+    }
+    let len = (len as usize).min(200);
+    let mut goal = [0u8; 200];
+    unsafe {
+        for i in 0..len {
+            goal[i] = (ptr as *const u8).add(i).read();
+        }
+    }
+    let mut plan = [0u8; 96];
+    let (_, plen) = match plan_llm(&goal[..len]) {
+        Some((l, ln)) => {
+            // 提取 PLAN= 字段 (内容含空格, 以 " TAG" 或行尾终止)
+            let mut i = 0usize;
+            while i + 5 <= ln {
+                if l[i..].starts_with(b"PLAN=") {
+                    let mut j = i + 5;
+                    let mut p = 0usize;
+                    while j < ln && p < 92 && !l[j..].starts_with(b" TAG") {
+                        plan[p] = l[j];
+                        p += 1;
+                        j += 1;
+                    }
+                    break;
+                }
+                i += 1;
+            }
+            let n = plan.iter().position(|&b| b == 0).unwrap_or(0);
+            if n == 0 {
+                plan[0] = b'A';
+                plan[1] = b'6';
+                plan[2] = b' ';
+                plan[3] = b'0';
+                plan[4] = b';';
+            }
+            ((), n.min(92))
+        }
+        None => {
+            serial::write_line("plan: shm timeout -> rules fallback");
+            let n = rules_plan(&goal[..len], &mut plan);
+            ((), n)
+        }
+    };
+    let mut n_ok = 0u64;
+    let mut n_fail = 0u64;
+    let mut start = 0usize;
+    for i in 0..=plen {
+        if i == plen || plan[i] == b';' {
+            if i > start {
+                let (act, a0, a1) = parse_action(&plan[start..i]);
+                if act >= 1 && act <= 6 {
+                    let rc = crate::capability::fujo_cap_exec(act, a0, a1);
+                    if rc == 0 {
+                        n_ok += 1;
+                    } else {
+                        n_fail += 1;
+                    }
+                } else {
+                    n_fail += 1;
+                }
+            }
+            start = i + 1;
+        }
+    }
+    let o = out as *mut u64;
+    unsafe {
+        o.write(n_ok);
+        o.add(1).write(n_fail);
+        o.add(2).write(if n_fail == 0 { 1 } else { 0 });
+    }
+    serial::write_str("plan: goal [");
+    serial::write_str(core::str::from_utf8(&goal[..len.min(60)]).unwrap_or(""));
+    serial::write_str("] -> ");
+    serial::write_str(core::str::from_utf8(&plan[..plen.min(40)]).unwrap_or(""));
+    serial::write_str(" ok=");
+    crate::syscall::debug_dec(n_ok);
+    serial::write_str(" fail=");
+    crate::syscall::debug_dec(n_fail);
+    serial::write_line("");
+    0
+}
+
+// ---------------------------------------------------------------------------
+// M113 · C I/O 预测器 (序列前缀 → 下一块; 规则=最近块=LRU 基线)
+// ---------------------------------------------------------------------------
+
+fn io_llm(seq: &[u8]) -> Option<u64> {
+    let frame_seq = shm_send_req(SHM_KIND_IO, seq);
+    let (line, ln, _el) = wait_rsp(frame_seq)?;
+    let mut i = 0usize;
+    while i + 5 <= ln {
+        if line[i..].starts_with(b"NEXT=") {
+            let mut j = i + 5;
+            let mut v = 0u64;
+            while j < ln && (line[j] as char).is_ascii_digit() {
+                v = v * 10 + (line[j] - b'0') as u64;
+                j += 1;
+            }
+            return Some(v);
+        }
+        i += 1;
+    }
+    None
+}
+
+/// 规则降级: 序列最后一块数字。
+fn last_num(seq: &[u8]) -> u64 {
+    let s = core::str::from_utf8(seq).unwrap_or("");
+    let mut last = 0u64;
+    let mut in_num = false;
+    for c in s.chars() {
+        if c.is_ascii_digit() {
+            last = c as u64 - '0' as u64;
+            in_num = true;
+        } else {
+            in_num = false;
+        }
+    }
+    let _ = in_num;
+    last
+}
+
+/// 0x8306: 块访问序列前缀 → 预测下一块 (写入 out[0])。
+#[no_mangle]
+pub extern "C" fn fujo_io_predict(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 {
+    if !(0x400000..0x800000).contains(&ptr) || !(0x400000..0x800000).contains(&out) {
+        return -14;
+    }
+    let len = (len as usize).min(64);
+    let mut seq = [0u8; 64];
+    unsafe {
+        for i in 0..len {
+            seq[i] = (ptr as *const u8).add(i).read();
+        }
+    }
+    let next = match io_llm(&seq[..len]) {
+        Some(v) => v,
+        None => {
+            serial::write_line("io   : shm timeout -> rules (last-block)");
+            last_num(&seq[..len])
+        }
+    };
+    unsafe {
+        (out as *mut u64).write(next);
+    }
+    serial::write_str("io   : predict [");
+    serial::write_str(core::str::from_utf8(&seq[..len]).unwrap_or(""));
+    serial::write_str("] -> ");
+    crate::syscall::debug_dec(next);
+    serial::write_line("");
+    0
+}
+
+// ---------------------------------------------------------------------------
+// M114 · D 自然语言配置 (文案 → 策略对象) + E 环境侦察 (感知 → 适配)
+// ---------------------------------------------------------------------------
+
+fn nlc_llm(text: &[u8]) -> Option<([u8; 96], usize)> {
+    let seq = shm_send_req(SHM_KIND_NLC, text);
+    let (line, ln, _el) = wait_rsp(seq)?;
+    Some((line, ln))
+}
+
+/// 规则降级 (demo 基线): "ban games 9 to 18" → POL=3:1;4:9;5:18。
+fn rules_nlc(text: &[u8], buf: &mut [u8]) -> usize {
+    let s = core::str::from_utf8(text).unwrap_or("");
+    let mut pos = 0usize;
+    if s.contains("ban") {
+        pos += push_pol(buf, pos, 3, 1);
+        let mut digs = [0u64; 4];
+        let mut dn = 0usize;
+        for c in s.chars() {
+            if c.is_ascii_digit() && dn < 4 {
+                digs[dn] = c as u64 - '0' as u64;
+                dn += 1;
+            }
+        }
+        if dn >= 2 {
+            pos += push_pol(buf, pos, 4, 10 * digs[0] + digs[1]);
+            if dn >= 4 {
+                pos += push_pol(buf, pos, 5, 10 * digs[2] + digs[3]);
+            }
+        }
+    } else {
+        pos += push_pol(buf, pos, 6, 0);
+    }
+    pos
+}
+
+fn push_pol(buf: &mut [u8], pos: usize, key: u64, val: u64) -> usize {
+    let mut p = pos;
+    let hdr = b"POL=";
+    for &c in hdr.iter() {
+        if p < buf.len() - 1 {
+            buf[p] = c;
+            p += 1;
+        }
+    }
+    let mut num = [0u8; 20];
+    let n = dec_digits(key, &mut num);
+    for &c in num[..n].iter() {
+        if p < buf.len() - 1 {
+            buf[p] = c;
+            p += 1;
+        }
+    }
+    for &c in b":".iter() {
+        if p < buf.len() - 1 {
+            buf[p] = c;
+            p += 1;
+        }
+    }
+    let n = dec_digits(val, &mut num);
+    for &c in num[..n].iter() {
+        if p < buf.len() - 1 {
+            buf[p] = c;
+            p += 1;
+        }
+    }
+    for &c in b";".iter() {
+        if p < buf.len() - 1 {
+            buf[p] = c;
+            p += 1;
+        }
+    }
+    p - pos
+}
+
+/// 0x8307: 自然语言配置 → 策略对象 (POL=k:v;...) → cfg_set → out[0]=条数。
+#[no_mangle]
+pub extern "C" fn fujo_nlc_set(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 {
+    if !(0x400000..0x800000).contains(&ptr) || !(0x400000..0x800000).contains(&out) {
+        return -14;
+    }
+    let len = (len as usize).min(200);
+    let mut text = [0u8; 200];
+    unsafe {
+        for i in 0..len {
+            text[i] = (ptr as *const u8).add(i).read();
+        }
+    }
+    let mut pol = [0u8; 96];
+    let plen = match nlc_llm(&text[..len]) {
+        Some((l, ln)) => {
+            let mut i = 0usize;
+            while i + 4 <= ln {
+                if l[i..].starts_with(b"POL=") {
+                    let mut j = i + 4;
+                    let mut p = 0usize;
+                    while j < ln && p < 92 && !l[j..].starts_with(b" TAG") {
+                        pol[p] = l[j];
+                        p += 1;
+                        j += 1;
+                    }
+                    break;
+                }
+                i += 1;
+            }
+            // 空: 默认
+            if !pol.iter().any(|&b| b != 0) {
+                pol[..6].copy_from_slice(b"POL=6:");
+            }
+            pol.iter().position(|&b| b == 0).unwrap_or(92).min(92)
+        }
+        None => {
+            serial::write_line("nlc : shm timeout -> rules fallback");
+            rules_nlc(&text[..len], &mut pol)
+        }
+    };
+    // 解析 "POL=k:v;POL=k:v"
+    let mut n_applied = 0u64;
+    let mut i = 0usize;
+    while i + 4 <= plen {
+        if pol[i..].starts_with(b"POL=") {
+            i += 4;
+            let mut k = 0u64;
+            while i < plen && pol[i].is_ascii_digit() {
+                k = k * 10 + (pol[i] - b'0') as u64;
+                i += 1;
+            }
+            if i < plen && pol[i] == b':' {
+                i += 1;
+            }
+            let mut v = 0u64;
+            while i < plen && pol[i].is_ascii_digit() {
+                v = v * 10 + (pol[i] - b'0') as u64;
+                i += 1;
+            }
+            if k >= 1 && k <= 8 && crate::capability::cfg_set(k, v) == 0 {
+                n_applied += 1;
+            }
+        } else {
+            i += 1;
+        }
+    }
+    unsafe {
+        (out as *mut u64).write(n_applied);
+    }
+    serial::write_str("nlc : policy [");
+    serial::write_str(core::str::from_utf8(&pol[..plen.min(60)]).unwrap_or(""));
+    serial::write_str("] applied=");
+    crate::syscall::debug_dec(n_applied);
+    serial::write_line("");
+    0
+}
+
+fn env_llm(digest: &[u8]) -> Option<([u8; 96], usize)> {
+    let seq = shm_send_req(SHM_KIND_ENV, digest);
+    let (line, ln, _el) = wait_rsp(seq)?;
+    Some((line, ln))
+}
+
+fn scene_code(scene: &[u8]) -> u64 {
+    if scene.starts_with(b"desktop") {
+        1
+    } else if scene.starts_with(b"headless") {
+        2
+    } else if scene.starts_with(b"server") {
+        3
+    } else if scene.starts_with(b"games") {
+        4
+    } else {
+        0
+    }
+}
+
+/// 0x8308: 环境侦察 —— 汇总 hw/acpi/storage 摘要 → 模型场景/档案 →
+/// cfg_set(6, profile); out = {profile, scene_code, digest_len}。
+#[no_mangle]
+pub extern "C" fn fujo_env_scan(out: u64, _cap: u64) -> i64 {
+    if !(0x400000..0x800000).contains(&out) {
+        return -14;
+    }
+    let mut digest = [0u8; 200];
+    let mut q = [0u64; 8];
+    // 显示/键盘
+    unsafe {
+        crate::hw::fujo_hw_disp(q.as_mut_ptr() as u64);
+    }
+    let mut d = 0usize;
+    let mut put = |s: &[u8]| {
+        for &c in s.iter().take(200 - d) {
+            digest[d] = c;
+            d += 1;
+        }
+    };
+    put(b"hw fbw=");
+    let mut num = [0u8; 20];
+    let n = dec_digits(q[0], &mut num);
+    put(&num[..n]);
+    put(b" fbh=");
+    let n = dec_digits(q[1], &mut num);
+    put(&num[..n]);
+    // 存储
+    unsafe {
+        crate::hw::fujo_hw_storage(q.as_mut_ptr() as u64);
+    }
+    put(b" ata=");
+    let n = dec_digits(q[0], &mut num);
+    put(&num[..n]);
+    put(b" fs=");
+    let n = dec_digits(q[2], &mut num);
+    put(&num[..n]);
+    // ACPI/PCI
+    unsafe {
+        crate::acpi::fujo_acpi_info(q.as_mut_ptr() as u64);
+    }
+    put(b" rsdp=");
+    let n = dec_digits(q[0], &mut num);
+    put(&num[..n]);
+    put(b" pci=");
+    let n = dec_digits(q[3], &mut num);
+    put(&num[..n]);
+    put(b" kbd=");
+    let n = dec_digits(q[3], &mut num);
+    put(&num[..n]);
+
+    let mut scene_buf = [0u8; 12];
+    let (scene_len, profile) = match env_llm(&digest[..d]) {
+        Some((l, ln)) => {
+            let mut sn = 0usize;
+            let mut prof = 2u64;
+            let mut i = 0usize;
+            while i + 6 <= ln {
+                if l[i..].starts_with(b"SCENE=") {
+                    let mut j = i + 6;
+                    while j < ln && l[j] != b' ' && sn < 11 {
+                        scene_buf[sn] = l[j];
+                        sn += 1;
+                        j += 1;
+                    }
+                }
+                if l[i..].starts_with(b"PROFILE=") {
+                    let mut j = i + 8;
+                    let mut v = 0u64;
+                    while j < ln && (l[j] as char).is_ascii_digit() {
+                        v = v * 10 + (l[j] - b'0') as u64;
+                        j += 1;
+                    }
+                    prof = v.min(4).max(1);
+                }
+                i += 1;
+            }
+            (sn, prof)
+        }
+        None => {
+            serial::write_line("env : shm timeout -> rules (desktop/2)");
+            scene_buf[..7].copy_from_slice(b"desktop");
+            (7usize, 2u64)
+        }
+    };
+    let scene = &scene_buf[..scene_len];
+    let code = scene_code(scene);
+    let _ = crate::capability::cfg_set(6, profile);
+    let o = out as *mut u64;
+    unsafe {
+        o.write(profile);
+        o.add(1).write(code);
+        o.add(2).write(d as u64);
+    }
+    serial::write_str("env : scan [");
+    serial::write_str(core::str::from_utf8(&digest[..d.min(80)]).unwrap_or(""));
+    serial::write_str("] -> scene=");
+    serial::write_str(core::str::from_utf8(scene).unwrap_or("?"));
+    serial::write_str(" profile=");
+    crate::syscall::debug_dec(profile);
+    serial::write_line("");
+    0
+}

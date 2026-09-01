@@ -347,6 +347,12 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x8303 => crate::infer::fujo_infer_set(a0),
         // ---- M112: 异常哨兵 (A 首刀) ----
         0x8304 => crate::ai::fujo_anom_run(a0, a1, a2, a3),
+        // ---- M113: 计划-执行器 + I/O 预测器 ----
+        0x8305 => crate::ai::fujo_plan_run(a0, a1, a2, a3),
+        0x8306 => crate::ai::fujo_io_predict(a0, a1, a2, a3),
+        // ---- M114: 自然语言配置 + 环境侦察 ----
+        0x8307 => crate::ai::fujo_nlc_set(a0, a1, a2, a3),
+        0x8308 => crate::ai::fujo_env_scan(a0, a1),
         // ---- M94: 模型注册表 + fupm ----
         0x8401 => crate::modelreg::fujo_fupm_install(a0, a1, a2),
         0x8402 => crate::modelreg::fujo_reg_list(a0),
