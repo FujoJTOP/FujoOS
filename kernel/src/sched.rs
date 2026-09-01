@@ -329,6 +329,7 @@ pub fn spawn_tasks(entry: u64) {
 /// 返回 1 = 已切换 (桩将 rsp 换成 sched_next_rsp), 0 = 继续当前任务。
 #[no_mangle]
 pub extern "C" fn fujo_tick_sched(_vec: u64, regs: *const u64) -> i64 {
+    crate::smp::intr_note(); // M65: 中断注入统计 (每 tick, 先于切换决策)
     unsafe {
         // 中断帧 (9 寄存器之后, 栈顶->下): [RIP][CS][RFLAGS][RSP_user][SS]
         // —— CPU 先压 SS/RSP/RFLAGS/CS/RIP, RIP 在栈顶 (M13 现场确证 +10=CS)。

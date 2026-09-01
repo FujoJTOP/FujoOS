@@ -390,6 +390,11 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x6A01 => crate::smp::aff_set(a0, a1),
         0x6A02 => crate::smp::aff_get(a0),
         0x6A04 => crate::smp::fujo_smp_stats(a0),
+        // ---- M65: 每核 TSS / 中断注入优化 ----
+        0x6B01 => crate::smp::fujo_core_id(),
+        0x6B02 => crate::smp::fujo_tss_info(a0),
+        0x6B04 => crate::smp::fujo_irq_route(a0),
+        0x6B05 => crate::smp::fujo_irq_stats(a0),
         // ---- M60: 存档沙箱 ----
         0x6701 => crate::save::fujo_save_write(a0, a1, a2),
         0x6702 => crate::save::fujo_save_read(a0, a1, a2),

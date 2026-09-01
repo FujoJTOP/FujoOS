@@ -19,6 +19,8 @@ pub const KERNEL_DS: u16 = 0x10;
 pub const USER_DS: u16 = 0x18;
 pub const USER_CS: u16 = 0x20;
 pub const TSS_SEL: u16 = 0x28;
+/// M65: 核1 TSS 选择子 (GDT 槽 7/8)。
+pub const TSS1_SEL: u16 = 0x38;
 
 #[repr(C, packed)]
 struct GdtPtr {
@@ -74,9 +76,12 @@ impl Tss {
 
 /// 数组与 TSS 采用 `#[no_mangle]` + 无别名 static, 便于诊断与链接期验证。
 #[no_mangle]
-pub static mut GDT: [u64; 8] = [0; 8];
+pub static mut GDT: [u64; 16] = [0; 16];
 #[no_mangle]
 pub static mut TSS: Tss = Tss::zero();
+/// M65: 核1 TSS (每核独立 RSP0; AP 启动后由 SIPI 路径装载)。
+#[no_mangle]
+pub static mut TSS1: Tss = Tss::zero();
 
 /// 64-bit TSS 描述符（两个 8 字节）。
 fn tss_desc(base: u64, limit: u32) -> (u64, u64) {
@@ -110,8 +115,17 @@ pub fn init() {
         core::ptr::write_volatile(g.add(5), lo);
         core::ptr::write_volatile(g.add(6), hi);
 
+        // —— M65: 核1 TSS (槽 7/8, 选择子 0x38; 独立核栈 0x3A0000) ——
+        let t1 = core::ptr::addr_of_mut!(TSS1);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*t1).rsp0), 0x3A0000u64);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*t1).iomap_base), 0xFFFFu16);
+        let tss1_base = &raw mut TSS1 as u64;
+        let (lo1, hi1) = tss_desc(tss1_base, 103);
+        core::ptr::write_volatile(g.add(7), lo1);
+        core::ptr::write_volatile(g.add(8), hi1);
+
         // lgdt/ltr 注意: 不得声明 nomem（它们确确实实读内存中的表）
-        core::ptr::write_volatile(core::ptr::addr_of_mut!(GDT_PTR.limit), 8 * 8 - 1);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!(GDT_PTR.limit), 16 * 8 - 1);
         core::ptr::write_volatile(core::ptr::addr_of_mut!(GDT_PTR.base), &raw mut GDT as u64);
         asm!("lgdt [{}]", in(reg) core::ptr::addr_of_mut!(GDT_PTR), options(nostack));
         asm!("ltr ax", in("ax") TSS_SEL, options(nostack));
@@ -135,4 +149,14 @@ pub fn set_rsp0(v: u64) {
 /// 调试: 读取 TSS.rsp0 实际值 (验证 desc 指向的 TSS 数据完好)
 pub fn debug_tss_rsp0() -> u64 {
     unsafe { core::ptr::read_volatile(core::ptr::addr_of!(TSS).cast::<u8>().add(4).cast::<u64>()) }
+}
+
+/// M65: 各 TSS rsp0 值 (诊断面: 0x6B02 tss_info)。
+pub fn tss_rsp0s() -> (u64, u64) {
+    unsafe {
+        (
+            core::ptr::read_volatile(core::ptr::addr_of!(TSS).cast::<u8>().add(4).cast::<u64>()),
+            core::ptr::read_volatile(core::ptr::addr_of!(TSS1).cast::<u8>().add(4).cast::<u64>()),
+        )
+    }
 }

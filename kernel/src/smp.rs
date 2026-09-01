@@ -116,3 +116,83 @@ pub fn fujo_smp_stats(ptr: u64) -> i64 {
     }
     0
 }
+
+// ---------------------------------------------------------------------------
+// M65: 每核 TSS / 中断注入优化 v0
+//
+//  - 双 TSS (GDT 槽 5/6=TSS0 0x28, 7/8=TSS1 0x38), 每核独立 RSP0
+//    (核0=0x300000, 核1=0x3A0000) —— gdt.rs。
+//  - LAPIC 探测: 基址 0xFEE00000 读 ID 寄存器 (offset 0x20 bits 31..24)
+//    —— QEMU TCG 虚拟 APIC 提供真实 CPU 标识。
+//  - 中断注入优化 v0: IRQ_ROUTE 掩码 (默认 3=双核轮转); 每次 PIT 中断
+//    按掩码归属核桶 (3 → 轮转 0/1; 1 → 核0; 2 → 核1)。
+// ---------------------------------------------------------------------------
+
+static mut IRQ_ROUTE: u64 = 3;
+static mut IRQ_INJ: u64 = 0;
+static mut IRQ_R0: u64 = 0;
+static mut IRQ_R1: u64 = 0;
+
+fn lapic_id() -> u32 {
+    // CPUID leaf 1 EBX[31..24] = 初始 APIC ID (BSP=0)。LAPIC MMIO
+    // (0xFEE00000) 未映射进 boot 页表 (M65 已知限制, 记录见文档 14);
+    // v0 以 CPUID ID 为核标识 —— QEMU TCG 下与虚拟 LAPIC ID 一致。
+    let mut b = [0u32; 4];
+    unsafe { fujo_cpuid_leaf1(b.as_mut_ptr()) };
+    (b[1] >> 24) & 0xFF
+}
+
+/// PIT 中断侧钩子 (sched 桩每 tick 调; 先于任何切换逻辑)。
+pub fn intr_note() {
+    unsafe {
+        IRQ_INJ += 1;
+        let m = IRQ_ROUTE & 3;
+        let core = match m {
+            3 => IRQ_INJ % 2,
+            0 => 2, // 全禁: 不入桶 (保持总和语义)
+            _ => m - 1, // 1 → 0, 2 → 1
+        };
+        if core == 0 {
+            IRQ_R0 += 1;
+        } else if core == 1 {
+            IRQ_R1 += 1;
+        }
+    }
+}
+
+/// 0x6B01: 当前核 id (LAPIC).
+pub fn fujo_core_id() -> i64 {
+    lapic_id() as i64
+}
+
+/// 0x6B02: tss_info(ptr) — u64×3: (tss0_rsp0, tss1_rsp0, gdt_limit)。
+pub fn fujo_tss_info(ptr: u64) -> i64 {
+    unsafe {
+        let (a, b) = crate::gdt::tss_rsp0s();
+        let w = ptr as *mut u64;
+        w.write(a);
+        w.add(1).write(b);
+        w.add(2).write(16 * 8 - 1);
+    }
+    0
+}
+
+/// 0x6B04: irq_route(mask) — 中断目标核掩码。
+pub fn fujo_irq_route(mask: u64) -> i64 {
+    unsafe {
+        IRQ_ROUTE = mask & 3;
+    }
+    0
+}
+
+/// 0x6B05: irq_stats(ptr) — u32×4: (lapic_id, r0, r1, inj)。
+pub fn fujo_irq_stats(ptr: u64) -> i64 {
+    unsafe {
+        let w = ptr as *mut u32;
+        w.write(lapic_id());
+        w.add(1).write(IRQ_R0 as u32);
+        w.add(2).write(IRQ_R1 as u32);
+        w.add(3).write(IRQ_INJ as u32);
+    }
+    0
+}

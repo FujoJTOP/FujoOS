@@ -547,7 +547,21 @@
         20M 轮 → `ncpu=2 c0=8 c1=8 sw=16` (全部切换按亲和归桶,
         task1 恒归 core1, task0 恒归 core0) → **M64 RESULT: PASS**;
         文档: docs/13-smp.md; 真 SMP 启动(APIC/每核 TSS) → M65。
-- [ ] **M65** 每核 TSS/中断注入优化
+- [x] **M65** 每核 TSS/中断注入优化
+      - **双 TSS**: GDT 扩 16 槽: 5/6=TSS0 (0x28, rsp0=0x300000),
+        7/8=TSS1 (0x38, rsp0=0x3A0000 核1 独立栈); gdt.rs 初始化双方
+        (Tss repr(C,packed) 布局 rsp0@+4); `tss_info` 读回验证
+        (0x6B02 → (rsp0_0, rsp0_1, gdt_limit=0x7F))。
+      - **核标识**: 0x6B01 core_id() → CPUID leaf 1 EBX[31..24] 初始
+        APIC ID; LAPIC MMIO (0xFEE00000) 未映射入 boot 页表 (已知
+        限制, 记录文档 14, 后续页表补映射后切 MMIO 读)。
+      - **中断注入 v0**: 0x6B04 irq_route(mask) 目标核掩码 (1=核0,
+        2=核1, 3=轮转); 每次 PIT 中断 (fujo_tick_sched 入口) 按掩码
+        入核桶; 0x6B05 irq_stats → (lapid, r0, r1, inj)。
+      - **m65_tss.elf 实测**: `lapic_id=0`; 路由测试三段各 20M 用户态
+        忙循环 (PIT 用户态中断可触发): core0 段 `r0=8 r1=0`, core1
+        段 `r0=0 r1=8`, 轮转段 `4/4` (掩码分散正确) →
+        **M65 RESULT: PASS**; 文档: docs/14-tss-irq.md
 - [ ] **M66** 页缓存/预读(内存盘→真盘)
 - [ ] **M67** 中断合并/减轻(串口/网卡)
 - [ ] **M68** 帧时间表/性能计数器工具
