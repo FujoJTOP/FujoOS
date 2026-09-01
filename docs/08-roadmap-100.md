@@ -699,7 +699,17 @@
       - **m75_dbg.elf 实测**: 裸 int3 #BP + dummy 断点命中 (恢复
         重执返回 42) + 3 次 TF 单步 → `total=5 steps=3 bps=2` →
         **M75 RESULT: PASS**; 文档: docs/24-debugger.md
-- [ ] **M76** syscall trace 工具化(打开后台记录)
+- [x] **M76** syscall trace 工具化(打开后台记录)
+      - **在 M33 trace 之上**: 0x7701 trace_bg(on) 后台记录
+        (不经 trace_show, ring/counts 持续写入) / 0x7702
+        trace_stats(ptr) → (total, nonzero_nr, ring_pos, dropped) /
+        0x7703 trace_filter(nr) 过滤 (0=全, 否则仅该 nr)。
+      - **实现**: dispatch 头 rec = TRACE_ON||TRACE_BG 且
+        (filter==0||filter==nr); total/dropped 维护;
+      - **m76_trace.elf 实测**: 后台开 → 写+读统计 (t0=2 t1=4,
+        nonzero>=1) → filter(1) 后 3 次 write → 差分 `d_filter=3`
+        (其它 syscall 不记) → **M76 RESULT: PASS**;
+        文档: docs/25-trace.md
 - [ ] **M77** 性能计数器(rdtsc/中断计数窗口)
 - [ ] **M78** CI:QEMU 无头启动 + 日志断言自动化
 - [ ] **M79** fujopack/fujorun 命令全参数化 + 手册

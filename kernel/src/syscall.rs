@@ -66,6 +66,12 @@ pub static mut TRACE_ON: u64 = 0;
 pub static mut TRACE_COUNTS: [u64; 256] = [0; 256];
 pub static mut TRACE_RING: [(u64, u64, u64); 64] = [(0, 0, 0); 64];
 pub static mut TRACE_POS: usize = 0;
+/// M76: 后台记录 (不经 trace_show 也持续写入 ring/counts)。
+#[no_mangle]
+pub static mut TRACE_BG: u64 = 0;
+pub static mut TRACE_TOTAL: u64 = 0;
+pub static mut TRACE_FILTER: u64 = 0; // 0=全记录, 否则仅该 nr
+pub static mut TRACE_DROPPED: u64 = 0;
 /// M11: 用户 FPU/SIMD 状态 (syscall 进出保存恢复; 16 对齐 —— fxsave 要求)。
 #[repr(C, align(16))]
 pub struct FpuSave {
@@ -221,12 +227,17 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
     let a4 = unsafe { args.add(4).read() };
     let a5 = unsafe { args.add(5).read() };
 
-    // ---- M33: trace 登记 (开关开启时; 不改分发语义) ----
-    if unsafe { TRACE_ON } != 0 {
-        unsafe {
+    // ---- M33/M76: trace 登记 (前台开关或后台记录; 过滤面) ----
+    unsafe {
+        let rec = TRACE_ON != 0 || TRACE_BG != 0;
+        if rec && (TRACE_FILTER == 0 || TRACE_FILTER == nr) {
             TRACE_COUNTS[(nr % 256) as usize] += 1;
             TRACE_RING[TRACE_POS % 64] = (nr, a0, crate::interrupts::ticks());
             TRACE_POS += 1;
+            TRACE_TOTAL += 1;
+            if TRACE_POS % 64 == 0 {
+                TRACE_DROPPED = TRACE_TOTAL - 64; // 环形覆盖计数
+            }
         }
     }
 
@@ -243,6 +254,32 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5302 => trace_show(),
         // fujo_trace_count(nr) -> 计数
         0x5303 => unsafe { TRACE_COUNTS[(a0 % 256) as usize] as i64 },
+        // ---- M76: trace 工具化 (后台记录/统计/过滤) ----
+        0x7701 => {
+            unsafe { TRACE_BG = a0; }
+            0
+        }
+        0x7702 => {
+            unsafe {
+                // (total, nonzero, ring_pos, dropped)
+                let mut nonzero = 0u64;
+                for &c in TRACE_COUNTS.iter() {
+                    if c > 0 {
+                        nonzero += 1;
+                    }
+                }
+                let w = a0 as *mut u64;
+                w.write(TRACE_TOTAL);
+                w.add(1).write(nonzero);
+                w.add(2).write(TRACE_POS as u64);
+                w.add(3).write(TRACE_DROPPED);
+            }
+            0
+        }
+        0x7703 => {
+            unsafe { TRACE_FILTER = a0; }
+            0
+        }
         // read(fd, buf, len) — M15 VFS
         0 => crate::vfs::fujo_read(a0, a1, a2),
         // write(fd, buf, len)
