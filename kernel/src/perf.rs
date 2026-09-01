@@ -95,3 +95,51 @@ pub fn fujo_perf_counter_read(ptr: u64) -> i64 {
     }
     0
 }
+
+// ---------------------------------------------------------------------------
+// M77: 性能计数器窗口 (rdtsc/中断计数窗口)
+//
+// win_begin(id)/win_end(id): 快照 (us, irq, sys) → 窗口差分表 (单槽 v0);
+// win_read(ptr) → u64×4: (us_delta, irq_delta, sys_delta, calls)。
+// ---------------------------------------------------------------------------
+
+static mut WIN_B_US: u64 = 0;
+static mut WIN_B_IRQ: u64 = 0;
+static mut WIN_B_SYS: u64 = 0;
+static mut WIN_S_US: u64 = 0;
+static mut WIN_S_IRQ: u64 = 0;
+static mut WIN_S_SYS: u64 = 0;
+static mut WIN_CALLS: u64 = 0;
+
+/// 0x7801
+pub fn fujo_win_begin(_id: u64) -> i64 {
+    unsafe {
+        WIN_B_US = timer::fujo_timer_us() as u64;
+        WIN_B_IRQ = CTR[0];
+        WIN_B_SYS = CTR[1];
+        WIN_CALLS += 1;
+    }
+    0
+}
+
+/// 0x7802
+pub fn fujo_win_end(_id: u64) -> i64 {
+    unsafe {
+        WIN_S_US = (timer::fujo_timer_us() as u64).wrapping_sub(WIN_B_US);
+        WIN_S_IRQ = CTR[0].wrapping_sub(WIN_B_IRQ);
+        WIN_S_SYS = CTR[1].wrapping_sub(WIN_B_SYS);
+    }
+    0
+}
+
+/// 0x7803
+pub fn fujo_win_read(ptr: u64) -> i64 {
+    unsafe {
+        let w = ptr as *mut u64;
+        w.write(WIN_S_US);
+        w.add(1).write(WIN_S_IRQ);
+        w.add(2).write(WIN_S_SYS);
+        w.add(3).write(WIN_CALLS);
+    }
+    0
+}

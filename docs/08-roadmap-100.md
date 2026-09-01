@@ -710,7 +710,15 @@
         nonzero>=1) → filter(1) 后 3 次 write → 差分 `d_filter=3`
         (其它 syscall 不记) → **M76 RESULT: PASS**;
         文档: docs/25-trace.md
-- [ ] **M77** 性能计数器(rdtsc/中断计数窗口)
+- [x] **M77** 性能计数器(rdtsc/中断计数窗口)
+      - **接口**: 0x7801 win_begin(id) 快照 (us, irq, sys) /
+        0x7802 win_end(id) 差分 → 窗口 / 0x7803 win_read(ptr) →
+        u64×4: (us_delta, irq_delta, sys_delta, calls)。
+      - **实现 (perf.rs 扩展)**: 时间基 timer_us (校准), 计数基 M68
+        的 IRQ/syscall 计数器; 窗口差分表单槽 v0;
+      - **m77_win.elf 实测**: 20M 忙循环窗口 → `us=82967 irq=8
+        sys=1 calls=1` (窗口内 8 次 PIT, 读回自身 1 次 syscall) →
+        **M77 RESULT: PASS**; 文档: docs/26-perfwin.md
 - [ ] **M78** CI:QEMU 无头启动 + 日志断言自动化
 - [ ] **M79** fujopack/fujorun 命令全参数化 + 手册
 - [ ] **M80** SDK 文档闭环(示例/模板/教程)
