@@ -44,6 +44,19 @@ pub const SHIM_TABLE: &[(&str, &str, u64)] = &[
     ("kernel32.dll", "GetCPInfo", 0x5017),
     // ---- M30: 统一对象路径 ----
     ("kernel32.dll", "CreateFileA", 0x5018),
+    // ---- M109: gdi32 字体兼容层 (win32 二进制 CreateFont/TextOut 路径) ----
+    ("gdi32.dll", "CreateFontA", 0x5019),
+    ("gdi32.dll", "CreateFontW", 0x501A),
+    ("gdi32.dll", "SelectObject", 0x501B),
+    ("gdi32.dll", "DeleteObject", 0x501C),
+    ("gdi32.dll", "TextOutA", 0x501D),
+    ("gdi32.dll", "TextOutW", 0x501E),
+    ("gdi32.dll", "SetTextColor", 0x501F),
+    ("gdi32.dll", "SetBkMode", 0x5020),
+    ("gdi32.dll", "GetStockObject", 0x5021),
+    ("gdi32.dll", "GetTextExtentPointA", 0x5022),
+    ("user32.dll", "GetDC", 0x5023),
+    ("user32.dll", "ReleaseDC", 0x5024),
     // ---------- msvcrt.dll (0x5201..0x5221, M27 mingw CRT) ----------
     ("msvcrt.dll", "__C_specific_handler", 0x5201),
     ("msvcrt.dll", "___lc_codepage_func", 0x5202),

@@ -453,7 +453,7 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         // getrandom(buf, len, flags) — PIT 混哈希假熵
         317 => sys_getrandom(a0, a1),
         // ---- fujo 原生 Win32 shim 通道 (M3/M26 基础 + M27 mingw CRT + M28/M30) ----
-        0x5001..=0x5018 | 0x5201..=0x522B => shim_dispatch(nr, args),
+        0x5001..=0x5018 | 0x5201..=0x522B | 0x5019..=0x5024 => shim_dispatch(nr, args),
         // exit(code) / exit_group(code) -> 内核接管并停机
         60 | 231 => {
             serial::write_line("user : sys_exit() - kernel takeover, M6 verified");
@@ -849,6 +849,21 @@ fn shim_dispatch(nr: u64, args: *const u64) -> i64 {
         let a3 = args.add(2).read();
         let a4 = args.add(5).read();
         match nr {
+            // ---------- gdi32/user32 (M109: 字体兼容层) ----------
+            // Win64 shim 布局: a1=rdi(arg1), a2=rsi(arg2), a3=rdx(arg3), a4=r9(arg4)
+            0x5019 => crate::gdi::create_font(a1 as u32, a2 as u32, a3 as u32), // CreateFontA(h,w,weight)
+            0x501A => crate::gdi::create_font(a1 as u32, a2 as u32, a3 as u32), // CreateFontW(h,w,weight)
+            0x501B => crate::gdi::select_object(a2 as u32), // SelectObject(hdc,h)
+            0x501C => crate::gdi::delete_object(a1 as u32), // DeleteObject(h)
+            0x501D => crate::gdi::text_out(a2 as u32, a3 as u32, a1, a4 as u32), // TextOutA(hdc,x,y,str,..)
+            0x501E => crate::gdi::text_out(a2 as u32, a3 as u32, a1, a4 as u32), // TextOutW(hdc,x,y,wstr)
+            0x5020 => crate::gdi::set_bk_mode(a2 as u32), // SetBkMode(hdc,mode)
+            0x5021 => crate::gdi::stock_object(a4 as u32), // GetStockObject(id)
+            0x5022 => crate::gdi::text_extent(a1, a2 as u32, a3), // GetTextExtentPointA(hdc,str,len,size)
+            // 0x501F SetTextColor(hdc,color): a2=color
+            0x501F => crate::gdi::set_text_color(a2 as u32), // SetTextColor(hdc,color)
+            0x5023 => crate::gdi::get_dc(a1 as u32), // GetDC(hwnd)
+            0x5024 => crate::gdi::release_dc(a1 as u32, a2 as u32), // ReleaseDC(hwnd,hdc)
             // ---------- kernel32 ----------
             0x5001 => user_write(a1, a2, a3), // WriteFile(fd, buf, len)
             0x5002 => {

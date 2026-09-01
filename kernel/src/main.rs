@@ -34,6 +34,7 @@ mod fujocc;
 mod fujr;
 mod gamemode;
 mod game2;
+mod gdi;
 mod gl;
 mod hw;
 mod hvm;

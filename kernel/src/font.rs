@@ -144,7 +144,7 @@ fn read_pixel(x: u32, y: u32) -> u32 {
 
 /// M39: 画前景字符带背景 (缩放+超采样 AA 由本函数完成)。
 /// 字形: 每字符 8 字节 = 8 行, 每字节 8 列 (bit7=最左列, VGA 8x8 字模)。
-fn draw_char(x: u32, y: u32, ch: u8, scale: u32, color: u32) {
+pub(crate) fn draw_char(x: u32, y: u32, ch: u8, scale: u32, color: u32) {
     if ch < 0x20 {
         return;
     }

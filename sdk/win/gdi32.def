@@ -1,0 +1,12 @@
+LIBRARY gdi32.dll
+EXPORTS
+    CreateFontA
+    CreateFontW
+    SelectObject
+    DeleteObject
+    TextOutA
+    TextOutW
+    SetTextColor
+    SetBkMode
+    GetStockObject
+    GetTextExtentPointA
