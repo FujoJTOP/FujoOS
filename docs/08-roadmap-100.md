@@ -888,7 +888,19 @@
 
 ## Wave 7 · 交付(M96–M100)
 
-- [ ] **M96** 真机引导最小集(ACPI/PCI 表)
+- [x] **M96** 真机引导最小集(ACPI/PCI 表)
+      - **acpi.rs**: RSDP 搜索 (0xE0000..0x100000, magic "RSD PTR ")
+        + 表计数采样 (XSDT/RSDT, 指针 <64MiB 映射区 guard —
+        QEMU 表体在 0xFFExxx >64MiB, 文档记录页表限制) + PCI CF8/CFC
+        枚举 (bus0..2 × slot0..31, ≤24 条 {vid/did/bus/slot});
+        启动 scan_all (`pci: scanned N devices`)。
+      - **接口**: 0x8501 acpi_info(ptr) → (rsdp_found, rev,
+        table_count, pci_devs) / 0x8502 acpi_dump(ptr,cap) 摘要 /
+        0x8503 pci_scan(ptr) 条目转储。
+      - **m96_acpi.elf 实测**: `rsdp=1 rev=0 tabs=0 pci=4
+        vid0=8086 did0=1237` (RSDP 找到; 4 PCI 设备含 host bridge)
+        → **M96 RESULT: PASS**; 踩坑: RSDP magic 字节错位 (P@+4) /
+        XSDT 高地址未映射 #PF (guard); 文档: docs/45-acpi.md
 - [ ] **M97** 真机显示/键盘/存储适配(至少一台参考机)
 - [ ] **M98** live 镜像 + 安装器
 - [ ] **M99** 签名/更新机制

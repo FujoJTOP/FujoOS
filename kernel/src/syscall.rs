@@ -332,6 +332,10 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x8402 => crate::modelreg::fujo_reg_list(a0),
         0x8403 => crate::modelreg::fujo_reg_active(a0),
         0x8404 => crate::modelreg::fujo_fupm_remove(a0),
+        // ---- M96: ACPI/PCI 真机最小集 ----
+        0x8501 => crate::acpi::fujo_acpi_info(a0),
+        0x8502 => crate::acpi::fujo_acpi_dump(a0, a1),
+        0x8503 => crate::acpi::fujo_pci_scan(a0),
         // read(fd, buf, len) — M15 VFS
         0 => crate::vfs::fujo_read(a0, a1, a2),
         // write(fd, buf, len)

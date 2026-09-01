@@ -13,6 +13,7 @@
 
 mod ai;
 mod a11y;
+mod acpi;
 mod ata;
 mod audio;
 mod asm;
@@ -274,6 +275,7 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     crate::perf::init(); // M68: 计时校准 + 性能计数器默认面
     crate::editor::selftest(); // M73: 迷你编辑器就绪
     crate::utest::init(); // M82: 单元测试套件注册
+    crate::acpi::scan_all(); // M96: PCI 枚举 (真机引导最小集)
     if !gfx_ok {
         out_line("gfx  : framebuffer unavailable (VBE not present), geometry logo skipped");
     } else {

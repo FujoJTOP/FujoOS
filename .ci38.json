@@ -1,0 +1,230 @@
+[
+ {
+  "case": "elf-linux",
+  "rel": "sdk/linux/m30_linux.elf",
+  "status": "PASS",
+  "needle": "M30 RESULT: PASS"
+ },
+ {
+  "case": "elf-linux2",
+  "rel": "sdk/linux/m33_trace.elf",
+  "status": "PASS",
+  "needle": "M33 RESULT: PASS"
+ },
+ {
+  "case": "run-fujopack",
+  "rel": "sdk/build/m31_res.run",
+  "status": "PASS",
+  "needle": "M31 RESULT: PASS"
+ },
+ {
+  "case": "multi-fujorun",
+  "rel": "sdk/build/m32_multi.initrd",
+  "status": "FAIL",
+  "needle": "M32 RESULT: PASS"
+ },
+ {
+  "case": "macho-darwin",
+  "rel": "sdk/mac/m29_darwin.macho",
+  "status": "PASS",
+  "needle": "M29 RESULT: PASS"
+ },
+ {
+  "case": "pe-m3",
+  "rel": "sdk/win/hello_win.exe",
+  "status": "PASS",
+  "needle": "M3 verified"
+ },
+ {
+  "case": "pe-m26",
+  "rel": "sdk/win/m26_win.exe",
+  "status": "PASS",
+  "needle": "M26 RESULT: PASS"
+ },
+ {
+  "case": "pe-m27",
+  "rel": "sdk/win/m27_mingw.exe",
+  "status": "PASS",
+  "needle": "M27 RESULT: PASS"
+ },
+ {
+  "case": "pe-m30",
+  "rel": "sdk/win/m30_win.exe",
+  "status": "PASS",
+  "needle": "M30 RESULT: PASS"
+ },
+ {
+  "case": "m61-blit",
+  "rel": "sdk/linux/m61_blit.elf",
+  "status": "PASS",
+  "needle": "M61 RESULT: PASS"
+ },
+ {
+  "case": "m62-shader",
+  "rel": "sdk/linux/m62_shader.elf",
+  "status": "PASS",
+  "needle": "M62 RESULT: PASS"
+ },
+ {
+  "case": "m63-mix",
+  "rel": "sdk/linux/m63_mix.elf",
+  "status": "PASS",
+  "needle": "M63 RESULT: PASS"
+ },
+ {
+  "case": "m64-smp",
+  "rel": "sdk/linux/m64_smp.elf",
+  "status": "PASS",
+  "needle": "M64 RESULT: PASS"
+ },
+ {
+  "case": "m65-tss",
+  "rel": "sdk/linux/m65_tss.elf",
+  "status": "PASS",
+  "needle": "M65 RESULT: PASS"
+ },
+ {
+  "case": "m66-pcache",
+  "rel": "sdk/linux/m66_pcache.elf",
+  "status": "PASS",
+  "needle": "M66 RESULT: PASS"
+ },
+ {
+  "case": "m67-irq",
+  "rel": "sdk/linux/m67_irq.elf",
+  "status": "PASS",
+  "needle": "M67 RESULT: PASS"
+ },
+ {
+  "case": "m68-perf",
+  "rel": "sdk/linux/m68_perf.elf",
+  "status": "PASS",
+  "needle": "M68 RESULT: PASS"
+ },
+ {
+  "case": "m69-game2",
+  "rel": "sdk/linux/m69_game2.elf",
+  "status": "PASS",
+  "needle": "M69 RESULT: PASS"
+ },
+ {
+  "case": "m71-asm",
+  "rel": "sdk/linux/m71_asm.elf",
+  "status": "PASS",
+  "needle": "M71 RESULT: PASS"
+ },
+ {
+  "case": "m72-ld",
+  "rel": "sdk/linux/m72_ld.elf",
+  "status": "PASS",
+  "needle": "M72 RESULT: PASS"
+ },
+ {
+  "case": "m73-edit",
+  "rel": "sdk/linux/m73_edit.elf",
+  "status": "PASS",
+  "needle": "M73 RESULT: PASS"
+ },
+ {
+  "case": "m74-cc",
+  "rel": "sdk/linux/m74_cc.elf",
+  "status": "PASS",
+  "needle": "M74 RESULT: PASS"
+ },
+ {
+  "case": "m75-dbg",
+  "rel": "sdk/linux/m75_dbg.elf",
+  "status": "PASS",
+  "needle": "M75 RESULT: PASS"
+ },
+ {
+  "case": "m76-trace",
+  "rel": "sdk/linux/m76_trace.elf",
+  "status": "PASS",
+  "needle": "M76 RESULT: PASS"
+ },
+ {
+  "case": "m77-win",
+  "rel": "sdk/linux/m77_win.elf",
+  "status": "PASS",
+  "needle": "M77 RESULT: PASS"
+ },
+ {
+  "case": "m82-ut",
+  "rel": "sdk/linux/m82_ut.elf",
+  "status": "PASS",
+  "needle": "M82 RESULT: PASS"
+ },
+ {
+  "case": "m83-leak",
+  "rel": "sdk/linux/m83_leak.elf",
+  "status": "PASS",
+  "needle": "M83 RESULT: PASS"
+ },
+ {
+  "case": "m84-dump",
+  "rel": "sdk/linux/m84_dump.elf",
+  "status": "PASS",
+  "needle": "M84 RESULT: PASS"
+ },
+ {
+  "case": "m86-wmap",
+  "rel": "sdk/linux/m86_wmap.elf",
+  "status": "PASS",
+  "needle": "M86 RESULT: PASS"
+ },
+ {
+  "case": "m87-mcard",
+  "rel": "sdk/linux/m87_mcard.elf",
+  "status": "PASS",
+  "needle": "M87 RESULT: PASS"
+ },
+ {
+  "case": "m88-sess",
+  "rel": "sdk/linux/m88_sess.elf",
+  "status": "PASS",
+  "needle": "M88 RESULT: PASS"
+ },
+ {
+  "case": "m89-ctx",
+  "rel": "sdk/linux/m89_ctx.elf",
+  "status": "PASS",
+  "needle": "M89 RESULT: PASS"
+ },
+ {
+  "case": "m90-cctx",
+  "rel": "sdk/linux/m90_ctx.elf",
+  "status": "PASS",
+  "needle": "M90 RESULT: PASS"
+ },
+ {
+  "case": "m91-cap",
+  "rel": "sdk/linux/m91_cap.elf",
+  "status": "PASS",
+  "needle": "M91 RESULT: PASS"
+ },
+ {
+  "case": "m92-route",
+  "rel": "sdk/linux/m92_route.elf",
+  "status": "PASS",
+  "needle": "M92 RESULT: PASS"
+ },
+ {
+  "case": "m93-infer",
+  "rel": "sdk/linux/m93_infer.elf",
+  "status": "PASS",
+  "needle": "M93 RESULT: PASS"
+ },
+ {
+  "case": "m94-fupm",
+  "rel": "sdk/linux/m94_fupm.elf",
+  "status": "PASS",
+  "needle": "M94 RESULT: PASS"
+ },
+ {
+  "case": "m95-life",
+  "rel": "sdk/linux/m95_life.elf",
+  "status": "PASS",
+  "needle": "M95 RESULT: PASS"
+ }
+]
