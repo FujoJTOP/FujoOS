@@ -838,7 +838,16 @@
       - **m90_ctx.elf 实测**: 4KB (AAAA..B..ZZZZ) → `in=4096
         out=790` (512+22+256), 头 AAAA/尾 ZZZZ/中标记校验 →
         **M90 RESULT: PASS**; 文档: docs/39-ctxcompress.md
-- [ ] **M91** 权限与审计(四件套④):能力表 + 审计日志
+- [x] **M91** 权限与审计(四件套④):能力表 + 审计日志
+      - **capability.rs**: 能力表 8 槽 {perm, granted}; 审计环
+        32 项 (ts, action, subject, result);
+      - **接口**: 0x8101 cap_grant(idx,perm) / 0x8102 cap_check
+        (idx,perm) (deny 自动入审计: action=1, result=1) /
+        0x8103 aud_log(action,subject) / 0x8104 aud_read(ptr,cap);
+      - **m91_cap.elf 实测**: grant(0,0x1) → check(0,0x1)=0 允许 →
+        check(0,0x2)=-1 deny (审计#1) → aud_log(7,9) (审计#2) →
+        `aud=2` 双条目字段验证 → **M91 RESULT: PASS**;
+        文档: docs/40-cap.md
 - [ ] **M92** 意图路由增强:qwen 蒸馏/切换 qwen3-0.6b 对照表
 - [ ] **M93** 推理执行器插槽(宿主链路 → 定数量化内核评估)
 - [ ] **M94** AI 服务:模型注册表 + fupm 安装模型

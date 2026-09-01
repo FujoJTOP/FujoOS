@@ -314,6 +314,11 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x7F01 => crate::ctx::fujo_ctx_snap(a0, a1),
         // ---- M90: 上下文压缩 ----
         0x8001 => crate::ctx::fujo_ctx_compress(a0, a1, a2, a3, a4),
+        // ---- M91: 权限与审计 ----
+        0x8101 => crate::capability::fujo_cap_grant(a0, a1),
+        0x8102 => crate::capability::fujo_cap_check(a0, a1),
+        0x8103 => crate::capability::fujo_aud_log(a0, a1),
+        0x8104 => crate::capability::fujo_aud_read(a0, a1),
         // read(fd, buf, len) — M15 VFS
         0 => crate::vfs::fujo_read(a0, a1, a2),
         // write(fd, buf, len)

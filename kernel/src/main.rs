@@ -17,6 +17,7 @@ mod ata;
 mod audio;
 mod asm;
 mod blit;
+mod capability;
 mod clip;
 mod ctx;
 mod dbg;
