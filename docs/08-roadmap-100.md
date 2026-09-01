@@ -659,7 +659,16 @@
         → pad 0x180000→**0x1A0000**, load_end/bss_end
         0x002A_0000 同步 (build-kernel.ps1 一并更新);
         文档: docs/21-ld-tool.md
-- [ ] **M73** 迷你编辑器(vi 子集)
+- [x] **M73** 迷你编辑器(vi 子集)
+      - **editor.rs**: 2KiB 文本缓冲, '\n' 行模型, 游标 (row,col);
+        vi 键: i=插入 (Esc 退出) / j=下行 k=上行 / x=删游标字符 (含
+        行合并) / ^=行首 $=行尾。
+      - **接口**: 0x7401 ed_init / 0x7402 ed_text(ptr,n) /
+        0x7403 ed_key(c) / 0x7404 ed_dump(ptr,cap) /
+        0x7405 ed_info(ptr) → (row, col, lines, len)。
+      - **m73_edit.elf 实测**: "abcd\nefg" → k/j 移动 → x 删 'd' →
+        $/^ 列移动 → i+'X'+Esc → dump `Xabc\nefg` (行模型/插入/
+        删除/移动全过) → **M73 RESULT: PASS**; 文档: docs/22-editor.md
 - [ ] **M74** fujocc 编译壳(表驱动, 跨 ABI 选项)
 - [ ] **M75** 调试器 v0:单步/断点(调试寄存器)
 - [ ] **M76** syscall trace 工具化(打开后台记录)

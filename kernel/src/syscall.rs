@@ -424,6 +424,12 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         // ---- M72: 系统内链接器 ----
         0x7101 => crate::ld::fujo_ld_link(a0),
         0x7102 => crate::ld::fujo_ld_info(),
+        // ---- M73: 迷你编辑器 ----
+        0x7401 => crate::editor::fujo_ed_init(),
+        0x7402 => crate::editor::fujo_ed_text(a0, a1),
+        0x7403 => crate::editor::fujo_ed_key(a0),
+        0x7404 => crate::editor::fujo_ed_dump(a0, a1),
+        0x7405 => crate::editor::fujo_ed_info(a0),
         // ---- M60: 存档沙箱 ----
         0x6701 => crate::save::fujo_save_write(a0, a1, a2),
         0x6702 => crate::save::fujo_save_read(a0, a1, a2),

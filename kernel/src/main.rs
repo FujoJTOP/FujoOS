@@ -21,6 +21,7 @@ mod clip;
 mod desk;
 mod dxwrap;
 mod display;
+mod editor;
 mod elf_loader;
 mod fjfs;
 mod font;
@@ -260,6 +261,7 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     crate::smp::init(); // M64: CPUID 核探测 + 亲和/均衡统计就位
     crate::pcache::init(); // M66: 页缓存/模拟盘清零
     crate::perf::init(); // M68: 计时校准 + 性能计数器默认面
+    crate::editor::selftest(); // M73: 迷你编辑器就绪
     if !gfx_ok {
         out_line("gfx  : framebuffer unavailable (VBE not present), geometry logo skipped");
     } else {
