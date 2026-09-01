@@ -433,6 +433,11 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         // ---- M74: fujocc 编译壳 ----
         0x7501 => crate::fujocc::fujo_cc_compile(a0, a1, a2, a3, a4),
         0x7502 => crate::fujocc::fujo_cc_version(),
+        // ---- M75: 调试器 v0 ----
+        0x7601 => crate::dbg::fujo_dbg_step(a0),
+        0x7602 => crate::dbg::fujo_dbg_bp0(a0),
+        0x7603 => crate::dbg::fujo_dbg_info(a0),
+        0x7604 => crate::dbg::fujo_dbg_clear(),
         // ---- M60: 存档沙箱 ----
         0x6701 => crate::save::fujo_save_write(a0, a1, a2),
         0x6702 => crate::save::fujo_save_read(a0, a1, a2),

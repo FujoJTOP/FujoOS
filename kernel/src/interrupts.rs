@@ -60,10 +60,66 @@ extern "C" {
     fn fujo_ser2_stub();
     fn fujo_pf_stub();
     fn fujo_ms_stub();
+    fn fujo_dbg_stub();
+    fn fujo_bp_stub();
 }
 
 core::arch::global_asm!(r#"
     .text
+    # ---- M75: #DB (向量 1) 调试桩: 保存现场 -> fujo_dbg_exc(vec, regs) ----
+    .p2align 4
+    .global fujo_dbg_stub
+fujo_dbg_stub:
+    push rax
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push r8
+    push r9
+    push r10
+    push r11
+    mov rdi, 1
+    mov rsi, rsp
+    call fujo_dbg_exc
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rax
+    iretq
+
+    # ---- M75: #BP (向量 3, int3 软件断点) —— 记录 + rip-1 + 恢复原字节 ----
+    .p2align 4
+    .global fujo_bp_stub
+fujo_bp_stub:
+    push rax
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push r8
+    push r9
+    push r10
+    push r11
+    mov rdi, 3
+    mov rsi, rsp
+    call fujo_dbg_bp_exc
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rax
+    iretq
+
     # ---- 异常桩: 每个桩固定 14 字节: mov rdi,N(7B) + call rel32(5B) + ud2(2B) ----
     # (M4 踩坑: jmp 会优化成 rel8 短跳; 不用宏展开 —— 宏+完整重建在工具链上
     #  偶发装配瞬态 (M9 DEV 记录), 手写定长桩为确定性方案)
@@ -442,6 +498,30 @@ pub fn init() {
             core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_hi), ((stub_base + (i as u64) * 14) >> 32) as u32);
             core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).zero), 0u32);
         }
+        // ---- M75: 向量 1 (#DB) 调试器桩 ----
+        let dbg_addr = fujo_dbg_stub as usize as u64;
+        let e = (core::ptr::addr_of_mut!(IDT) as *mut IdtEntry).add(1);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_lo), dbg_addr as u16);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).sel), 0x08u16);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).ist), 0u8);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).attr), 0x8Eu8);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_mid), (dbg_addr >> 16) as u16);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_hi), (dbg_addr >> 32) as u32);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).zero), 0u32);
+
+        // ---- M75: 向量 3 (#BP, int3 软件断点) ----
+        // int3 是 INT 指令: 中断门 DPL 必须 >= CPL (3)!, 否则用户态
+        // int3 → #GP (M75 实测: attr=0x8E → vec=13; 改 0xEE)。
+        let bp_addr = fujo_bp_stub as usize as u64;
+        let e = (core::ptr::addr_of_mut!(IDT) as *mut IdtEntry).add(3);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_lo), bp_addr as u16);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).sel), 0x08u16);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).ist), 0u8);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).attr), 0xEEu8);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_mid), (bp_addr >> 16) as u16);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).off_hi), (bp_addr >> 32) as u32);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*e).zero), 0u32);
+
         // ---- 向量 14 (#PF): M12 专用桩 (全寄存器保存, 可重试) ----
         let pf_addr = fujo_pf_stub as usize as u64;
         let e = (core::ptr::addr_of_mut!(IDT) as *mut IdtEntry).add(14);

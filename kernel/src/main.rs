@@ -18,6 +18,7 @@ mod audio;
 mod asm;
 mod blit;
 mod clip;
+mod dbg;
 mod desk;
 mod dxwrap;
 mod display;

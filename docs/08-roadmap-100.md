@@ -683,7 +683,22 @@
         **M74 RESULT: PASS**; 踩坑: fmt 分段写出覆盖 (游标式
         AsmOut 修)、0x 常量被十进制分支截断 (分支排序);
         文档: docs/23-cc-shell.md
-- [ ] **M75** 调试器 v0:单步/断点(调试寄存器)
+- [x] **M75** 调试器 v0:单步/断点(调试寄存器)
+      - **单步**: 用户在用户态置 TF (pushfq|or 0x100|popfq),
+        每条指令 #DB (vec 1, fujo_dbg_stub) → 内核记 steps + 清 TF
+        (帧 RFLAGS & !0x100), iretq 返回续跑。
+      - **断点**: int3 软件断点 (#BP vec 3, fujo_bp_stub): 替换目标
+        首字节 0xCC → 命中恢复原字节 + RIP-1 (回退重执);
+        DR0/DR7 执行断点实测 QEMU TCG 不触发, 文档记录 (GDB 型
+        软件断点是 TCG 通用面)。
+      - **关键坑**: 用户态 `int3` = INT 3 指令, **中断门 DPL 必须
+        >= CPL** — attr 0x8E → #GP (vec 13 实测) → 改 **0xEE** (DPL=3)。
+      - **接口**: 0x7601 dbg_step(on) / 0x7602 dbg_bp0(addr) /
+        0x7603 dbg_info(ptr) → (count, last_rip, steps, bps) /
+        0x7604 dbg_clear()。
+      - **m75_dbg.elf 实测**: 裸 int3 #BP + dummy 断点命中 (恢复
+        重执返回 42) + 3 次 TF 单步 → `total=5 steps=3 bps=2` →
+        **M75 RESULT: PASS**; 文档: docs/24-debugger.md
 - [ ] **M76** syscall trace 工具化(打开后台记录)
 - [ ] **M77** 性能计数器(rdtsc/中断计数窗口)
 - [ ] **M78** CI:QEMU 无头启动 + 日志断言自动化
