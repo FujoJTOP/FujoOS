@@ -42,6 +42,7 @@ mod ime;
 mod kbd;
 mod kobj;
 mod ld;
+mod leak;
 mod macho_loader;
 mod mem;
 mod mouse;

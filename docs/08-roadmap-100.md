@@ -759,7 +759,15 @@
       - **m82_ut.elf 实测**: `ut: run done pass=7 fail=0` →
         `pass=7 fail=0 total=7` → **M82 RESULT: PASS**;
         文档: docs/31-utest.md
-- [ ] **M83** 内存泄漏检测(分配器统计)
+- [x] **M83** 内存泄漏检测(分配器统计)
+      - **leak.rs**: 快照差分 (kobj 对象表 M19 计数 4 类
+        [file/pipe/shm/sig]); 0x7A01 leak_begin() 快照 /
+        0x7A02 leak_end(ptr) → (delta, allocs, frees, baseline) /
+        0x7A03 leak_stats(ptr)。
+      - **m83_leak.elf 实测**: 快照 → kobj_create ×4 → `delta +4
+        (unreleased slots)` (泄漏可检) → free 全部 → `delta -4
+        (freed below baseline)` / after-free delta=0 →
+        **M83 RESULT: PASS**; 文档: docs/32-leak.md
 - [ ] **M84** 崩溃转储(minidump 雏形)
 - [ ] **M85** 工具链验收:hello/gui/game 一键构建运行
 
