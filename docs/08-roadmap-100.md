@@ -914,7 +914,14 @@
         阶段1 `FJFS persistent data #1` 写入盘;
         阶段2 同镜像重启 → `FJFS persistent data #1 / seen-boot2`
         读回 → **FJFS 跨重启持久化 PASS**; 文档: docs/46-hwadapt.md
-- [ ] **M98** live 镜像 + 安装器
+- [x] **M98** live 镜像 + 安装器
+      - **installer.rs**: 安装 = boot 模块 (initrd) → FJFS
+        /system/fujo-kernel.bin + bootcount 文件 (读回+1);
+      - **接口**: 0x8701 inst_install() / 0x8702 inst_status(ptr) →
+        (installed, kernel_size, volume_ok, boot_count);
+      - **两阶段验证** (4MiB raw 盘): 阶段1 `inst=1 ksz=6424
+        vol=1 boot=1` → 阶段2 同盘重启 `boot=2` (盘上读回递增 =
+        安装持久) → **M98 RESULT: PASS**; 文档: docs/47-install.md
 - [ ] **M99** 签名/更新机制
 - [ ] **M100** 发布:官网/文档/演示/公告
 

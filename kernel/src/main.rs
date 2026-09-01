@@ -45,6 +45,7 @@ mod irq;
 mod icon;
 mod ime;
 mod infer;
+mod installer;
 mod kbd;
 mod kobj;
 mod ld;

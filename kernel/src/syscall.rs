@@ -339,6 +339,9 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         // ---- M97: 真机 hw 适配面 ----
         0x8601 => crate::hw::fujo_hw_disp(a0),
         0x8602 => crate::hw::fujo_hw_storage(a0),
+        // ---- M98: live 镜像 + 安装器 ----
+        0x8701 => crate::installer::fujo_inst_install(),
+        0x8702 => crate::installer::fujo_inst_status(a0),
         // read(fd, buf, len) — M15 VFS
         0 => crate::vfs::fujo_read(a0, a1, a2),
         // write(fd, buf, len)
@@ -2166,6 +2169,11 @@ pub fn boot_module_info(mbi: u32) -> Option<(u64, u64)> {
     unsafe {
         find_module(mbi).map(|(s, l, _)| (s as u64, l as u64))
     }
+}
+
+/// M98: 引导期快照值 (安装器使用; 0 = 无模块)。
+pub fn boot_module_vals() -> (u64, u64) {
+    unsafe { (MOD_SNAP.0 as u64, MOD_SNAP.1 as u64) }
 }
 
 // 模块快照: 引导期记录一次 (enter 阶段二次解析 mbi 偶发不可靠 —— 快照绕过)
