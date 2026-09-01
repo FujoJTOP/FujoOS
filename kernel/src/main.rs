@@ -56,6 +56,7 @@ mod perf;
 mod save;
 mod sched;
 mod serial;
+mod sessions;
 mod shader;
 mod shell;
 mod smp;

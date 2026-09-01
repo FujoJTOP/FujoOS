@@ -812,7 +812,16 @@
         3 次 100tokens ok → perm_need 8 deny → 900tokens 超预算
         deny → `calls=3 tokens=300 aud=5` → **M87 RESULT: PASS**;
         文档: docs/36-modelcard.md
-- [ ] **M88** agent 一等进程:会话/检查点/恢复
+- [x] **M88** agent 一等进程:会话/检查点/恢复
+      - **sessions.rs**: 会话表 4 槽 (active/gen/tokens/ck[128]);
+        检查点 128B blob 保存/恢复往返; gen 每次恢复递增;
+      - **接口**: 0x7E01 sess_create(id) / 0x7E02 sess_save(id,ptr,len)
+        / 0x7E03 sess_load(id,ptr) → len / 0x7E04 sess_info(ptr) →
+        (active, ck_len, gen, tokens) / 0x7E05 sess_tick(id,tokens)。
+      - **m88_sess.elf 实测**: create → tick 100+50 → save A(0xAA) →
+        弄脏 → load 恢复 A → save B(0xBB) → load gen=2 →
+        `active=1 ck=128 gen=2 tok=150` → **M88 RESULT: PASS**;
+        文档: docs/37-sessions.md
 - [ ] **M89** fujoctx 升级:窗口焦点/文件变更/syscall 摘要注入
 - [ ] **M90** 上下文压缩:委托宿主大模型(fujoctx 链)
 - [ ] **M91** 权限与审计(四件套④):能力表 + 审计日志

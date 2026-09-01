@@ -304,6 +304,12 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x7D02 => crate::modelcard::fujo_mc_call(a0, a1, a2),
         0x7D03 => crate::modelcard::fujo_mc_info(a0),
         0x7D04 => crate::modelcard::fujo_mc_audit(a0, a1),
+        // ---- M88: agent 会话 ----
+        0x7E01 => crate::sessions::fujo_sess_create(a0),
+        0x7E02 => crate::sessions::fujo_sess_save(a0, a1, a2),
+        0x7E03 => crate::sessions::fujo_sess_load(a0, a1),
+        0x7E04 => crate::sessions::fujo_sess_info(a0),
+        0x7E05 => crate::sessions::fujo_sess_tick(a0, a1),
         // read(fd, buf, len) — M15 VFS
         0 => crate::vfs::fujo_read(a0, a1, a2),
         // write(fd, buf, len)
