@@ -80,6 +80,7 @@ pub fn fujo_desk_init() -> i64 {
         fill(8, font::fb_h() - TB_H + 2, 56, 36, 0xFFFFFFFFu32);
         let _ = icon::fujo_icon_draw(10, font::fb_h() as u64 - TB_H as u64 + 4, 3, 2);
         crate::serial::write_line("desk : desktop + taskbar rendered");
+        crate::graphics::present(); // 投映 backbuffer → LFB (GTK/gfx 可见)
     }
     0
 }
@@ -100,6 +101,7 @@ pub fn fujo_desk_taskbar(text: u64) -> i64 {
         let s = core::str::from_utf8(&tb[..n]).unwrap_or("");
         let color = icon::PAL[0];
         font_line(700, font::fb_h() - TB_H + 10, 2, color, s);
+        crate::graphics::present();
     }
     0
 }
@@ -274,6 +276,7 @@ fn tty_draw_window() {
                       0x000000,
                       core::str::from_utf8(&line[..]).unwrap_or(""));
         }
+        crate::graphics::present();
     }
 }
 
@@ -356,6 +359,7 @@ fn draw_desktop() {
         font_line(60, 78, 1, 0xFFFFFF, "Hermes");
         font_line(140, 78, 1, 0xFFFFFF, "Shell");
         font_line(8, font::fb_h() - TB_H + 6, 1, 0xFFFFFF, "FujoOS 1.0 desktop");
+        crate::graphics::present();
     }
 }
 

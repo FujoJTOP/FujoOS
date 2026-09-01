@@ -32,9 +32,10 @@ PML4 = 0x102000        # BLOB + 0x1000
 PDPT = 0x103000        # BLOB + 0x2000
 PD_BASE = 0x104000     # BLOB + 0x3000
 PT_BASE = 0x108000     # BLOB + 0x7000 (32 x 512 x 8B = 128 KiB)
-PDPT3 = 0x128000       # BLOB + 0x27000
-PD3 = 0x129000         # BLOB + 0x28000 (4 项 PT 指针: 0xFD000000 区, 4KiB 页)
-PT3_BASE = 0x12A000    # BLOB + 0x29000 (4 x 512 x 8B = 16KiB: 0xFD000000..0xFD800000)
+PDPT3 = 0x128000       # BLOB + 0x27000 (PML4[0].PDPT[3] -> PD3; 见 LFB 映射注释)
+PD3 = 0x129000         # BLOB + 0x28000 (PD 索引 488..491: 0xFD000000 区, 4KiB 页)
+PT3_BASE = 0x12A000    # BLOB + 0x29000 (2 x 512 x 8B = 8KiB: 0xFD000000..0xFD400000,
+                       # 1024x768x32 全帧 3MiB 够用; 0x12C000 起为 M6 Mach-O 表区)
 PDPT1 = 0x12C000       # BLOB + 0x2B000 (M6: Mach-O 用户区 vaddr 4-8GB <=> phys 8MB 起)
 PD1 = 0x12D000         # BLOB + 0x2C000
 PT1_BASE = 0x12E000    # BLOB + 0x2D000 (5 x 512 x 8B = 20KiB: 8MB 区)
@@ -94,13 +95,17 @@ for i in range(32):
         vaddr = i * 0x200000 + j * 0x1000
         set64(PT_BASE + 0x1000 * i + 8 * j, vaddr | 0x87)
 
-# ================= 显卡 LFB 区: 4KiB 页映射 0xFD000000..0xFD800000 =================
-# (M4: 2MiB 大页在本环境未得验证; 4KiB 页是共同可用的安全路径)
-set64(PML4 + 3 * 8, PDPT3 | 0x07)
-set64(PDPT3, PD3 | 0x07)
-for j in range(4):
-    set64(PD3 + 8 * (8 + j), (PT3_BASE + 0x1000 * j) | 0x07)  # PD 索引 8..11 -> PT3[0..3]
-for j in range(4):
+# ================= 显卡 LFB 区: 4KiB 页映射 0xFD000000..0xFD400000 =================
+# (真根因: 0xFD000000 < 4GiB ⇒ pml4i=0, pdpti=3, pdi=488 —— 在低 4GiB,
+#  不在 PML4[3]! 原版(M4)挂到 PML4[3]/PD3[8..11] 是错误地址, 导致 LFB
+#  写入永远 #PF(页不存在), GTK 显示黑屏。M108 修复: PML4[0] 的
+#  PDPT[3]->PD[488..489] (0xC0000000..0xFFFFFFFF 低 4GiB 段, 2 张 PT
+#  覆盖 4MiB, 1024x768x32 全帧 3MiB 够用)。)
+set64(PML4 + 0 * 8, PDPT | 0x07)                 # 保留原低(64MiB) PDPT[0]
+set64(PDPT + 3 * 8, PD3 | 0x07)                  # PDPT 索引 3: 低 4GiB 高段
+for j in range(2):
+    set64(PD3 + 8 * (488 + j), (PT3_BASE + 0x1000 * j) | 0x07)
+for j in range(2):
     for k in range(512):
         vaddr = 0xFD000000 + (j * 0x200000 + k * 0x1000)
         set64(PT3_BASE + 0x1000 * j + 8 * k, vaddr | 0x87)

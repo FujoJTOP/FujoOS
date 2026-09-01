@@ -165,13 +165,11 @@ pub fn init() -> bool {
         if lfb == 0 {
             return false;
         }
-        // LFB 终端投映: QEMU TCG (本机 9.2) 对 std-VGA 高阶 RAM 区
-        // (0xFD000000, mtree: vga.vram ram) 的 guest 访问无条件 #PF,
-        // 而 0xA0000 文本 VRAM 访问正常 —— 属 TCG 特定限制。
-        // 真实验证链: PCI BAR0 读出 0xFD000000 + QEMU monitor 'xp' 物理读
-        // 有效 (返回 0) + 页表四级 walk 合法; 因此本版本：
-        //   - shadow (RAM backbuffer) 为合成主路径 (已由像素回读/校验和验证)
-        //   - present() 在 LFB_BY_PRESENT 开启时投映 (真实硬件/KVM 配置)
+        // LFB 终端投映: QEMU TCG 对 std-VGA 高阶 RAM 区 (0xFD000000) 的历史
+        // #PF 记录见 M4 —— 但那是未映射场景 (无 PML4[3]); 本桩已映射
+        // 0xFD000000..0xFD800000 (4KiB 页, gen_stub32.py), QEMU 实测可写。
+        // SAVE_LFB_OK=true: present() 把 backbuffer 整帧拷到 LFB, GTK/gfx 可见。
+        // (真机/KVM 同样适用; 若未来出现 #PF 再按硬件探测回退。)
         FB = Some(Fb {
             addr: lfb as *mut u32,
             width: W,
@@ -179,7 +177,7 @@ pub fn init() -> bool {
             pitch: W * 4,
             back: 0xC00000 as *mut u32,
         });
-        SAVE_LFB_OK = false; // 见上方说明; 后续版本由硬件探测表驱动
+        SAVE_LFB_OK = true;
         fill_rect(0, 0, W, H, 0x000000);
     }
     true
