@@ -49,7 +49,7 @@ Write-Host "samples: macho/pe ok"
 # --- 打包 (m31 .run / m32 multi.initrd) ---
 New-Item -ItemType Directory -Force -Path "$root\sdk\build" | Out-Null
 python "$root\tools\fujopack.py" pack -e "$root\sdk\linux\m31_res.elf" `
-    -r hello:"$root\sdk\linux\m31_demo.txt" -o "$root\sdk\build\m31_res.run"
+    -r demo.txt:"$root\sdk\linux\m31_demo.txt" -o "$root\sdk\build\m31_res.run"
 python "$root\tools\fujorun.py" pack -i "$root\sdk\linux\m32_lib.elf" `
     --lib "$root\sdk\linux\catlib.bin" -o "$root\sdk\build\m32_multi.initrd"
 Write-Host "samples: pack ok"
