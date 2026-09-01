@@ -45,6 +45,17 @@ fn wait_drq() -> bool {
     false
 }
 
+/// M99: 写后等待盘就绪 (短 spin; 实测 QEMU IDE 写入刷新延迟)。
+pub fn wait_idle() -> bool {
+    for _ in 0..100_000 {
+        let st = unsafe { crate::serial::inb(ATA_STATUS) };
+        if st & ST_BSY == 0 {
+            return true;
+        }
+    }
+    false
+}
+
 /// 探测: IDENTIFY (0xEC); 成功置 ATA_PRESENT。
 pub fn init() {
     unsafe {
@@ -164,9 +175,12 @@ pub fn write_sectors(lba: u32, count: u32, buf: *const u8) -> bool {
                 outw(*src.add(i));
             }
             // 等待写完成 (PIO 写后需要一点时间)
-            for _ in 0..1000 {
+            for _ in 0..50_000 {
                 if crate::serial::inb(ATA_STATUS) & ST_BSY == 0 {
-                    break;
+                    // DRQ 也应回落 (数据已被收下)
+                    if crate::serial::inb(ATA_STATUS) & ST_DRQ == 0 {
+                        break;
+                    }
                 }
             }
         }

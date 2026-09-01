@@ -71,6 +71,7 @@ mod syscall;
 mod term;
 mod timer;
 mod utest;
+mod upd;
 mod vfs;
 mod vga;
 

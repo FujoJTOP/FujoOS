@@ -922,7 +922,19 @@
       - **两阶段验证** (4MiB raw 盘): 阶段1 `inst=1 ksz=6424
         vol=1 boot=1` → 阶段2 同盘重启 `boot=2` (盘上读回递增 =
         安装持久) → **M98 RESULT: PASS**; 文档: docs/47-install.md
-- [ ] **M99** 签名/更新机制
+- [x] **M99** 签名/更新机制
+      - **upd.rs**: FNV-1a 64 签名 (与 fujopack fnv1a 同族); 更新流:
+        写前 hash 校验 → FJFS 写 fujo-kernel.bin → rdtsc 写后握手 →
+        读回 hash 验证 (mismatch → -EINVAL + pending);
+      - **接口**: 0x8801 upd_check(ptr,cap) → hash /
+        0x8802 upd_apply(ptr,len,expected) → 0 | -22 | -30 | -5 /
+        0x8803 upd_status(ptr) → (hash, pending, upd_count);
+      - **m99_upd.elf 实测**: `applied update #1 (hash verified)` +
+        篡改 1 字节 → `refused -22` → `ok=0 tamper=-22 cnt=1` →
+        **M99 RESULT: PASS**;
+      - **FJFS/ATA 修复**: write_sectors 写后等待 1000→50000 循环 +
+        DRQ 回落检查 (PIO 连续写第二扇区会得 0 — 待写未完成即发次
+        命令; 实测盘 LBA5 独零定位); 文档: docs/48-update.md
 - [ ] **M100** 发布:官网/文档/演示/公告
 
 ## 我的取舍意见(如资源受限)
