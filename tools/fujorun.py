@@ -47,6 +47,7 @@ def main():
     p.add_argument("-i", "--input", required=True, help="主模块 (可执行 .run/.elf/.exe/.macho)")
     p.add_argument("--lib", action="append", default=[], help="附加库/资源模块 file")
     p.add_argument("-o", "--out", required=True)
+    p.add_argument("--name", default="main", help="主模块名 (节表 name)")
     p2 = sub.add_parser("run")
     p2.add_argument("-k", "--kernel", required=True)
     p2.add_argument("-i", "--input", required=True)
@@ -54,6 +55,9 @@ def main():
     p2.add_argument("--mem", default="256M")
     p2.add_argument("--log", default=None)
     p2.add_argument("--keys", default=None, help="启动后注入的键盘序列 (空格分隔)")
+    p2.add_argument("--smp", type=int, default=1, help="QEMU -smp N")
+    p2.add_argument("--timeout", type=int, default=0, help="运行秒数 (0=等退出/kill)")
+    p2.add_argument("--bootsleep", type=float, default=8.0, help="键盘注入前 boot 秒数")
     a = ap.parse_args()
 
     with open(a.input, "rb") as f:
@@ -64,7 +68,7 @@ def main():
             libs.append((os.path.basename(pth), f.read()))
 
     if a.cmd == "pack":
-        img = pack([("main", main_blob)] + libs)
+        img = pack([(a.name, main_blob)] + libs)
         with open(a.out, "wb") as f:
             f.write(img)
         print(f"fujorun: wrote {a.out} ({len(img)} bytes, {1 + len(libs)} modules)")
@@ -78,19 +82,19 @@ def main():
             f.write(img)
         log_path = a.log or os.path.join(tmpd, "qemu.log")
         cmd = [
-            qemu_path(), "-m", a.mem, "-kernel", a.kernel,
+            qemu_path(), "-m", a.mem, "-smp", str(a.smp), "-kernel", a.kernel,
             "-initrd", img_path,
             "-serial", f"file:{log_path}",
             "-serial", "tcp:127.0.0.1:4001,server=on,wait=off",
             "-monitor", "telnet:127.0.0.1:4568,server,nowait",
             "-display", "none", "-no-reboot",
         ]
-        print("fujorun: qemu " + " ".join(cmd[2:5]) + " log=" + log_path)
+        print("fujorun: qemu " + " ".join(cmd[2:6]) + " log=" + log_path)
         if a.keys:
             import socket
             proc = subprocess.Popen(cmd)
             import time
-            time.sleep(8)
+            time.sleep(a.bootsleep)
             try:
                 s = socket.create_connection(("127.0.0.1", 4568), timeout=3)
                 f = s.makefile("w")
@@ -101,7 +105,13 @@ def main():
                 s.close()
             except OSError:
                 pass
-            proc.wait()
+            if a.timeout > 0:
+                try:
+                    proc.wait(timeout=a.timeout)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+            else:
+                proc.wait()
             print(f"fujorun: exit={proc.returncode} log=\n{open(log_path, errors='replace').read()[-3000:]}")
         return 0
     return 1

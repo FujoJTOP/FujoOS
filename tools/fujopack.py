@@ -25,7 +25,7 @@ def fnv1a(data: bytes) -> int:
     return h
 
 
-def pack(exec_bytes: bytes, resources, manifest: str | None, out: str):
+def pack(exec_bytes: bytes, resources, manifest: str | None, out: str, name: str = "fujo-program", type_: str = "app", verbose: bool = False):
     sections = []
     sections.append((4, exec_bytes))  # EMBED
     man = None
@@ -33,14 +33,16 @@ def pack(exec_bytes: bytes, resources, manifest: str | None, out: str):
         man = manifest.encode()
     else:
         man = json.dumps({
-            "name": "fujo-program",
-            "type": "app",
+            "name": name,
+            "type": type_,
             "resources": [{"name": n} for (n, _) in resources],
             "perms": ["runres:read"],
         }).encode()
     sections.append((1, man))
-    for (name, data) in resources:
+    for (name_, data) in resources:
         sections.append((5, data))
+    if verbose:
+        print(f"fujopack: sections={len(sections)} exec={len(exec_bytes)}b resources={len(resources)}")
 
     count = len(sections)
     hdr_len = 64 + 32 * count
@@ -106,6 +108,9 @@ def main():
     p.add_argument("-m", "--manifest", default=None)
     p.add_argument("-r", "--resource", action="append", default=[])
     p.add_argument("-o", "--out", required=True)
+    p.add_argument("--name", default="fujo-program", help="manifest 名")
+    p.add_argument("--type", default="app", help="manifest 类型 (app/game/tool)")
+    p.add_argument("-v", "--verbose", action="store_true", help="节表概要")
     p2 = sub.add_parser("info")
     p2.add_argument("file")
     p3 = sub.add_parser("check")
@@ -126,7 +131,7 @@ def main():
             name, path = r.split(":", 1)
             with open(path, "rb") as f:
                 res.append((name[:15], f.read()))
-        pack(ex, res, man, a.out)
+        pack(ex, res, man, a.out, a.name, a.type, a.verbose)
         return 0
     if a.cmd == "info":
         return info(a.file, verify=False)

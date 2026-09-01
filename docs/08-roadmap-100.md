@@ -729,7 +729,16 @@
         llvm/qemu + build/flatten + `python tools/ci.py` + artifact。
       - **本地实测**: `fujoci: 25/25 PASS` (run ~10 分钟);
         文档: docs/27-ci.md
-- [ ] **M79** fujopack/fujorun 命令全参数化 + 手册
+- [x] **M79** fujopack/fujorun 命令全参数化 + 手册
+      - **fujopack pack**: `--name` (manifest name) / `--type`
+        (app|game|tool) / `-v` 节表概要; info/check 保留。
+      - **fujorun pack**: `--name` 主模块节表名; **run**: `--smp N`
+        / `--timeout S` (超时 kill) / `--bootsleep S` / `--mem` /
+        `--keys` / `--log` 全参数。
+      - **实测**: `pack --name demo-app --type game -v` → info/check
+        节表+fnv 校验 ok; fujorun pack --name main (2 modules) → 输出;
+        **docs/28-toolchain-manual.md** (全部链工具: flatten/
+        fujoregress/fujoci/qemu-kvm + 端到端示范)。
 - [ ] **M80** SDK 文档闭环(示例/模板/教程)
 - [ ] **M81** 交叉编译工具链一键脚本(win/mac/linux 三源)
 - [ ] **M82** 单元测试框架(kernel 内断言自检)
