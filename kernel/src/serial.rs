@@ -75,9 +75,12 @@ pub fn uart2_init() {
         outb(SER2 + 3, 0x03); // 8N1
         outb(SER2 + 2, 0xC7); // FIFO 启用/清空
         outb(SER2 + 4, 0x0B); // DTR|RTS
-        // 排空待处理字符 (防数据提前触发中断)
-        while inb(SER2 + 5) & 1 != 0 {
+        // 排空待处理字符 (防数据提前触发中断); 上限 16 —— 未配置
+        // COM2 时 LSR=0xFF (bit0=1) 会死循环 (M107 实测无 -serial tcp)
+        let mut guard = 0u32;
+        while (inb(SER2 + 5) & 1 != 0) && guard < 16 {
             let _ = inb(SER2 + 0);
+            guard += 1;
         }
         outb(SER2 + 1, 0x01); // IER = 仅 RX 中断
         // 0xF8: IRQ0(PIT)+IRQ1(键盘) 开放, IRQ3 关闭 —— M10 v0 采用纯轮询 RX

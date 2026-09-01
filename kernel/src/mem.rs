@@ -195,6 +195,37 @@ struct PtAligned([u64; 512]);
 static mut PT_HEAP0: PtAligned = PtAligned([0; 512]); // 0x800000..0xA00000
 static mut PT_HEAP1: PtAligned = PtAligned([0; 512]); // 0xA00000..0xC00000
 
+/// M108: 高地址映射 PT (0x1000000..0x1080000, 恒等 P=1 U=1) —
+/// 窗口程序 (user-high.ld) 装载区, 与桌面代理 0x400000 共存。
+#[repr(C, align(4096))]
+pub static mut PT_HIGH: PtAligned = PtAligned([0; 512]);
+static mut HIGH_MAPPED: bool = false;
+
+/// M108: 一次性映射高址 2MiB (物理恒等, U=1)。
+pub fn map_high_user() {
+    unsafe {
+        if HIGH_MAPPED {
+            return;
+        }
+        let pm4 = read_cr3() as *mut u64;
+        let pdpt = (pm4.read() & 0x000F_FFFF_FFFF_F000) as *mut u64;
+        let pd = (pdpt.read() & 0x000F_FFFF_FFFF_F000) as *mut u64;
+        let old = pd.add(8).read(); // 0x1000000>>21 = 8
+        pd.add(8).write(core::ptr::addr_of_mut!(PT_HIGH) as u64 | 0x7);
+        for i in 0..512usize {
+            core::ptr::write_volatile(
+                core::ptr::addr_of_mut!(PT_HIGH.0[i]),
+                (0x100_0000u64 + (i as u64) * 0x1000) | 0x7,
+            );
+        }
+        write_cr3_flush();
+        HIGH_MAPPED = true;
+        serial::write_str("m108 : high user map PD[8] (old ");
+        print_hex(old & 0xFFF);
+        serial::write_line(") - 2MiB U=1 armed");
+    }
+}
+
 unsafe fn write_cr3_flush() {
     let cr3 = read_cr3();
     core::arch::asm!(
@@ -225,8 +256,7 @@ pub fn demand_zero_init() {
 }
 
 /// 分配并清零一页物理帧 (返回物理地址; 恒等映射内核可写)。
-fn frame_alloc_zero() -> Option<u64> {
-    unsafe {
+fn frame_alloc_zero() -> Option<u64> {    unsafe {
         for i in 0..FRAME_PAGES {
             let byte = i / 8;
             let bit = i % 8;

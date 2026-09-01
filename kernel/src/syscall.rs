@@ -599,6 +599,9 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5B03 => crate::desk::fujo_desk_start(a0, a1),
         0x5B04 => crate::desk::fujo_desk_menu(a0),
         0x5B05 => crate::desk::fujo_desk_pixel(a0, a1),
+        // ---- M108: 桌面代理原语 ----
+        0x5B10 => crate::desk::desk_launch(a0),
+        0x5B11 => crate::desk::desk_state(a0),
         // ---- M45: 终端窗口控件 ----
         0x5A01 => crate::term::fujo_term_put(a0, a1, a2, a3),
         0x5A02 => crate::term::fujo_term_draw(a0, a1, a2),
@@ -765,6 +768,9 @@ pub fn debug_hex(v: u64) {
 }
 
 fn user_write(fd: u64, ptr: u64, len: u64) -> i64 {    // M15: fd>=3 先走 VFS (内存盘追加); /dev/tty 与 fd<3 走串口
+    if fd == 1 && len > 0 {
+        crate::desk::tty_feed(ptr, len); // M107: 桌面窗口 TTY 捕获 (串口照走)
+    }
     if fd >= 3 {
         if let Some(n) = crate::vfs::file_write(fd, ptr, len) {
             return n;

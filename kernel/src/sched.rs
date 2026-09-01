@@ -325,6 +325,75 @@ pub fn spawn_tasks(entry: u64) {
     }
 }
 
+/// M107: 桌面窗口程序任务 (独立内核栈 0x380000, 用户栈 0x600000)。
+/// 返回任务索引 (0 合法); 表满返回 usize::MAX。
+pub fn spawn_single(entry: u64) -> usize {
+    unsafe {
+        if TASK_COUNT == 0 {
+            spawn(0x380000, 0x5FFFF8, entry);
+            CUR = 0;
+            gdt::set_rsp0(0x380000);
+            serial::write_line("sched: desktop window task spawned");
+            return 0;
+        }
+        for i in 0..MAX_TASKS {
+            if TASKS[i].state == TASK_DEAD {
+                spawn_at(i, 0x380000, 0x5FFFF8, entry);
+                serial::write_str("sched: window task revived slot ");
+                print_dec(i as u64);
+                serial::write_line("");
+                return i;
+            }
+        }
+        if TASK_COUNT >= MAX_TASKS {
+            return usize::MAX;
+        }
+        let idx = TASK_COUNT;
+        spawn_at(idx, 0x380000, 0x5FFFF8, entry);
+        serial::write_str("sched: window task slot ");
+        print_dec(idx as u64);
+        serial::write_line("");
+        idx
+    }
+}
+
+fn spawn_at(idx: usize, kstack_top: u64, user_stack: u64, entry: u64) {
+    unsafe {
+        let frame = (kstack_top - 0x40) as *mut u64;
+        frame.add(0).write(entry);
+        frame.add(1).write(0x23);
+        frame.add(2).write(0x202);
+        frame.add(3).write(user_stack);
+        frame.add(4).write(0x1B);
+        for k in 0..9usize {
+            frame.sub(9 - k).write(0);
+        }
+        TASKS[idx] = Task {
+            saved_rsp: frame as u64 - 72,
+            kstack_top,
+            state: TASK_RUNNABLE,
+            sig_handler: 0,
+            sig_pending: false,
+            sig_active: false,
+        };
+        if idx >= TASK_COUNT {
+            TASK_COUNT = idx + 1;
+        }
+    }
+}
+
+/// M107: 终止窗口任务 (由桌面 kill_program 调)。
+pub fn kill_task(id: usize) {
+    unsafe {
+        if id < MAX_TASKS && TASKS[id].state == TASK_RUNNABLE {
+            TASKS[id].state = TASK_DEAD;
+            serial::write_str("sched: window task ");
+            print_dec(id as u64);
+            serial::write_line(" killed");
+        }
+    }
+}
+
 /// PIT tick 钩子 (asm 桩以 (vec=0, regs=帧) 调用; 帧布局见 interruptions.rs 桩注释)。
 /// 返回 1 = 已切换 (桩将 rsp 换成 sched_next_rsp), 0 = 继续当前任务。
 #[no_mangle]

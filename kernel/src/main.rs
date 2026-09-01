@@ -233,9 +233,11 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     // ---- M4: fujocom 显示栈 (Bochs VBE 1024x768x32 LFB + 双缓冲合成器) ----
     // ---- M5: 输入系统 (PS/2 键盘 IRQ1; 服务就绪, 演示延后到图形层之后) ----
     kbd::init();
+    out_line("dbg  : after kbd init");
     // ---- M10: COM2 模型链路 (IRQ3, fujonn engine=qwen) ----
     serial::uart2_init();
     out_line("m10  : com2 model-link up (irq3 @115200) - engine=qwen waits host server");
+    out_line("dbg  : before mouse init");
 
     // ---- M36: PS/2 鼠标 (IRQ12, 命中测试/焦点) ----
     mouse::init();
@@ -287,8 +289,8 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     }
     serial::write_line("");
 
-    // ---- M10.1: os shell (命令: os run hermes) ----
-    crate::shell::shell(mbi); // > ! (shell 内 enter_user_test 接管)
+    // ---- M107: 桌面会话 (boot 直接进图形桌面; 双击图标开窗口程序) ----
+    crate::desk::desktop_main(mbi); // > ! (无命令注入依赖)
 
     // ---- 不可达: M2/M3/M6 用户态测试 (shell 之前的直启路径已废止) ----
 }
