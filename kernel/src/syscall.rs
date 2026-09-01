@@ -72,6 +72,8 @@ pub static mut TRACE_BG: u64 = 0;
 pub static mut TRACE_TOTAL: u64 = 0;
 pub static mut TRACE_FILTER: u64 = 0; // 0=全记录, 否则仅该 nr
 pub static mut TRACE_DROPPED: u64 = 0;
+/// M112: syscall 流采样计数 (每 1000 次一条 ev_syscall)。
+static mut SYS_EV_COUNT: u64 = 0;
 /// M11: 用户 FPU/SIMD 状态 (syscall 进出保存恢复; 16 对齐 —— fxsave 要求)。
 #[repr(C, align(16))]
 pub struct FpuSave {
@@ -244,6 +246,14 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
     // ---- M68: 性能计数器 syscall ----
     crate::perf::bump(1);
 
+    // ---- M112: syscall 流采样 (每 1000 次一条 ev_syscall; 事件环不刷屏) ----
+    unsafe {
+        SYS_EV_COUNT += 1;
+        if SYS_EV_COUNT % 1000 == 0 {
+            crate::ctx::sys_note(crate::sched::current_task() as u64, SYS_EV_COUNT);
+        }
+    }
+
     let res = match nr {
         // fujo_trace_enable(on) — M33
         0x5301 => {
@@ -314,11 +324,19 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x7F01 => crate::ctx::fujo_ctx_snap(a0, a1),
         // ---- M90: 上下文压缩 ----
         0x8001 => crate::ctx::fujo_ctx_compress(a0, a1, a2, a3, a4),
+        // ---- M112: AI 感知 (fujoctx v2 结构态 + 事件环) ----
+        0x8002 => crate::ctx::fujo_ctx_subscribe(a0),
+        0x8003 => crate::ctx::fujo_ctx_events(a0, a1),
+        0x8004 => crate::ctx::fujo_ctx_inject(a0, a1, a2),
+        0x8005 => crate::ctx::fujo_ctx_struct(a0, a1),
         // ---- M91: 权限与审计 ----
         0x8101 => crate::capability::fujo_cap_grant(a0, a1),
         0x8102 => crate::capability::fujo_cap_check(a0, a1),
         0x8103 => crate::capability::fujo_aud_log(a0, a1),
         0x8104 => crate::capability::fujo_aud_read(a0, a1),
+        // ---- M112: AI 动作 (cap_exec 经 syscall 现场; LAUNCH 需寄存器) ----
+        0x8105 => cap_exec(args),
+        0x8106 => crate::capability::fujo_cfg_get(a0),
         // ---- M92: 意图路由增强 ----
         0x8201 => crate::ai::fujo_route_set(a0),
         0x8202 => crate::ai::fujo_route_classify(a0, a1),
@@ -327,6 +345,8 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x8301 => crate::infer::fujo_infer_run(a0, a1, a2, a3),
         0x8302 => crate::infer::fujo_infer_slot(a0),
         0x8303 => crate::infer::fujo_infer_set(a0),
+        // ---- M112: 异常哨兵 (A 首刀) ----
+        0x8304 => crate::ai::fujo_anom_run(a0, a1, a2, a3),
         // ---- M94: 模型注册表 + fupm ----
         0x8401 => crate::modelreg::fujo_fupm_install(a0, a1, a2),
         0x8402 => crate::modelreg::fujo_reg_list(a0),
@@ -1715,6 +1735,30 @@ fn shim_qsort(base: u64, n: u64, sz: u64, cmp_fn: u64) -> i64 {
 /// 帧布局 (fujo_syscall_entry push 序, 栈顶->下):
 ///   [0]=rdi [1]=rsi [2]=rdx [3]=r10 [4]=r8 [5]=r9 [6]=rcx [7]=r11
 /// 用户返回 RIP = rcx (syscall 指令后的地址, sysretq 用); RSP = user_rsp_tmp。
+/// M112: 0x8105 cap_exec(act, arg0, arg1) —— LAUNCH 需 syscall 现场 (登记父任务),
+/// 其余动作由 capability 执行; 均经 exec 槽授权 + 审计。
+fn cap_exec(args: *const u64) -> i64 {
+    unsafe {
+        let act = args.read();
+        let a0 = args.add(1).read();
+        let a1 = args.add(2).read();
+        if !crate::capability::exec_authorized(act) {
+            crate::capability::aud_exec(act, 1);
+            serial::write_str("cap  : deny exec #");
+            print_dec(act);
+            serial::write_line("");
+            return -1;
+        }
+        let rc = if act == crate::capability::ACT_LAUNCH {
+            crate::sched::exec_spawn(a0)
+        } else {
+            crate::capability::fujo_cap_exec(act, a0, a1)
+        };
+        crate::capability::aud_exec(act, if rc == 0 { 0 } else { 1 });
+        rc
+    }
+}
+
 fn fork_self(args: *const u64) -> i64 {
     unsafe {
         let rip = args.add(6).read(); // rcx = 用户返回地址

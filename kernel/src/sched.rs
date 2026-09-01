@@ -12,6 +12,7 @@ use crate::serial;
 
 pub const MAX_TASKS: usize = 8;
 pub const TASK_RUNNABLE: u8 = 1;
+pub const TASK_SUSPENDED: u8 = 2; // M112: cap_exec ISOLATE (调度跳过, 可 RESUME)
 pub const TASK_DEAD: u8 = 3;
 
 #[derive(Clone, Copy)]
@@ -49,6 +50,7 @@ pub fn terminate_current_and_next() -> bool {
             return false; // 单任务: 让调用方走原有停机诊断
         }
         TASKS[CUR].state = TASK_DEAD;
+        crate::ctx::ev_push(crate::ctx::EV_EXIT, CUR as u64, 1, 0); // M112: 崩溃退出事件
         serial::write_str("proc: task ");
         print_dec(CUR as u64);
         serial::write_line(" terminated (crash isolated) - scheduling survivors");
@@ -113,6 +115,30 @@ pub fn game_mode() -> bool {
 /// 当前任务 id (M14: 演示/进程标识)。
 pub fn current_task() -> usize {
     unsafe { CUR }
+}
+
+/// M112: 存活任务数 (state != 0)。
+pub fn task_count() -> usize {
+    unsafe {
+        let mut n = 0;
+        for t in TASKS.iter() {
+            if t.state != 0 {
+                n += 1;
+            }
+        }
+        n
+    }
+}
+
+/// M112: 任务 i 状态 (0=空槽, 1=可运行, 2=隔离, 3=死亡)。
+pub fn task_state(id: usize) -> u8 {
+    unsafe {
+        if id < MAX_TASKS {
+            TASKS[id].state
+        } else {
+            0
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -432,14 +458,98 @@ fn spawn_at(idx: usize, kstack_top: u64, user_stack: u64, entry: u64) {
 }
 
 /// M107: 终止窗口任务 (由桌面 kill_program 调)。
-pub fn kill_task(id: usize) {
+pub fn kill_task(id: usize) -> i64 {
     unsafe {
         if id < MAX_TASKS && TASKS[id].state == TASK_RUNNABLE {
             TASKS[id].state = TASK_DEAD;
+            crate::ctx::ev_push(crate::ctx::EV_EXIT, id as u64, 0, 0);
             serial::write_str("sched: window task ");
             print_dec(id as u64);
             serial::write_line(" killed");
+            0
+        } else {
+            -1 // 非可运行/越界: 未杀
         }
+    }
+}
+
+/// M112: 隔离任务 (状态=挂起; 调度跳过; RESUME 恢复)。
+pub fn task_suspend(id: usize) -> i64 {
+    unsafe {
+        if id < MAX_TASKS && TASKS[id].state == TASK_RUNNABLE && id != CUR {
+            TASKS[id].state = TASK_SUSPENDED;
+            serial::write_str("sched: task ");
+            print_dec(id as u64);
+            serial::write_line(" isolated (suspended)");
+            0
+        } else if id == CUR {
+            serial::write_line("sched: refuse isolate current task");
+            -1
+        } else {
+            -1
+        }
+    }
+}
+
+/// M112: 恢复隔离任务。
+pub fn task_resume(id: usize) -> i64 {
+    unsafe {
+        if id < MAX_TASKS && TASKS[id].state == TASK_SUSPENDED {
+            TASKS[id].state = TASK_RUNNABLE;
+            serial::write_str("sched: task ");
+            print_dec(id as u64);
+            serial::write_line(" resumed");
+            0
+        } else {
+            -1
+        }
+    }
+}
+
+/// M112: cap_exec LAUNCH —— 登记当前隐式任务(如未登记, 同 fork 父登记模式),
+/// 生成 aux 任务 (kstack 0x3C0000 / 用户栈 0x700000; 单并发槽, 忙则 -EBUSY)。
+pub fn exec_spawn(entry: u64) -> i64 {
+    const AUX_KSTACK: u64 = 0x3C0000;
+    const AUX_USTACK: u64 = 0x700000;
+    unsafe {
+        for i in 0..MAX_TASKS {
+            if TASKS[i].kstack_top == AUX_KSTACK && TASKS[i].state == TASK_RUNNABLE {
+                return -16; // -EBUSY: 单并发 aux 槽
+            }
+        }
+        if TASK_COUNT == 0 {
+            TASKS[0] = Task {
+                saved_rsp: 0,
+                kstack_top: 0x380000,
+                state: TASK_RUNNABLE,
+                sig_handler: 0,
+                sig_pending: false,
+                sig_active: false,
+            };
+            TASK_COUNT = 1;
+            crate::gdt::set_rsp0(0x380000);
+            serial::write_line("sched: implicit task registered as task 0 (aux spawn)");
+        }
+        let mut idx = usize::MAX;
+        for i in 0..MAX_TASKS {
+            if TASKS[i].kstack_top == AUX_KSTACK && TASKS[i].state == TASK_DEAD {
+                idx = i;
+                break;
+            }
+        }
+        if idx == usize::MAX {
+            if TASK_COUNT >= MAX_TASKS {
+                return -12; // -ENOMEM
+            }
+            idx = TASK_COUNT;
+        }
+        spawn_at(idx, AUX_KSTACK, AUX_USTACK, entry);
+        serial::write_str("sched: exec_spawn entry=");
+        print_hex(entry);
+        serial::write_str(" -> task ");
+        print_dec(idx as u64);
+        serial::write_line("");
+        idx as i64
     }
 }
 

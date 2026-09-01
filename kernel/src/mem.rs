@@ -258,6 +258,13 @@ pub fn demand_zero_init() {
         pd.add(4).write(core::ptr::addr_of_mut!(PT_HEAP0) as u64 | 0x7); // P|W|U
         pd.add(5).write(core::ptr::addr_of_mut!(PT_HEAP1) as u64 | 0x7);
         write_cr3_flush();
+        // M112: 固定 shm 页 (0xA00000 = PT_HEAP1[0], 物理恒等) ——
+        // 内核写 FJSH 帧 + 宿主 pmemsave 直读同一物理页; 不占帧分配器池
+        // (池从 16MiB 起), 0xA00000 恒等映射低区本就内建。
+        let pte = core::ptr::addr_of_mut!(PT_HEAP1).cast::<u64>();
+        core::ptr::write_volatile(pte.add(0), 0xA00000u64 | 0x7); // P|W|U
+        core::arch::asm!("invlpg [{0}]", in(reg) 0xA00000u64, options(nostack));
+        serial::write_line("m12  : shm page 0xA00000 pinned (identity, M112 shm-link)");
         serial::write_str("m12  : demand-zero heap PD[4/5] replaced (old ");
         print_hex(old0 & 0xFFF);
         serial::write_str("/");

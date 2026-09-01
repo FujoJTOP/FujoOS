@@ -25,7 +25,7 @@
 | 音频 | AC97 (0x5F01-04) · 4ch 混音器 + LPF/增益链 (0x5F05-09) |
 | 桌面 | wmsg 窗口表/64 消息队/刷新 (0x55xx) · fujokit button/textbox/list |
 | 游戏 | 游戏模式 (0x66xx) · Pong / Breakout 自研引擎 · 输入延迟基准 avg 94µs (0x6Fxx) · 性能验收 (docs/19) |
-| AI OS | 模型权重 mmap (M86) · 模型卡权限/计费/审计 (0x7Dxx) · 会话检查点 (0x7Exx) · fujoctx 摘要/上下文压缩 (0x7Fxx/0x8001) · 能力表+审计 (0x81xx) · 意图路由 (0x82xx) · 推理执行器 (0x83xx) · 注册表+fupm (0x84xx) |
+| AI OS | 模型权重 mmap (M86) · 模型卡权限/计费/审计 (0x7Dxx) · 会话检查点 (0x7Exx) · fujoctx 摘要/上下文压缩 (0x7Fxx/0x8001) · 能力表+审计 (0x81xx) · 意图路由 (0x82xx) · 推理执行器 (0x83xx) · 注册表+fupm (0x84xx) · AI For Next (M112+): shm-link 模型通道 · 事件环+结构态 (0x8002-05) · cap_exec 动作 (0x8105) · 异常哨兵 (0x8304) |
 | 工具链 | 系统内汇编器 (0x70xx) · 链接器 (0x71xx) · fujocc 编译壳 C→ELF64 全链 (0x75xx) · 编辑器 (0x74xx) · 调试器 TF 单步/int3 断点 (0x76xx) · trace (0x77xx) · 性能窗口 (0x78xx) · 单测 (0x79xx) · 泄漏 (0x7Axx) · minidump (0x7Bxx) |
 | 交付 | fujopack / fujorun · fujoci 38 用例 · onebuild 3/3 · live 镜像+安装器 (0x87xx) · 签名/更新 (0x88xx) |
 

@@ -126,8 +126,22 @@ pub fn fujo_wm_create(class_id: u32, x: u32, y: u32, w: u32, h: u32) -> i64 {
         WINS[slot] = ([class_id, x, y, w, h, 0], wid);
         refresh_rects(); // M37: 全表重建 (create 单独注册会互相覆盖, 实证)
         push_msg(WM_CREATE, wid, x, y, w);
+        crate::ctx::ev_push(crate::ctx::EV_WINDOW, crate::sched::current_task() as u64, wid as u64, 1); // M112 感知
         serial::write_line("wm   : window created");
         wid as i64
+    }
+}
+
+/// M112: 当前窗口数 (ctx 结构态)。
+pub fn wm_count() -> usize {
+    unsafe {
+        let mut n = 0;
+        for w in WINS.iter() {
+            if w.1 != 0xFFFF_FFFF {
+                n += 1;
+            }
+        }
+        n
     }
 }
 
@@ -224,6 +238,7 @@ pub fn fujo_wm_remove(win: u32) -> i64 {
             WINS[i] = ([0; 6], 0xFFFF_FFFF);
             push_msg(WM_DESTROY, win, 0, 0, 0);
             refresh_rects(); // 重建鼠标矩形表
+            crate::ctx::ev_push(crate::ctx::EV_WINDOW, crate::sched::current_task() as u64, win as u64, 0); // M112 感知 (0=close)
             return 0;
         }
         -2

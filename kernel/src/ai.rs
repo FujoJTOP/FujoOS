@@ -88,7 +88,22 @@ fn dec_digits(mut v: u64, buf: &mut [u8]) -> usize {
 
 /// 发送 FJAI:REQ 帧并等待 FJAI:RSP 帧; 返回 (intent, tag[24], elapsed_ticks)。
 /// 字节丢失时重发 (最多 3 次) —— 16550 突发丢字节在 TCG 下有实测 (丢 29/36 字节)。
+///
+/// M112: 首选 shm-link (①) —— 请求走共享内存 (宿主 pmemsave 直读),
+/// 触发线 + 响应当仍走 COM2 (QEMU monitor 无写入命令, 见 docs/53)。
 fn qwen_classify(text: &[u8]) -> Option<(i64, [u8; 24], u64)> {
+    let seq = shm_send_req(SHM_KIND_CLASSIFY, text);
+    if let Some((line, ln, el)) = wait_rsp(seq) {
+        if let Some((intent, tag)) = parse_rsp(&line[..ln], seq) {
+            return Some((intent, tag, el));
+        }
+        serial::write_line("link : shm rsp seq/intent bad, com2 downgrade...");
+    }
+    qwen_classify_ser(text)
+}
+
+/// COM2 降级路径 (原 FJAI:REQ 行协议, 3 次重发)。
+fn qwen_classify_ser(text: &[u8]) -> Option<(i64, [u8; 24], u64)> {
     const ATTEMPTS: u32 = 3;
     for _attempt in 1..=ATTEMPTS {
         let mut frame = [0u8; 192];
@@ -127,44 +142,165 @@ fn qwen_classify(text: &[u8]) -> Option<(i64, [u8; 24], u64)> {
 
         serial::ser2_tx_line(&frame[..n]);
 
-        // 等待回帧: 显式开放中断 (syscall 入口 SFMASK 关 IF, IRQ3 需重新开放),
-        // 轮询收取, 无 hlt (TCG 安全)。
-        unsafe {
-            core::arch::asm!("sti", options(nomem, nostack, preserves_flags));
-        }
-        let t0 = interrupts::ticks();
-        let mut line = [0u8; 96];
-        let mut ln = 0usize;
-        let mut spin: u64 = 0;
-        loop {
-            if let Some(b) = serial::ser2_poll() {
-                if b == b'\n' {
-                    break;
-                }
-                if ln < line.len() - 2 {
-                    line[ln] = b;
-                    ln += 1;
-                }
-            }
-            // 双保险超时: PIT tick 或自旋计数 (PIT 在任何掩码/TCG 异常下都能退出)
-            spin += 1;
-            if spin > 120_000_000
-                || interrupts::ticks().wrapping_sub(t0) > LINK_TIMEOUT_TICKS
-            {
-                break;
-            }
-        }
-        serial::write_str("link : got [");
-        serial::write_str(core::str::from_utf8(&line[..ln]).unwrap_or("?"));
-        serial::write_line("]");
-
-        // 解析 "FJAI:RSP <seq> INTENT=k TAG=..."
-        if let Some((intent, tag)) = parse_rsp(&line[..ln], seq) {
-            let elapsed = interrupts::ticks().wrapping_sub(t0);
-            return Some((intent, tag, elapsed));
+        if let Some((intent, tag, el)) = wait_rsp_ser(seq) {
+            return Some((intent, tag, el));
         }
         // 失败: 重发
         serial::write_line("link : rsp bad (seq/intent), resend...");
+    }
+    None
+}
+
+// ---------------------------------------------------------------------------
+// M112 · ① shm-link: 模型通道走 0xA00000 共享页 (宿主 pmemsave 直读)
+// ---------------------------------------------------------------------------
+
+const SHM_MAGIC: u32 = 0x4853_4A46; // LE 字节 "FJSH"
+/// 帧种类。
+const SHM_KIND_CLASSIFY: u32 = 1;
+const SHM_KIND_ANOMALY: u32 = 2;
+const SHM_KIND_PLAN: u32 = 3; // M113 计划-执行器
+const SHM_KIND_IO: u32 = 4; // M113 I/O 预测器
+const SHM_KIND_NLC: u32 = 5; // M114 自然语言配置
+const SHM_KIND_ENV: u32 = 6; // M114 环境侦察
+/// 帧布局 (0xA00000 起): magic/ver/seq/kind/len, payload@0x18 (≤1KB), ctx@0x800。
+const SHM_OFF_PAYLOAD: usize = 0x018;
+const SHM_PAYLOAD_MAX: usize = 0x400;
+const SHM_OFF_CTX: usize = 0x800;
+const SHM_CTX_MAX: usize = 0x600;
+
+/// 写请求帧 (payload + 当前 fujoctx 结构态文本)。
+fn shm_write_req(seq: u64, kind: u32, payload: &[u8]) {
+    unsafe {
+        let b = crate::ipc::SHM_BASE as *mut u8;
+        (b.add(0x000) as *mut u32).write_volatile(SHM_MAGIC);
+        (b.add(0x004) as *mut u32).write_volatile(1); // 帧协议版本
+        (b.add(0x008) as *mut u64).write_volatile(seq);
+        (b.add(0x010) as *mut u32).write_volatile(kind);
+        let n = payload.len().min(SHM_PAYLOAD_MAX);
+        (b.add(0x014) as *mut u32).write_volatile(n as u32);
+        for i in 0..n {
+            b.add(SHM_OFF_PAYLOAD + i).write_volatile(payload[i]);
+        }
+        // 结构态上下文 (② fujoctx v2)
+        let cn = crate::ctx::ctx_build_text(b.add(SHM_OFF_CTX), SHM_CTX_MAX);
+        b.add(SHM_OFF_CTX + cn).write_volatile(0u8);
+    }
+}
+
+/// 发送请求: shm 帧 + COM2 触发线 "FJAI:SHM <seq> <kind> <len>"。
+fn shm_send_req(kind: u32, payload: &[u8]) -> u64 {
+    let seq = unsafe {
+        AI_SEQ = AI_SEQ.wrapping_add(1);
+        AI_SEQ
+    };
+    shm_write_req(seq, kind, payload);
+    let mut line = [0u8; 48];
+    let mut n = 0;
+    for &b in b"FJAI:SHM ".iter() {
+        if n < line.len() {
+            line[n] = b;
+            n += 1;
+        }
+    }
+    let mut nb = [0u8; 20];
+    let dn = dec_digits(seq, &mut nb);
+    for &b in nb[..dn].iter() {
+        if n < line.len() {
+            line[n] = b;
+            n += 1;
+        }
+    }
+    for &b in b" ".iter() {
+        if n < line.len() {
+            line[n] = b;
+            n += 1;
+        }
+    }
+    let dn2 = dec_digits(kind as u64, &mut nb);
+    for &b in nb[..dn2].iter() {
+        if n < line.len() {
+            line[n] = b;
+            n += 1;
+        }
+    }
+    for &b in b" ".iter() {
+        if n < line.len() {
+            line[n] = b;
+            n += 1;
+        }
+    }
+    let dn3 = dec_digits(payload.len() as u64, &mut nb);
+    for &b in nb[..dn3].iter() {
+        if n < line.len() {
+            line[n] = b;
+            n += 1;
+        }
+    }
+    if n < line.len() {
+        line[n] = b'\n';
+        n += 1;
+    }
+    serial::ser2_tx_line(&line[..n]);
+    seq
+}
+
+/// 等待 RSP (显式 sti 收 IRQ3, 轮询, 双保险超时); 返回 (行, 行长度, 耗时 ticks)。
+/// M112 硬化: seq 不符的行丢弃继续等 (服务端响应可能属先前请求 ——
+/// 帧/触发漂移时 RSP 会对上最新的帧, 匹配即收)。
+fn wait_rsp(seq: u64) -> Option<([u8; 96], usize, u64)> {
+    unsafe {
+        core::arch::asm!("sti", options(nomem, nostack, preserves_flags));
+    }
+    let t0 = interrupts::ticks();
+    let mut line = [0u8; 96];
+    let mut ln = 0usize;
+    let mut spin: u64 = 0;
+    loop {
+        if let Some(b) = serial::ser2_poll() {
+            if b == b'\n' {
+                if line[..ln].starts_with(b"FJAI:RSP ") && line_seq_ok(&line[..ln], seq) {
+                    serial::write_str("link : got [");
+                    serial::write_str(core::str::from_utf8(&line[..ln]).unwrap_or("?"));
+                    serial::write_line("]");
+                    return Some((line, ln, interrupts::ticks().wrapping_sub(t0)));
+                }
+                // seq 不符/坏行: 丢弃继续等 (可能属先前请求)
+                ln = 0;
+                continue;
+            }
+            if ln < line.len() - 2 {
+                line[ln] = b;
+                ln += 1;
+            }
+        }
+        spin += 1;
+        if spin > 120_000_000 || interrupts::ticks().wrapping_sub(t0) > LINK_TIMEOUT_TICKS {
+            return None;
+        }
+    }
+}
+
+/// 校验 RSP 行内 seq。
+fn line_seq_ok(line: &[u8], seq: u64) -> bool {
+    if let Some(rest) = line.strip_prefix(b"FJAI:RSP ") {
+        let mut j = 0usize;
+        let mut s = 0u64;
+        while j < rest.len() && (rest[j] as char).is_ascii_digit() {
+            s = s * 10 + (rest[j] - b'0') as u64;
+            j += 1;
+        }
+        return s == seq;
+    }
+    false
+}
+
+/// COM2 降级等待 (原逻辑核心)。
+fn wait_rsp_ser(seq: u64) -> Option<(i64, [u8; 24], u64)> {
+    if let Some((line, ln, el)) = wait_rsp(seq) {
+        if let Some((intent, tag)) = parse_rsp(&line[..ln], seq) {
+            return Some((intent, tag, el));
+        }
     }
     None
 }
@@ -362,5 +498,176 @@ pub fn fujo_route_table(ptr: u64) -> i64 {
             }
         }
     }
+    0
+}
+
+// ---------------------------------------------------------------------------
+// M112 · A 异常哨兵 (异常分类 + 自动隔离) —— AI 的判断通道
+// ---------------------------------------------------------------------------
+
+static mut ANOM_TOTAL: u64 = 0; // 历次异常判定的总数 (结构态)
+static mut ANOM_PENDING: u64 = 0; // 待确认异常 (cap_exec ACK 清零)
+
+pub fn anom_total() -> u64 {
+    unsafe { ANOM_TOTAL }
+}
+
+pub fn anom_ack() -> i64 {
+    unsafe {
+        ANOM_PENDING = 0;
+        serial::write_line("anom : acknowledged (pending cleared)");
+    }
+    0
+}
+
+/// 解析 "FJAI:RSP <seq> ... ANOM=<0|1> CONF=<0-99> TAG=..."。
+fn parse_anom_rsp(line: &[u8], seq: u64) -> Option<(u64, u64, [u8; 24])> {
+    if !line_seq_ok(line, seq) {
+        return None;
+    }
+    let mut anom = 0u64;
+    let mut conf = 0u64;
+    let mut found = false;
+    let mut tag = [0u8; 24];
+    let mut tag_n = 0usize;
+    let mut i = 0usize;
+    while i < line.len() {
+        if line[i..].starts_with(b"ANOM=") {
+            let mut j = i + 5;
+            let mut v = 0u64;
+            while j < line.len() && (line[j] as char).is_ascii_digit() {
+                v = v * 10 + (line[j] - b'0') as u64;
+                j += 1;
+            }
+            anom = v.min(1);
+            found = true;
+        }
+        if line[i..].starts_with(b"CONF=") {
+            let mut j = i + 5;
+            let mut v = 0u64;
+            while j < line.len() && (line[j] as char).is_ascii_digit() {
+                v = v * 10 + (line[j] - b'0') as u64;
+                j += 1;
+            }
+            conf = v.min(100);
+        }
+        if line[i..].starts_with(b"TAG=") {
+            let mut j = i + 4;
+            while j < line.len() && line[j] != b' ' && tag_n < 23 {
+                tag[tag_n] = line[j];
+                tag_n += 1;
+                j += 1;
+            }
+        }
+        i += 1;
+    }
+    if found {
+        Some((anom, conf, tag))
+    } else {
+        None
+    }
+}
+
+/// 规则降级 (确定性基线): 事件摘要含 rate=9x / dead / diag → 异常。
+fn rules_anom(text: &[u8]) -> (u64, u64) {
+    let s = core::str::from_utf8(text).unwrap_or("");
+    if s.contains("rate=9") || s.contains("dead") || s.contains("diag") {
+        (1, 80)
+    } else {
+        (0, 20)
+    }
+}
+
+/// 从摘要提取 pid=NN。
+fn parse_pid(text: &[u8]) -> Option<u64> {
+    let s = core::str::from_utf8(text).unwrap_or("");
+    let idx = s.find("pid=")?;
+    let rest = &s[idx + 4..];
+    let mut v = 0u64;
+    let mut saw = false;
+    for c in rest.chars() {
+        if c.is_ascii_digit() {
+            v = v * 10 + (c as u64 - '0' as u64);
+            saw = true;
+        } else {
+            break;
+        }
+    }
+    if saw {
+        Some(v)
+    } else {
+        None
+    }
+}
+
+/// 模型路径 (shm 帧 kind=2) → (anom, conf, tag)。
+fn anom_llm(text: &[u8]) -> Option<(u64, u64, [u8; 24])> {
+    let seq = shm_send_req(SHM_KIND_ANOMALY, text);
+    let (line, ln, _el) = wait_rsp(seq)?;
+    parse_anom_rsp(&line[..ln], seq)
+}
+
+/// 0x8304: 异常哨兵分类 (ptr=事件摘要文本, out=u64×3: [anom, conf, engine])。
+/// engine: 1=模型 (shm) 2=规则降级。anom=1 时: 记事件 + 按配置自动隔离。
+#[no_mangle]
+pub extern "C" fn fujo_anom_run(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 {
+    if !(0x400000..0x800000).contains(&ptr) || !(0x400000..0x800000).contains(&out) {
+        return -14; // -EFAULT
+    }
+    let len = (len as usize).min(400);
+    let src = ptr as *const u8;
+    let mut text = [0u8; 400];
+    unsafe {
+        for i in 0..len {
+            text[i] = src.add(i).read();
+        }
+    }
+    let s = &text[..len];
+
+    let (anom, conf, tag, engine) = match anom_llm(s) {
+        Some((a, c, tag)) => (a, c, tag, 1u64),
+        None => {
+            serial::write_line("anom : shm timeout -> rules fallback");
+            let (a, c) = rules_anom(s);
+            let mut t = [0u8; 24];
+            t[..7].copy_from_slice(b"fjrules");
+            (a, c, t, 2u64)
+        }
+    };
+
+    if anom == 1 {
+        unsafe {
+            ANOM_TOTAL += 1;
+            ANOM_PENDING += 1;
+        }
+        let pid = parse_pid(s).unwrap_or(0);
+        crate::ctx::ev_push(crate::ctx::EV_ANOMALY, pid, anom, conf);
+        // 自动隔离 (cfg 2 + 阈值 cfg 1); 需 exec 槽授权, 未授权仅记录
+        if crate::capability::fujo_cfg_get(2) == 1
+            && conf as i64 >= crate::capability::fujo_cfg_get(1)
+        {
+            if let Some(pid) = parse_pid(s) {
+                let _ = crate::capability::fujo_cap_exec(crate::capability::ACT_ISOLATE, pid, 0);
+            }
+        }
+    }
+
+    let o = out as *mut u64;
+    unsafe {
+        o.write(anom);
+        o.add(1).write(conf);
+        o.add(2).write(engine);
+    }
+    serial::write_str("anom : ");
+    serial::write_str(core::str::from_utf8(&text[..len.min(48)]).unwrap_or(""));
+    serial::write_str(" -> ");
+    serial::write_str(if anom == 1 { "ANOMALY" } else { "normal" });
+    serial::write_str(" conf=");
+    crate::syscall::debug_dec(conf);
+    serial::write_str(" engine=");
+    crate::syscall::debug_dec(engine);
+    serial::write_str(" model=");
+    serial::write_str(core::str::from_utf8(&tag[..tag.iter().position(|&b| b == 0).unwrap_or(0)]).unwrap_or("?"));
+    serial::write_line("");
     0
 }
