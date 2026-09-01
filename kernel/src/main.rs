@@ -46,6 +46,7 @@ mod ld;
 mod leak;
 mod macho_loader;
 mod mem;
+mod modelcard;
 mod mouse;
 mod wmsg;
 mod xinput;

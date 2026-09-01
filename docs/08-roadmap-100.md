@@ -800,7 +800,18 @@
       - **m86_wmap.elf 实测**: blob (i&0xFF pattern) → res
         0xB90000 → 读 4KB → `sum 一致 pfa=1 pages=1 wlen=4096` →
         **M86 RESULT: PASS**; 文档: docs/35-wmap.md
-- [ ] **M87** 模型卡:权限/计费/审计元数据(资源节)
+- [x] **M87** 模型卡:权限/计费/审计元数据(资源节)
+      - **modelcard.rs**: 卡 (120B: name[24]/version/perm_mask/
+        cost/calls/tokens/budget) + 审计环 16×32B
+        (ts, model, tokens, result);
+      - **接口**: 0x7D01 mc_register(ptr) / 0x7D02
+        mc_call(len,perm_need) → 0 | -1 (perm 越权/超预算 deny,
+        均入审计) / 0x7D03 mc_info(ptr) → (calls, tokens, budget,
+        perm) / 0x7D04 mc_audit(ptr,cap)。
+      - **m87_mcard.elf 实测**: qwen3-0.6b perm=3 budget=1000 →
+        3 次 100tokens ok → perm_need 8 deny → 900tokens 超预算
+        deny → `calls=3 tokens=300 aud=5` → **M87 RESULT: PASS**;
+        文档: docs/36-modelcard.md
 - [ ] **M88** agent 一等进程:会话/检查点/恢复
 - [ ] **M89** fujoctx 升级:窗口焦点/文件变更/syscall 摘要注入
 - [ ] **M90** 上下文压缩:委托宿主大模型(fujoctx 链)
