@@ -378,6 +378,9 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x5121 => crate::ipc::fujo_sigkill(a0, a1),
         // fujo_sigret() -> 0
         0x5122 => crate::ipc::fujo_sigret(),
+        // ---- M61: blit/缩放 ----
+        0x6801 => crate::blit::fujo_blit(a0, a1, a2, a3, a4),
+        0x6802 => crate::blit::fujo_blit_scal(a0, a1, a2, a3),
         // ---- M60: 存档沙箱 ----
         0x6701 => crate::save::fujo_save_write(a0, a1, a2),
         0x6702 => crate::save::fujo_save_read(a0, a1, a2),
