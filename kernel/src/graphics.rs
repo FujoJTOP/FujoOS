@@ -462,6 +462,32 @@ pub fn ring_hex(cx: i32, cy: i32, r: i32, color: u32, th: u32) {
 
 /// 几何版 FujoOS 徽章 (shadow; 含读回自检与校验和日志)。
 pub fn logo_hex() {
+    // ---- M108: 字体自检 (draw_char A 的像素 vs GLYPHS['A']) ----
+    {
+        use crate::font::GLYPHS;
+        // 画 'A' (0x41) 到 (10,10) scale 2 —— 字形表 7 列 (bit6..0)
+        let g = GLYPHS['A' as usize - 0x20];
+        for gy in 0..5u32 {
+            for gx in 0..7u32 {
+                if (g[gy as usize] >> (6 - gx)) & 1 != 0 {
+                    for sy in 0..2u32 {
+                        for sx in 0..2u32 {
+                            put_pixel(10 + gx * 2 + sx, 10 + gy * 2 + sy, 0x00FF00);
+                        }
+                    }
+                }
+            }
+        }
+        // 读回: A 关键像素 (表 0x7E/0x11×3/0x7E: 上横 gx=3/gy=0, 左立 gx=2/gy=2,
+        // 右立 gx=6/gy=2, 底横 gx=3/gy=4)
+        let ok = read_pixel(10 + 3 * 2, 10 + 0 * 2) == 0x00FF00 &&
+                 read_pixel(10 + 2 * 2, 10 + 2 * 2) == 0x00FF00 &&
+                 read_pixel(10 + 6 * 2, 10 + 2 * 2) == 0x00FF00 &&
+                 read_pixel(10 + 3 * 2, 10 + 4 * 2) == 0x00FF00;
+        serial::write_str("font : selftest 'A'=");
+        serial::write_str(if ok { "ok" } else { "MISMATCH" });
+        serial::write_line("");
+    }
     // ---- 深空渐变底 (顶部深蓝 -> 底部近黑) ----
     for y in 0..H {
         let t = ((y as u64) << 10) / H as u64; // 0..1024

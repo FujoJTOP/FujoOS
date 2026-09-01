@@ -45,16 +45,19 @@ fn fill(x: u32, y: u32, w: u32, h: u32, col: u32) {
 }
 
 fn font_line(x: u32, y: u32, scale: u32, color: u32, text: &str) {
-    for (i, b) in text.bytes().enumerate() {
+    // 逐字节: 利用 text.bytes() 的 UTF-8 编码字节 (ASCII 单字节; 若含
+    // 多字节 UTF-8 只能画首字节, 其余跳过 —— 与 from_utf8 解出的 str
+    // 在 font 渲染里一致, 但避免 from_utf8 对非法序列的 "?" 替换)。
+    let bytes = text.as_bytes();
+    for (i, &b) in bytes.iter().enumerate() {
         if b < 0x20 || b > 0x7E {
             continue; // M107: 控制字符/非 ASCII 跳过 (下溢 panic 实证)
         }
         let g = font::GLYPHS[(b - 0x20) as usize];
-        // 字形 5 列 (bit4..0), 与 font::draw_char 同款 —— M108 修正原 7 列
-        // 错位 (>>(6-gx) 对 5 列字形产生乱码, GTK 实测满屏 # 排).
+        // 字形 7 列 (bit6..0), 与 font::draw_char 一致 (M108: 回退 5 列误改)
         for gy in 0..5u32 {
-            for gx in 0..5u32 {
-                if (g[gy as usize] >> (4 - gx)) & 1 != 0 {
+            for gx in 0..7u32 {
+                if (g[gy as usize] >> (6 - gx)) & 1 != 0 {
                     for sy in 0..scale {
                         for sx in 0..scale {
                             setp(
