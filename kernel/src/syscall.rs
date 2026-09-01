@@ -421,6 +421,9 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         // ---- M71: 系统内汇编器 ----
         0x7001 => crate::asm::fujo_asm_assemble(a0, a1, a2, a3),
         0x7002 => crate::asm::fujo_asm_verify(a0, a1),
+        // ---- M72: 系统内链接器 ----
+        0x7101 => crate::ld::fujo_ld_link(a0),
+        0x7102 => crate::ld::fujo_ld_info(),
         // ---- M60: 存档沙箱 ----
         0x6701 => crate::save::fujo_save_write(a0, a1, a2),
         0x6702 => crate::save::fujo_save_read(a0, a1, a2),

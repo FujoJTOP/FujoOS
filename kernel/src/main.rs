@@ -38,6 +38,7 @@ mod icon;
 mod ime;
 mod kbd;
 mod kobj;
+mod ld;
 mod macho_loader;
 mod mem;
 mod mouse;
@@ -102,8 +103,8 @@ static MB_HEADER: MultibootHeader = MultibootHeader {
     // 当前覆盖到 0x260000 (镜像尾 0x251D18 + 4K 对齐余量)。
     // 约束: 必须是 0x100000 + flatten --pad 值 (QEMU multiboot 精确读
     // load_end-load_addr 字节; 超出文件大小 -> fread() failed)。
-    load_end_addr: 0x0028_0000,
-    bss_end_addr: 0x0028_0000,
+    load_end_addr: 0x002A_0000,
+    bss_end_addr: 0x002A_0000,
     entry_addr: 0x0010_1000,
 };
 

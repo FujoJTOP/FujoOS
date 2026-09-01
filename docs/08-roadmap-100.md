@@ -644,7 +644,21 @@
         b25=FF b27=C3, `inst=7` → **M71 RESULT: PASS**;
         踩坑: 操作数逗号、label-only 行注册、jcc 字节序 0F 84、
         mov imm 二次元位; 文档: docs/20-asm-tool.md
-- [ ] **M72** 系统内链接器(ELF 静态最小)
+- [x] **M72** 系统内链接器(ELF 静态最小)
+      - **ld.rs**: cfg 表驱动 (dst/text1/text2/syms/relocs 9×u64);
+        符号表 [name 32B][vma 8B]; 重定位 [place][symidx];
+        输出 ELF64 ET_EXEC + 1×PT_LOAD (RWX), 段 0x400000 起,
+        重定位写绝对地址 (base+vma)。
+      - **接口**: 0x7101 ld_link(cfg) → 输出字节数 /
+        0x7102 ld_info()。
+      - **m72_ld.elf 实测**: text1=[90 C3] text2=[CC] foo@0x100,
+        reloc@0x8003 → `total=0x8011`, 字节检查 magic/ET_EXEC/
+        e_entry=0x400000/p_flags=7/段数据/reloc=0x400100 →
+        **M72 RESULT: PASS**。
+      - **BSS/pad**: M71 asm + M72 后 BSS 尾 0x2801F0 **超 0x280000**
+        → pad 0x180000→**0x1A0000**, load_end/bss_end
+        0x002A_0000 同步 (build-kernel.ps1 一并更新);
+        文档: docs/21-ld-tool.md
 - [ ] **M73** 迷你编辑器(vi 子集)
 - [ ] **M74** fujocc 编译壳(表驱动, 跨 ABI 选项)
 - [ ] **M75** 调试器 v0:单步/断点(调试寄存器)

@@ -143,7 +143,7 @@ Write-Host "== [2/4] cargo build (x86_64-unknown-none) =="
 cargo build --release
 
 Write-Host "== [3/4] flatten + QEMU boot (COM1=日志 stdio, COM2=模型链路 tcp:4000) =="
-python ..\tools\flatten_elf.py target\x86_64-unknown-none\release\fujo-kernel fujo-kernel.bin --pad 0x180000
+python ..\tools\flatten_elf.py target\x86_64-unknown-none\release\fujo-kernel fujo-kernel.bin --pad 0x1A0000
 qemu-system-x86_64 -m 128M -kernel fujo-kernel.bin -initrd $Initrd `
     -serial stdio -serial tcp:127.0.0.1:4000,server=on,wait=off `
     -display none -monitor none -no-reboot
