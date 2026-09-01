@@ -54,8 +54,8 @@ fn font_line(x: u32, y: u32, scale: u32, color: u32, text: &str) {
             continue; // M107: 控制字符/非 ASCII 跳过 (下溢 panic 实证)
         }
         let g = font::GLYPHS[(b - 0x20) as usize];
-        // 字形 8 列 x 8 行 (bit7..0, VGA 8x8 字模; M108 升级 5x7->8x8)
-        for gy in 0..8u32 {
+        // 字形 8 列 x 11 行 (bit7..0, MiSans 位图 M110)
+        for gy in 0..11u32 {
             for gx in 0..8u32 {
                 if (g[gy as usize] >> (7 - gx)) & 1 != 0 {
                     for sy in 0..scale {

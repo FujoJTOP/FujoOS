@@ -466,9 +466,9 @@ pub fn logo_hex() {
     // ---- M108: 字体自检 (draw_char A 的像素 vs GLYPHS['A']) ----
     {
         use crate::font::GLYPHS;
-        // 画 'A' (0x41) 到 (10,10) scale 2 —— VGA 8x8 字模 bit7..0
+        // 画 'A' (0x41) 到 (10,10) scale 2 —— MiSans 位图 bit7..0 (11 行)
         let g = GLYPHS['A' as usize - 0x20];
-        for gy in 0..8u32 {
+        for gy in 0..11u32 {
             for gx in 0..8u32 {
                 if (g[gy as usize] >> (7 - gx)) & 1 != 0 {
                     for sy in 0..2u32 {
@@ -479,12 +479,12 @@ pub fn logo_hex() {
                 }
             }
         }
-        // 读回: A 关键 (0x0C,0x1E,0x33,0x33,0x3F,...): 顶 gx=4/gy=0,
-        // 左斜 gx=2/gy=3, 右斜 gx=7/gy=3, 底横 gx=4/gy=4
-        let ok = read_pixel(10 + 4 * 2, 10 + 0 * 2) == 0x00FF00 &&
-                 read_pixel(10 + 2 * 2, 10 + 3 * 2) == 0x00FF00 &&
-                 read_pixel(10 + 7 * 2, 10 + 3 * 2) == 0x00FF00 &&
-                 read_pixel(10 + 4 * 2, 10 + 4 * 2) == 0x00FF00;
+        // 读回: A 关键 (MiSans 位图): 顶 gx=4/gy=2, 左斜 gx=2/gy=6,
+        // 横梁 gx=5/gy=7, 右底 gx=7/gy=10
+        let ok = read_pixel(10 + 4 * 2, 10 + 2 * 2) == 0x00FF00 &&
+                 read_pixel(10 + 2 * 2, 10 + 6 * 2) == 0x00FF00 &&
+                 read_pixel(10 + 5 * 2, 10 + 7 * 2) == 0x00FF00 &&
+                 read_pixel(10 + 7 * 2, 10 + 10 * 2) == 0x00FF00;
         serial::write_str("font : selftest 'A'=");
         serial::write_str(if ok { "ok" } else { "MISMATCH" });
         serial::write_line("");
