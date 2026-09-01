@@ -25,6 +25,7 @@ mod fjfs;
 mod font;
 mod fujr;
 mod gamemode;
+mod game2;
 mod gl;
 mod hvm;
 mod gdt;

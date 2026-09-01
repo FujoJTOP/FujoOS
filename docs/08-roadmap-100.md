@@ -603,7 +603,17 @@
         avg=83092µs max=85231µs` (来自 first-mark 差值 4 条); 计数器
         差分: `d_irq=8 d_sys=1` → **M68 RESULT: PASS**;
         文档: docs/17-perf.md
-- [ ] **M69** 2D 游戏#2 + 输入延迟基准
+- [x] **M69** 2D 游戏#2 + 输入延迟基准
+      - **game2.rs 仪表**: 0x6F01 game2_latency(us) 输入→渲染完成
+        延迟累计 (N/SUM/MAX) / 0x6F02 game2_stats(ptr) →
+        (n, avg_us, max_us, hits) / 0x6F03 game2_hits(v) 命中上报。
+      - **m69_game2.elf (Breakout v0)**: 球 16x16 (M61 blit), 拍
+        20x60 (0x6202 gl_rect), 顶部砖块带; 10 帧 × frame_wait
+        20ms; 每帧: timer_us 采样 → 模拟输入 (拍随球) → 物理
+        (14px 步进+反弹) → 砖块命中 → blit 渲染 → latency 上报。
+      - **实测**: `frames=10 avg_lat=94µs max_lat=717µs hits=1`
+        → **M69 RESULT: PASS**; 输入延迟基准值 (采样→渲染完成,
+        TCG 下) 供 M70 验收对照; 文档: docs/18-game2.md
 - [ ] **M70** 游戏层性能验收报告
 
 ## Wave 5 · 开发工具链(M71–M85)

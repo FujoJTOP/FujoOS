@@ -414,6 +414,10 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x6E02 => crate::perf::fujo_perf_frame_stats(a0),
         0x6E03 => crate::perf::fujo_perf_counter_enable(a0, a1),
         0x6E04 => crate::perf::fujo_perf_counter_read(a0),
+        // ---- M69: 2D 游戏#2 + 输入延迟基准 ----
+        0x6F01 => crate::game2::fujo_game2_latency(a0),
+        0x6F02 => crate::game2::fujo_game2_stats(a0),
+        0x6F03 => crate::game2::fujo_game2_hits(a0),
         // ---- M60: 存档沙箱 ----
         0x6701 => crate::save::fujo_save_write(a0, a1, a2),
         0x6702 => crate::save::fujo_save_read(a0, a1, a2),
