@@ -50,9 +50,11 @@ fn font_line(x: u32, y: u32, scale: u32, color: u32, text: &str) {
             continue; // M107: 控制字符/非 ASCII 跳过 (下溢 panic 实证)
         }
         let g = font::GLYPHS[(b - 0x20) as usize];
+        // 字形 5 列 (bit4..0), 与 font::draw_char 同款 —— M108 修正原 7 列
+        // 错位 (>>(6-gx) 对 5 列字形产生乱码, GTK 实测满屏 # 排).
         for gy in 0..5u32 {
-            for gx in 0..7u32 {
-                if (g[gy as usize] >> (6 - gx)) & 1 != 0 {
+            for gx in 0..5u32 {
+                if (g[gy as usize] >> (4 - gx)) & 1 != 0 {
                     for sy in 0..scale {
                         for sx in 0..scale {
                             setp(
