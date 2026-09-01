@@ -178,6 +178,17 @@ static mut WX: u32 = 30;
 static mut WY: u32 = 40;
 static mut WW: u32 = 680;   // 40 列 x 16px + 边距 (M108: 8x8×2 字体加窗)
 static mut WH: u32 = 460;   // 24 行 x 18px + 标题栏 (M108)
+// M111: 窗口按钮/拖动/最小化/全屏状态位
+const WB_MIN: u32 = 1; // 最小化 (隐藏)
+const WB_MAX: u32 = 2; // 全屏
+static mut WIN_STATE: u32 = 0;
+static mut WIN_DRAG: bool = false; // 标题栏拖动中
+static mut WIN_DRAG_DX: i32 = 0;
+static mut WIN_DRAG_DY: i32 = 0;
+static mut WX_SAVE: u32 = 30; // 全屏还原位置
+static mut WY_SAVE: u32 = 40;
+static mut WW_SAVE: u32 = 680;
+static mut WH_SAVE: u32 = 460;
 
 /// wm 窗口类 id (缓存注册)。
 static mut CLASS_ID: i64 = 0;
@@ -261,29 +272,61 @@ pub fn tty_feed(ptr: u64, len: u64) {
 
 fn tty_draw_window() {
     unsafe {
-        // 窗口白底 + 标题栏 + 行文本
-        fill(WX, WY, WW, WH, 0xFFFFFFu32);
-        fill(WX, WY, WW, 24, 0xC0C0FFu32);
-        for x in 0..WW {
-            setp(WX + x, WY + WH - 1, 0x000000);
+        // 最小化: 不绘制 (窗口内容保持, 仅隐藏)
+        if WIN_STATE & WB_MIN != 0 {
+            crate::graphics::present();
+            return;
         }
-        for y in 0..WH {
-            setp(WX, WY + y, 0x000000);
-            setp(WX + WW - 1, WY + y, 0x000000);
+        // 全屏尺寸 (还原时用保存值)
+        let (rx, ry, rw, rh) = if WIN_STATE & WB_MAX != 0 {
+            (0u32, 0u32, font::fb_w(), font::fb_h())
+        } else {
+            (WX, WY, WW, WH)
+        };
+        // M111: 全桌面清理 (擦旧窗口位置/残影) + 桌面底 + 图标 + 任务栏,
+        // 再画当前窗口 —— 移动/切换/关闭后无残留。
+        fill(0, 0, font::fb_w(), font::fb_h(), crate::icon::PAL[1]);
+        fill(0, font::fb_h() - TB_H, font::fb_w(), TB_H, crate::icon::PAL[2]);
+        let _ = crate::icon::fujo_icon_draw(10, font::fb_h() as u64 - TB_H as u64 + 4, 3, 2);
+        draw_desktop_icons();
+        font_line(8, font::fb_h() - TB_H + 6, 1, 0xFFFFFF, "FujoOS 1.0 desktop");
+        // 窗口底色 (盖住旧内容, 含拖动/全屏切换)
+        fill(rx, ry, rw, rh, 0xFFFFFFu32);
+        fill(rx, ry, rw, 24, 0xC0C0FFu32);
+        // ---- 四角圆角 (8x8 内切圆弧块: 每角 6x6 深挖) ----
+        let cw = 6u32;
+        for i in 0..cw {
+            for j in 0..cw {
+                // 外角挖白 (圆角效应): 只留对角线外侧为底色
+                if i + j < cw - 1 {
+                    setp(rx + i, ry + j, 0x202020); // 左上
+                    setp(rx + rw - 1 - i, ry + j, 0x202020); // 右上
+                    setp(rx + i, ry + rh - 1 - j, 0x202020); // 左下
+                    setp(rx + rw - 1 - i, ry + rh - 1 - j, 0x202020); // 右下
+                }
+            }
         }
-        // 标题: 截取到 NUL (TTY_TITLE 24B, 后段为填充 0, from_utf8 对
-        // NUL 后无问题, 但统一走 ASCII 过滤更稳)。
+        for x in 0..rw {
+            setp(rx + x, ry + rh - 1, 0x000000);
+        }
+        for y in 0..rh {
+            setp(rx, ry + y, 0x000000);
+            setp(rx + rw - 1, ry + y, 0x000000);
+        }
+        // ---- 标题 ----
         let ttl = &TTY_TITLE[..];
         let mut tn = 0usize;
         while tn < 24 && TTY_TITLE[tn] != 0 {
             tn += 1;
         }
         let title = core::str::from_utf8(&ttl[..tn]).unwrap_or("?");
-        font_line(WX + 8, WY + 4, 2, 0x000000, title);
-        // 滚动 24 行 (旧行自底), 基础字体 8px 高
-        // M108: 逐字节过滤渲染 (≥0x80/控制字节必跳过 —— ASCII 才可画;
-        // from_utf8 会把 0xD0 0xAF 等按多字节 UTF-8 正常返回, 但 font_line
-        // 对非 ASCII 跳过, 避免 UTF-8 半字符/乱码)。截取到 NUL 止。
+        font_line(rx + 8, ry + 4, 2, 0x000000, title);
+        // ---- 右上三圆角按钮: [—][□][✕] ----
+        let bx = rx + rw - 104; // 三个 24px 按钮, 间距 8, 右缘 -12 边距
+        draw_tb_button(bx, ry, 0x4CAF50, 0); // 最小化 (绿)
+        draw_tb_button(bx + 32, ry, 0xFFA726, 1); // 全屏 (橙, 全屏时显还原色)
+        draw_tb_button(bx + 64, ry, 0xE53935, 2); // 关闭 (红)
+        // ---- 正文 (TTY 行) ----
         let visible = TTY_ROW_N.min(TTY_ROWS);
         for r in 0..visible {
             let line = TTY_LINES[(TTY_ROW + TTY_ROWS + 1 - visible + r) % TTY_ROWS];
@@ -300,15 +343,170 @@ fn tty_draw_window() {
                     }
                 }
             }
-            font_line(WX + 6, WY + 24 + (r as u32) * 18, 2,
+            font_line(rx + 6, ry + 24 + (r as u32) * 18, 2,
                       0x000000,
                       core::str::from_utf8(&clean[..cn]).unwrap_or(""));
         }
+        // M111: 指针最上层 (窗口重绘后补充画)
+        draw_cursor(crate::mouse::MS_X.clamp(0, font::fb_w() - 1),
+                    crate::mouse::MS_Y.clamp(0, font::fb_h() - 1));
         crate::graphics::present();
     }
 }
 
-/// 任务 A 被替换: 先终止旧程序/旧窗口。
+/// 圆角标题栏按钮 (24x24): idx 0=最小化, 1=全屏/还原, 2=关闭。
+fn draw_tb_button(px: u32, py: u32, color: u32, idx: u32) {
+    // 圆角方块 (6px 半径)
+    fill(px, py + 4, 24, 18, color);
+    fill(px + 4, py, 16, 24, color);
+    for i in 0..4u32 {
+        for j in 0..4u32 {
+            if i + j >= 3 {
+                setp(px + i, py + j, color);
+                setp(px + 23 - i, py + j, color);
+                setp(px + i, py + 23 - j, color);
+                setp(px + 23 - i, py + 23 - j, color);
+            }
+        }
+    }
+    // 符号 (白色, 8x8 MiSans 可用但不依赖 — 直接绘几何):
+    match idx {
+        0 => {
+            // — 最小化横线
+            for x in 7..17u32 {
+                setp(px + x, py + 15, 0xFFFFFF);
+                setp(px + x, py + 14, 0xFFFFFF);
+            }
+        }
+        1 => {
+            // □ 全屏方框 / 全屏时还原 (对角双框)
+            for x in 7..17u32 {
+                setp(px + x, py + 8, 0xFFFFFF);
+                setp(px + x, py + 15, 0xFFFFFF);
+            }
+            for y in 8..16u32 {
+                setp(px + 7, py + y, 0xFFFFFF);
+                setp(px + 16, py + y, 0xFFFFFF);
+            }
+        }
+        _ => {
+            // ✕ 关闭
+            for i in 0..9u32 {
+                setp(px + 7 + i, py + 7 + i, 0xFFFFFF);
+                setp(px + 7 + i, py + 15 - i, 0xFFFFFF);
+            }
+        }
+    }
+}
+
+/// 命中右上三按钮: 返回 0=最小化 1=全屏 2=关闭, 无命中 -1。
+fn tb_button_hit(x: u32, y: u32) -> i32 {
+    unsafe {
+        if WIN_STATE & WB_MIN != 0 {
+            return -1;
+        }
+        let (rx, ry) = if WIN_STATE & WB_MAX != 0 {
+            (0u32, 0u32)
+        } else {
+            (WX, WY)
+        };
+        if y < ry || y >= ry + 24 {
+            return -1;
+        }
+        let bx = rx + (if WIN_STATE & WB_MAX != 0 { font::fb_w() } else { WW }) - 104;
+        for i in 0..3u32 {
+            let b = bx + i * 32;
+            if x >= b && x < b + 24 {
+                return i as i32;
+            }
+        }
+        -1
+    }
+}
+
+/// 鼠标指针 (16x16 黑色箭头, 白描边)。画在桌面最上层。
+fn draw_cursor(x: u32, y: u32) {
+    // 箭头主体 (轮廓为白色避免深底融合)
+    let shape: &[(i32, i32)] = &[
+        (0, 0), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1), (3, 1),
+        (0, 2), (1, 2), (2, 2), (3, 2), (4, 2),
+        (0, 3), (1, 3), (2, 3), (3, 3), (1, 4),
+        (1, 5), (1, 6), (1, 7), (2, 6), (3, 7),
+    ];
+    for &(dx, dy) in shape {
+        let px = x as i32 + dx;
+        let py = y as i32 + dy;
+        if px >= 0 && (px as u32) < font::fb_w() && py >= 0 && (py as u32) < font::fb_h() {
+            setp(px as u32, py as u32, 0x000000);
+        }
+    }
+    // 白描边 (上/左缘)
+    for &(dx, dy) in shape {
+        let px = x as i32 + dx;
+        let py = y as i32 + dy;
+        if px - 1 >= 0 && (px as u32 - 1) < font::fb_w() && py >= 0 && (py as u32) < font::fb_h() {
+            let c = readp(px as u32 - 1, py as u32);
+            if c != 0x000000 {
+                setp(px as u32 - 1, py as u32, 0xFFFFFF);
+            }
+        }
+    }
+}
+
+/// KObject 无窗口任务时桌面 (图标/任务栏) 重绘 + 指针。
+fn draw_desktop_with_cursor() {
+    unsafe {
+        draw_desktop();
+        draw_cursor(crate::mouse::MS_X.clamp(0, font::fb_w() - 1),
+                    crate::mouse::MS_Y.clamp(0, font::fb_h() - 1));
+    }
+}
+
+/// M111: 左键按下事件处理 (按钮/标题栏拖动/桌面命中)。
+unsafe fn mouse_press(x: u32, y: u32, class_id: i64) -> bool {
+    // 窗口按钮命中 (只有窗口存在时)
+    if TTY_PID != 0 && y < (if WIN_STATE & WB_MAX != 0 { 0 } else { WY }) + 24 {
+        let hit = tb_button_hit(x, y);
+        match hit {
+            0 => {
+                // 最小化
+                WIN_STATE |= WB_MIN;
+                tty_draw_window();
+                return true;
+            }
+            1 => {
+                // 全屏切换
+                if WIN_STATE & WB_MAX != 0 {
+                    WIN_STATE &= !WB_MAX;
+                } else {
+                    WX_SAVE = WX;
+                    WY_SAVE = WY;
+                    WW_SAVE = WW;
+                    WH_SAVE = WH;
+                    WIN_STATE |= WB_MAX;
+                }
+                tty_draw_window();
+                return true;
+            }
+            2 => {
+                // 关闭: kill 任务 + 移除窗口
+                kill_program();
+                draw_desktop_with_cursor();
+                return true;
+            }
+            _ => {}
+        }
+        // 标题栏拖动开始 (非按钮区)
+        if y >= WY && y < WY + 24 && WIN_STATE & WB_MAX == 0 && WIN_STATE & WB_MIN == 0 {
+            WIN_DRAG = true;
+            WIN_DRAG_DX = x as i32 - WX as i32;
+            WIN_DRAG_DY = y as i32 - WY as i32;
+            return true;
+        }
+    }
+    // 桌面图标双击 (原有)
+    false
+}
 fn kill_program() {
     unsafe {
         if TTY_PID != 0 {
@@ -377,18 +575,23 @@ fn draw_desktop() {
         crate::icon::PAL; // (初始化已由 desk_init 使用)
         fill(0, 0, font::fb_w(), font::fb_h(), crate::icon::PAL[1]);
         fill(0, font::fb_h() - TB_H, font::fb_w(), TB_H, crate::icon::PAL[2]);
-        // 两个图标 (方块 + 字母)
-        fill(60, 40, 40, 36, 0xEEEEEE);
-        fill(140, 40, 40, 36, 0xEEEEEE);
-        fill(60, 40, 40, 4, 0x008080);
-        fill(140, 40, 40, 4, 0x008080);
-        font_line(70, 52, 2, 0x000000, "H");
-        font_line(150, 52, 2, 0x000000, "S");
-        font_line(60, 78, 1, 0xFFFFFF, "Hermes");
-        font_line(140, 78, 1, 0xFFFFFF, "Shell");
+        draw_desktop_icons();
         font_line(8, font::fb_h() - TB_H + 6, 1, 0xFFFFFF, "FujoOS 1.0 desktop");
         crate::graphics::present();
     }
+}
+
+/// 桌面图标 (Hermes/Shell 方块 + 字母标题) —— M111 提取, 供桌面重绘复用。
+fn draw_desktop_icons() {
+    // 两个图标 (方块 + 字母)
+    fill(60, 40, 40, 36, 0xEEEEEE);
+    fill(140, 40, 40, 36, 0xEEEEEE);
+    fill(60, 40, 40, 4, 0x008080);
+    fill(140, 40, 40, 4, 0x008080);
+    font_line(70, 52, 2, 0x000000, "H");
+    font_line(150, 52, 2, 0x000000, "S");
+    font_line(60, 78, 1, 0xFFFFFF, "Hermes");
+    font_line(140, 78, 1, 0xFFFFFF, "Shell");
 }
 
 /// M107: 桌面主循环 (boot 直接进入; 不等待命令注入)。
@@ -407,6 +610,7 @@ pub fn desktop_main(_mbi: u32) -> ! {
     let mut last_click_ticks: u64 = 0;
     let mut pass_logged = false;
     let mut repaint = 0u64;
+    let mut sp_repaint = 0u64;
 
     loop {
         let ticks = crate::interrupts::ticks();
@@ -429,29 +633,53 @@ pub fn desktop_main(_mbi: u32) -> ! {
             crate::serial::write_line("");
         }
 
-        // --- 真鼠标: 按下沿 -> 命中检测 (双击 = 6 ticks 内同图标两次) ---
+        // --- 真鼠标: 按下沿 -> 按钮/标题栏拖动/桌面双击 ---
         let (x, y, btn) = unsafe { (crate::mouse::MS_X, crate::mouse::MS_Y, crate::mouse::MS_BTN) };
         if prev_btn == 0 && btn != 0 {
-            let hit = icon_hit(x, y);
-            if hit >= 0 {
-                if last_hit == hit && ticks.wrapping_sub(last_click_ticks) <= 6 {
-                    // 双击确认
-                    let kind = if hit == 0 {
-                        launch_program(HERMES_ELF, b"Hermes", class_id as u64)
+            // M111: 窗口按钮 / 标题栏拖动 / 图标双击
+            let handled = unsafe { mouse_press(x, y, class_id) };
+            if !handled {
+                let hit = icon_hit(x, y);
+                if hit >= 0 {
+                    if last_hit == hit && ticks.wrapping_sub(last_click_ticks) <= 6 {
+                        // 双击确认
+                        let kind = if hit == 0 {
+                            launch_program(HERMES_ELF, b"Hermes", class_id as u64)
+                        } else {
+                            launch_program(SHELL_ELF, b"Shell", class_id as u64)
+                        };
+                        crate::serial::write_str("desk : mouse double-click -> ");
+                        crate::serial::write_str(if kind > 0 { "window opened" } else { "launch failed" });
+                        crate::serial::write_line("");
+                        last_hit = -1;
                     } else {
-                        launch_program(SHELL_ELF, b"Shell", class_id as u64)
-                    };
-                    crate::serial::write_str("desk : mouse double-click -> ");
-                    crate::serial::write_str(if kind > 0 { "window opened" } else { "launch failed" });
-                    crate::serial::write_line("");
-                    last_hit = -1;
-                } else {
-                    last_hit = hit;
-                    last_click_ticks = ticks;
+                        last_hit = hit;
+                        last_click_ticks = ticks;
+                    }
                 }
+            } else {
+                last_hit = -1;
             }
+        } else if prev_btn != 0 && btn == 0 {
+            // 松开: 结束拖动
+            unsafe { WIN_DRAG = false; }
         }
         prev_btn = btn;
+        // --- M111: 标题栏拖动移动窗口 ---
+        if prev_btn != 0 && unsafe { WIN_DRAG } {
+            let nx = (x as i32 - unsafe { WIN_DRAG_DX }) as i32;
+            let ny = (y as i32 - unsafe { WIN_DRAG_DY }) as i32;
+            unsafe {
+                let max_x = (font::fb_w() as i32 - WW as i32).max(0);
+                let max_y = (font::fb_h() as i32 - WH as i32).max(0);
+                WX = nx.clamp(0, max_x) as u32;
+                WY = ny.clamp(0, max_y) as u32;
+            }
+            repaint += 1;
+            if unsafe { TTY_PID } != 0 && repaint % 2 == 0 {
+                tty_draw_window();
+            }
+        }
 
         // --- 键盘后备: 无窗口程序时 D=Hermes S=Shell ---
         if crate::sched::current_task() == 0 && unsafe { TTY_PID } == 0 {
@@ -464,11 +692,16 @@ pub fn desktop_main(_mbi: u32) -> ! {
             }
         }
 
-        // --- TTY 窗口重绘 (每 16 ticks) ---
+        // --- TTY 窗口重绘 (每 8 ticks) ---
         repaint += 1;
-        if unsafe { TTY_PID } != 0 && repaint % 16 == 0 {
+        if unsafe { TTY_PID } != 0 && repaint % 8 == 0 {
             tty_draw_window();
         }
+        // --- M111: 无窗口时桌面+指针重绘 (每 32 ticks) ---
+        if sp_repaint % 32 == 0 && unsafe { TTY_PID } == 0 {
+            draw_desktop_with_cursor();
+        }
+        sp_repaint += 1;
 
         // --- 结果日志 (启动后 80 ticks) ---
         if !pass_logged && t >= 160 {
