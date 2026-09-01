@@ -719,7 +719,16 @@
       - **m77_win.elf 实测**: 20M 忙循环窗口 → `us=82967 irq=8
         sys=1 calls=1` (窗口内 8 次 PIT, 读回自身 1 次 syscall) →
         **M77 RESULT: PASS**; 文档: docs/26-perfwin.md
-- [ ] **M78** CI:QEMU 无头启动 + 日志断言自动化
+- [x] **M78** CI:QEMU 无头启动 + 日志断言自动化
+      - **tools/ci.py (fujoci)**: 兼容矩阵 9 用例 (ELF/Mach-O/PE ×
+        子系统) + 里程碑日志断言 16 用例 (m61..m69, m71..m77
+        "MXX RESULT: PASS") = **25 用例**; 每用例: QEMU 256M 无头
+        (file: 日志) → monitor 注入 `os run hermes` → 断言关键字;
+        JSON 报告 (--json) + 退出码。
+      - **.github/workflows/ci.yml**: windows-latest + choco
+        llvm/qemu + build/flatten + `python tools/ci.py` + artifact。
+      - **本地实测**: `fujoci: 25/25 PASS` (run ~10 分钟);
+        文档: docs/27-ci.md
 - [ ] **M79** fujopack/fujorun 命令全参数化 + 手册
 - [ ] **M80** SDK 文档闭环(示例/模板/教程)
 - [ ] **M81** 交叉编译工具链一键脚本(win/mac/linux 三源)

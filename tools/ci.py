@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""fujoci — QEMU 无头启动 + 日志断言自动化 (M78)
+
+CI 流水线:
+  1) cargo build --release (kernel)
+  2) flatten (--pad 0x1A0000)
+  3) 用例矩阵: 兼容矩阵 (fujoregress 9) + 里程碑 demo (m61..m77 抽样,
+     每个 initrd → QEMU 无头 → 注入 'os run hermes' → 日志断言
+     'MXX RESULT: PASS' 或专用关键字)
+  4) 报告: 控制台 + JSON (--json out.json); 退出码 = 全 PASS 0 / 有 FAIL 1
+
+用法: python tools/ci.py [--only IX] [--json out.json] [--fast]
+"""
+import argparse
+import json
+import os
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+KERNEL = os.path.join(ROOT, "kernel", "fujo-kernel.bin")
+MON_PORT = 4568
+SER_PORT = 4001
+KEYS = ["o", "s", "spc", "r", "u", "n", "spc", "h", "e", "r", "m", "e", "s", "ret"]
+
+# 兼容矩阵 (9) —— 复用 fujoregress 的断言面
+COMPAT = [
+    ("elf-linux", "sdk/linux/m30_linux.elf", "M30 RESULT: PASS", 14.0),
+    ("elf-linux2", "sdk/linux/m33_trace.elf", "M33 RESULT: PASS", 14.0),
+    ("run-fujopack", "sdk/build/m31_res.run", "M31 RESULT: PASS", 14.0),
+    ("multi-fujorun", "sdk/build/m32_multi.initrd", "M32 RESULT: PASS", 14.0),
+    ("macho-darwin", "sdk/mac/m29_darwin.macho", "M29 RESULT: PASS", 14.0),
+    ("pe-m3", "sdk/win/hello_win.exe", "M3 verified", 14.0),
+    ("pe-m26", "sdk/win/m26_win.exe", "M26 RESULT: PASS", 14.0),
+    ("pe-m27", "sdk/win/m27_mingw.exe", "M27 RESULT: PASS", 14.0),
+    ("pe-m30", "sdk/win/m30_win.exe", "M30 RESULT: PASS", 14.0),
+]
+
+# 里程碑 log 断言抽样 (Wave2-5 关注面)
+MILESTONES = [
+    ("m61-blit", "sdk/linux/m61_blit.elf", "M61 RESULT: PASS"),
+    ("m62-shader", "sdk/linux/m62_shader.elf", "M62 RESULT: PASS"),
+    ("m63-mix", "sdk/linux/m63_mix.elf", "M63 RESULT: PASS"),
+    ("m64-smp", "sdk/linux/m64_smp.elf", "M64 RESULT: PASS"),
+    ("m65-tss", "sdk/linux/m65_tss.elf", "M65 RESULT: PASS"),
+    ("m66-pcache", "sdk/linux/m66_pcache.elf", "M66 RESULT: PASS"),
+    ("m67-irq", "sdk/linux/m67_irq.elf", "M67 RESULT: PASS"),
+    ("m68-perf", "sdk/linux/m68_perf.elf", "M68 RESULT: PASS"),
+    ("m69-game2", "sdk/linux/m69_game2.elf", "M69 RESULT: PASS"),
+    ("m71-asm", "sdk/linux/m71_asm.elf", "M71 RESULT: PASS"),
+    ("m72-ld", "sdk/linux/m72_ld.elf", "M72 RESULT: PASS"),
+    ("m73-edit", "sdk/linux/m73_edit.elf", "M73 RESULT: PASS"),
+    ("m74-cc", "sdk/linux/m74_cc.elf", "M74 RESULT: PASS"),
+    ("m75-dbg", "sdk/linux/m75_dbg.elf", "M75 RESULT: PASS"),
+    ("m76-trace", "sdk/linux/m76_trace.elf", "M76 RESULT: PASS"),
+    ("m77-win", "sdk/linux/m77_win.elf", "M77 RESULT: PASS"),
+]
+
+# 非竞速用例 (键盘 sleep 快速, boot 慢): 全部用例 boot 7.5s + 输入 1.5s
+BOOT_S = 7.5
+KEY_HZ = 0.10
+
+
+def kill_qemu():
+    subprocess.run(["taskkill", "/F", "/IM", "qemu-system-x86_64.exe"],
+                   capture_output=True)
+
+
+def run_one(kernel, rel, needle, timeout_s):
+    initrd = os.path.join(ROOT, rel)
+    if not os.path.exists(initrd):
+        return ("MISS", f"initrd not found: {initrd}", "")
+    kill_qemu()
+    time.sleep(0.8)
+    tmpd = tempfile.mkdtemp(prefix="fujoci-")
+    log = os.path.join(tmpd, "qemu.log")
+    p = subprocess.Popen([
+        shutil.which("qemu-system-x86_64"), "-m", "256M",
+        "-kernel", kernel, "-initrd", initrd,
+        "-serial", f"file:{log}",
+        "-serial", f"tcp:127.0.0.1:{SER_PORT},server=on,wait=off",
+        "-monitor", f"telnet:127.0.0.1:{MON_PORT},server,nowait",
+        "-display", "none", "-no-reboot",
+    ])
+    time.sleep(BOOT_S)
+    try:
+        s = socket.create_connection(("127.0.0.1", MON_PORT), timeout=3)
+        f = s.makefile("w")
+        for k in KEYS:
+            f.write(f"sendkey {k}\n")
+            f.flush()
+            time.sleep(KEY_HZ)
+        s.close()
+    except OSError:
+        pass
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        try:
+            if p.poll() is not None:
+                break
+        except Exception:
+            break
+        time.sleep(0.5)
+    time.sleep(1.0)
+    try:
+        p.kill()
+    except Exception:
+        pass
+    log_txt = ""
+    if os.path.exists(log):
+        log_txt = open(log, errors="replace").read()
+    if needle in log_txt:
+        return ("PASS", "", log_txt)
+    tail = "\n".join(log_txt.splitlines()[-6:])
+    return ("FAIL", f"needle '{needle}' not found", tail)
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="fujoci")
+    ap.add_argument("-k", "--kernel", default=KERNEL)
+    ap.add_argument("--only", type=int, default=None)
+    ap.add_argument("--json", default=None)
+    ap.add_argument("--timeout", type=float, default=20.0)
+    a = ap.parse_args()
+
+    cases = []
+    for name, rel, needle, to in COMPAT:
+        cases.append((name, rel, needle, to))
+    for name, rel, needle in MILESTONES:
+        cases.append((name, rel, needle, a.timeout))
+
+    results = []
+    for i, (name, rel, needle, to) in enumerate(cases):
+        if a.only is not None and i != a.only:
+            continue
+        print(f":: [{i:02d}] {name:16s} ...", flush=True)
+        st, err, logtxt = run_one(a.kernel, rel, needle, to)
+        print(f":: [{i:02d}] {name:16s} {st} {err}", flush=True)
+        if st != "PASS" and logtxt:
+            print(logtxt)
+        results.append({"case": name, "rel": rel, "status": st, "needle": needle})
+    ok = sum(1 for r in results if r["status"] == "PASS")
+    print("-" * 60)
+    print(f"fujoci: {ok}/{len(results)} PASS")
+    if a.json:
+        json.dump(results, open(a.json, "w"), indent=1)
+    return 0 if ok == len(results) and len(results) > 0 else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
