@@ -264,16 +264,12 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     }
     vfs::init();
 
-    // ---- M10.1: 启动 Logo (自绘徽章) -> os shell ----
-    // 品牌展示分两段: ① 文本模式徽章 (任何显示/截屏可见, 保持 VGA 文本模式);
-    //              ② 几何版徽章 (shadow; 真机/KVM present 投映, TCG 下验证于
-    //                 像素回读/校验和 —— LFB 高阶区 TCG 拒绝访问为已知限制)。
-    vga::clear();
-    vga::logo();
-    serial::write_line("logo : fujos emblem rendered (vga text blocks, self-drawn)");
-    // 展示 ~2.5s (轮询等待, 无 hlt —— TCG 安全)
+    // ---- M10.1: 启动 Logo (几何徽章, 单一界面) ----
+    // M109: 移除 vga::logo 文本徽章叠加 —— 只保留图形层几何徽章
+    // (避免"两个启动界面"叠影; 文本徽章在 0xFD000000 未投映时无意义)。
+    serial::write_line("logo : boot splash (geometry badge)");
     let t0 = interrupts::ticks();
-    while interrupts::ticks().wrapping_sub(t0) < 250 {}
+    while interrupts::ticks().wrapping_sub(t0) < 100 {}
     // 文本徽章展示完毕 -> 切图形层画几何徽章
     let gfx_ok = graphics::init();
     crate::smp::init(); // M64: CPUID 核探测 + 亲和/均衡统计就位

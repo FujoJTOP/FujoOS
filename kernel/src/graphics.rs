@@ -326,8 +326,9 @@ pub fn draw_str(x: u32, y: u32, s: &str, color: u32, scale: u32) {
         }
         if let Some((_, glyph)) = FONT.iter().find(|(c, _)| *c == ch) {
             for (r, row) in glyph.iter().enumerate() {
+                // M109: 镜像修复 —— 字形 bit4=最左列, 渲染用 (4-bb)
                 for bb in 0..5u32 {
-                    if row & (1 << bb) != 0 {
+                    if row & (1 << (4 - bb)) != 0 {
                         fill_rect(
                             cx + bb * scale,
                             y + (r as u32) * scale,
