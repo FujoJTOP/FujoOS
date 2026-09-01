@@ -25,6 +25,7 @@ mod editor;
 mod elf_loader;
 mod fjfs;
 mod font;
+mod fujocc;
 mod fujr;
 mod gamemode;
 mod game2;

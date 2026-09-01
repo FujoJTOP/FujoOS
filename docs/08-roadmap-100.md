@@ -669,7 +669,20 @@
       - **m73_edit.elf 实测**: "abcd\nefg" → k/j 移动 → x 删 'd' →
         $/^ 列移动 → i+'X'+Esc → dump `Xabc\nefg` (行模型/插入/
         删除/移动全过) → **M73 RESULT: PASS**; 文档: docs/22-editor.md
-- [ ] **M74** fujocc 编译壳(表驱动, 跨 ABI 选项)
+- [x] **M74** fujocc 编译壳(表驱动, 跨 ABI 选项)
+      - **fujocc.rs**: C 子集 → 表驱动翻译 → fujo-asm 文本 (M71) →
+        asm_assemble → 字节码 → 链接 ELF64 (M72) → 输出, **全链**。
+      - C 子集 v0: `int NAME() { return EXPR; }`, EXPR = 常量
+        (hex/dec); 表: KEYWORD_T (int/return/main/void),
+        ABI_T (linux=1/mac=2/win=4, 选项字符串面)。
+      - **接口**: 0x7501 cc_compile(src,n,dst,cap,abi) →
+        ELF 字节数 / 0x7502 cc_version()。
+      - **m74_cc.elf 实测**: `int main() { return 0x41; }` →
+        `asm 11 bytes` (mov rax,0x41/ret) → `ELF total=0x8010`,
+        b0=48 b2=41 b10=C3, magic/ET_EXEC/e_entry 校验 →
+        **M74 RESULT: PASS**; 踩坑: fmt 分段写出覆盖 (游标式
+        AsmOut 修)、0x 常量被十进制分支截断 (分支排序);
+        文档: docs/23-cc-shell.md
 - [ ] **M75** 调试器 v0:单步/断点(调试寄存器)
 - [ ] **M76** syscall trace 工具化(打开后台记录)
 - [ ] **M77** 性能计数器(rdtsc/中断计数窗口)
