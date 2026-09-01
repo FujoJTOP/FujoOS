@@ -533,7 +533,20 @@
         `mix0=19000 mix40=15000` (ch2 结束切片); ch0 低通 k=192 →
         `lp0=7500 lp7=9999` (一阶收敛); ch0 增益 50% → `gain=5000` →
         **M63 RESULT: PASS**; 文档: docs/12-audio-mixer.md
-- [ ] **M64** 多核并行:调度亲和/负载均衡 v0
+- [x] **M64** 多核并行:调度亲和/负载均衡 v0
+      - **探测**: CPUID leaf 1 EBX[23..16] 逻辑核数 (global_asm 桥
+        fujo_cpuid_leaf1, rbx LLVM 保留绕开); `smp: cpuid logical CPUs
+        = 2` (QEMU `-smp 2`, TCG 多线程)。
+      - **接口**: 0x6A01 aff_set(tid,mask) / 0x6A02 aff_get(tid) 亲和
+        位图 (默认 0xFF=任意核) / 0x6A04 smp_stats(ptr) →
+        (ncpu, core0, core1, switches)。
+      - **负载均衡 v0**: 每次用户态 PIT 切换按目标任务亲和最低置位
+        bit 记入该核负载: `smp::balance_task` 由 sched tick 切换点
+        调用; 核 0/1 桶统计, `c0+c1==switches` 不变量。
+      - **m64_smp.elf 实测**: fork 父(亲和核0)/子(亲和核1) 双方忙等
+        20M 轮 → `ncpu=2 c0=8 c1=8 sw=16` (全部切换按亲和归桶,
+        task1 恒归 core1, task0 恒归 core0) → **M64 RESULT: PASS**;
+        文档: docs/13-smp.md; 真 SMP 启动(APIC/每核 TSS) → M65。
 - [ ] **M65** 每核 TSS/中断注入优化
 - [ ] **M66** 页缓存/预读(内存盘→真盘)
 - [ ] **M67** 中断合并/减轻(串口/网卡)

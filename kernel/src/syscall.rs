@@ -386,6 +386,10 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x6902 => crate::shader::fujo_shader_run(a0, a1, a2, a3),
         0x6903 => crate::shader::fujo_shader_pixel(a0, a1),
         0x6904 => crate::shader::fujo_shader_ops(),
+        // ---- M64: 多核 v0 (亲和/负载均衡统计) ----
+        0x6A01 => crate::smp::aff_set(a0, a1),
+        0x6A02 => crate::smp::aff_get(a0),
+        0x6A04 => crate::smp::fujo_smp_stats(a0),
         // ---- M60: 存档沙箱 ----
         0x6701 => crate::save::fujo_save_write(a0, a1, a2),
         0x6702 => crate::save::fujo_save_read(a0, a1, a2),

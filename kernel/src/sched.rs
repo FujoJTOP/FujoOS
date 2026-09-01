@@ -354,6 +354,7 @@ pub extern "C" fn fujo_tick_sched(_vec: u64, regs: *const u64) -> i64 {
             sched_next_rsp = TASKS[next].saved_rsp;
             gdt::set_rsp0(TASKS[next].kstack_top);
             SWITCHES += 1;
+            crate::smp::note_switch(next); // M64: 亲和/均衡记账
             if SWITCHES <= 8 || SWITCHES % 1000 == 0 {
                 serial::write_str("sched: ctx-switch #");
                 print_dec(SWITCHES);

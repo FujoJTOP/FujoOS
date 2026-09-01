@@ -46,6 +46,7 @@ mod sched;
 mod serial;
 mod shader;
 mod shell;
+mod smp;
 mod syscall;
 mod term;
 mod timer;
@@ -250,6 +251,7 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     while interrupts::ticks().wrapping_sub(t0) < 250 {}
     // 文本徽章展示完毕 -> 切图形层画几何徽章
     let gfx_ok = graphics::init();
+    crate::smp::init(); // M64: CPUID 核探测 + 亲和/均衡统计就位
     if !gfx_ok {
         out_line("gfx  : framebuffer unavailable (VBE not present), geometry logo skipped");
     } else {
