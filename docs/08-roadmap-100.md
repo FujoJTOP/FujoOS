@@ -877,7 +877,14 @@
         (2048B) → active #1 → remove #1 → `s0=4096 s1=2048
         active=1` → **M94 RESULT: PASS**; 踩坑: 用户态读内核数据
         区 (#PF, U=0) — 指针校验限区; 文档: docs/43-modelreg.md
-- [ ] **M95** AI OS 验收:agent 全生命周期(命令→模型→工具→审计)
+- [x] **M95** AI OS 验收:agent 全生命周期(命令→模型→工具→审计)
+      - **m95_life.elf 组合闭环**: 命令 ("open the file" →
+        route_classify=OPEN) → 模型 (fupm 安装 tiny-lm + 模型卡
+        注册 perm=1 + infer 本地执行 45B 响应 + mc_call 计费)
+        → 工具 (kobj 创建/释放 leak=0 + 会话检查点 128B 往返)
+        → 审计 (aud_log ×3 → aud=3) →
+        `intent=3 resp_n=45 leak=0 aud=3` → **M95 RESULT: PASS**;
+        **Wave 6 (M86–M95) 完成**; 文档: docs/44-aios-acceptance.md
 
 ## Wave 7 · 交付(M96–M100)
 

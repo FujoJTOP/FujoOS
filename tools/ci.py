@@ -58,6 +58,19 @@ MILESTONES = [
     ("m75-dbg", "sdk/linux/m75_dbg.elf", "M75 RESULT: PASS"),
     ("m76-trace", "sdk/linux/m76_trace.elf", "M76 RESULT: PASS"),
     ("m77-win", "sdk/linux/m77_win.elf", "M77 RESULT: PASS"),
+    ("m82-ut", "sdk/linux/m82_ut.elf", "M82 RESULT: PASS"),
+    ("m83-leak", "sdk/linux/m83_leak.elf", "M83 RESULT: PASS"),
+    ("m84-dump", "sdk/linux/m84_dump.elf", "M84 RESULT: PASS"),
+    ("m86-wmap", "sdk/linux/m86_wmap.elf", "M86 RESULT: PASS"),
+    ("m87-mcard", "sdk/linux/m87_mcard.elf", "M87 RESULT: PASS"),
+    ("m88-sess", "sdk/linux/m88_sess.elf", "M88 RESULT: PASS"),
+    ("m89-ctx", "sdk/linux/m89_ctx.elf", "M89 RESULT: PASS"),
+    ("m90-cctx", "sdk/linux/m90_ctx.elf", "M90 RESULT: PASS"),
+    ("m91-cap", "sdk/linux/m91_cap.elf", "M91 RESULT: PASS"),
+    ("m92-route", "sdk/linux/m92_route.elf", "M92 RESULT: PASS"),
+    ("m93-infer", "sdk/linux/m93_infer.elf", "M93 RESULT: PASS"),
+    ("m94-fupm", "sdk/linux/m94_fupm.elf", "M94 RESULT: PASS"),
+    ("m95-life", "sdk/linux/m95_life.elf", "M95 RESULT: PASS"),
 ]
 
 # 非竞速用例 (键盘 sleep 快速, boot 慢): 全部用例 boot 7.5s + 输入 1.5s
