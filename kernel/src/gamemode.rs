@@ -4,6 +4,9 @@
 //!                          游戏任务独占切换)
 //! 0x6602 game_status(ptr)  读 (mode, ticks, heap_base) — 资源预留面
 //! 0x6603 game_fullscreen(on) 全屏 (VBE 1024x768; on=确认全屏)
+//!
+//! M114: 策略执行面 —— cfg 3=game_ban (1=禁), 4/5=时段 (小时), 命中时段
+//! 拒绝启用游戏模式 (0x6601 返回 -1)。
 
 use crate::font;
 use crate::graphics;
@@ -12,8 +15,22 @@ use crate::sched;
 
 pub static mut GAME_MODE: u64 = 0;
 
+/// M114: 当前小时 (PIT 100Hz: 360000 ticks/h)。
+pub fn hour_of_day() -> u64 {
+    (interrupts::ticks() / 360_000) % 24
+}
+
 /// 0x6601
 pub fn fujo_game_mode(on: u64) -> i64 {
+    if on != 0 && crate::capability::fujo_cfg_get(3) == 1 {
+        let h = hour_of_day();
+        let s = crate::capability::fujo_cfg_get(4) as u64;
+        let e = crate::capability::fujo_cfg_get(5) as u64;
+        if s < e && h >= s && h < e {
+            crate::serial::write_line("game : denied by policy (work-hour ban)");
+            return -1;
+        }
+    }
     unsafe {
         GAME_MODE = on;
         sched::set_game_mode(on != 0);
