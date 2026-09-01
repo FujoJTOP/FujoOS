@@ -381,6 +381,11 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         // ---- M61: blit/缩放 ----
         0x6801 => crate::blit::fujo_blit(a0, a1, a2, a3, a4),
         0x6802 => crate::blit::fujo_blit_scal(a0, a1, a2, a3),
+        // ---- M62: 着色器内核 (compute 子集 v0) ----
+        0x6901 => crate::shader::fujo_shader_load(a0, a1),
+        0x6902 => crate::shader::fujo_shader_run(a0, a1, a2, a3),
+        0x6903 => crate::shader::fujo_shader_pixel(a0, a1),
+        0x6904 => crate::shader::fujo_shader_ops(),
         // ---- M60: 存档沙箱 ----
         0x6701 => crate::save::fujo_save_write(a0, a1, a2),
         0x6702 => crate::save::fujo_save_read(a0, a1, a2),

@@ -44,6 +44,7 @@ mod pe_loader;
 mod save;
 mod sched;
 mod serial;
+mod shader;
 mod shell;
 mod syscall;
 mod term;

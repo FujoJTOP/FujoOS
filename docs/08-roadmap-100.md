@@ -503,7 +503,24 @@
       2x 缩放 → `b1=00ff0000 b2=000000ff s1=00ff0000 s2=000000ff`
       (四采样) → **M61 RESULT: PASS**; 修复: 源行宽硬编码 640 → 按 w;
       回归: 矩阵 9/9
-- [ ] **M62** 着色器内核评估(compute 子集)
+- [x] **M62** 着色器内核评估(compute 子集)
+      - **上下文**: 着色器=每像素并行计算内核; 纯 CPU 上先以解释执行
+        bytecode VM 建立"内核即程序"模型, 评估指令率/并行架构决策
+        (GPU path 由 M64+ 后硬件层补位)。
+      - **接口**: 0x6901 shader_load(ptr,n≤32字) / 0x6902 shader_run(x,y,w,h)
+        区域逐像素执行 / 0x6903 shader_pixel(x,y) 读回 /
+        0x6904 shader_ops() 指令计数(性能面)。
+      - **字节码 v0** (每字 u32: op<<24|r<<16|a<<8|b, 8 寄存器):
+        op0 halt / 1 const r,v / 2 add r,a,b / 3 mul r,a,b / 4 sub r,a,b /
+        5 color r,a,b = (regs[a]&0xFF)|((b&0xFF)<<8) / 6 idx 重载索引;
+        每像素序: r0=idx(y*FBW+x), 执行至 halt, r1=输出色 → BACKBUFFER。
+      - **m62_shader.elf 实测**: 7 指令内核 (const×3, add×2, mul×1,
+        color) 跑 16x16=256 像素 → `p00=0000ff00 p10=0000ff01
+        p50=0000ff05 p1515=0000ff0f ops=00000800` (每像素 8 轮含
+        halt, 256×8=2048) → **M62 RESULT: PASS**。
+      - **评估结论**: v0 CPU 每像素 ~7 指令解释 ~ 2048 次 VM 轮询,
+        开销 ~10x 原生算术 → compute 子集可作为原型, 并发/GPU 由
+        m64 多核 + 未来 SIMD 通道承接(文档: docs/11-shader-eval.md)。
 - [ ] **M63** 音频混音器/效果链
 - [ ] **M64** 多核并行:调度亲和/负载均衡 v0
 - [ ] **M65** 每核 TSS/中断注入优化
