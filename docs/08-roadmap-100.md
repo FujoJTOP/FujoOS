@@ -7,7 +7,7 @@
 > AI 层与内核并行:宿主模型链路(Qwen/Hermes)持续壮大,不必等内核完备。
 > **M112 起 (Wave 7)**: AI For Next 计划 —— 模型从"推理后端"翻转为"系统器官",
 > 五条系统职能 (异常哨兵/计划-执行器/I-O 预测器/自然语言配置/环境侦察) 进路线图,
-> 推理助手暂缓; 详见 docs/52-ai-for-next.md。
+> 推理助手暂缓; 详见 docs/52-ai-for-next.md。粒度: 一个 M 一个闭环, 9 项合并 4 项。
 
 ## Wave 1 · 地基三件套(M11–M20)—— 决定一切的上限
 
@@ -964,44 +964,33 @@
       - **演示**: sdk/templates (hello/game/gui) + onebuild 3/3 +
         fujorun --keys 一键; **路线图: 全部 100 项 [x] 达成**。
 
-# Wave 7 · AI For Next — 模型成为系统器官 (M112–M120)
+# Wave 7 · AI For Next — 模型成为系统器官 (M112–M115, 4 个大粒度)
 
 > 计划蓝皮书: **docs/52-ai-for-next.md**。五条 AI 系统职能全部进路线图
 > (异常哨兵/计划-执行器/I-O 预测器/自然语言配置/环境侦察); **推理助手 (陪聊/问答)
 > 暂缓**。前置三地基: ①shm-link (Qwen 7b 通道) ②fujoctx 结构态+事件环 ③cap_exec
 > (模型→系统行动)。产物: Qwen 2.5 7b (宿主 Ollama; QEMU 内不跑大模型)。
+> 粒度: 一个 M = 一个可演示闭环; 9 项合并 4 项, 合计 ≈5,200 行。
 
-- [ ] **M112** ①shm-link: 共享内存模型通道 (Qwen 7b)
-      - 复用 M18 fujo_shm (0xA00000/64KiB) + M86 wmap; 宿主 qwen_model_server.py
-        改 shm 桥; FJAI:REQ/RSP 帧语义保留, 载体换 shm; COM2 降级路径保留
-      - 验收: 7B 端到端分类 <2s (QEMU-KVM 或宿主直连); 串口链路不回归
-- [ ] **M113** ②fujoctx 结构态 + 事件环形缓冲 + 0x8002 订阅
-      - 上下文 字符串 → 结构块 (进程表/窗口树/最近 syscall/文件变更) 共享内存零拷贝;
-        内核写事件环 (ev_syscall/ev_file/ev_window/ev_exit/ev_anomaly);
-        fujo_ctx_subscribe(mask) 推送替代轮询
-      - 验收: 100 事件回读; 订阅只收 mask 内
-- [ ] **M114** ③cap_exec (0x8105 动作能力) + infer 执行器绑定
-      - cap_exec(act, arg): KILL/ISOLATE/LAUNCH/SET_CFG/SUSPEND/ANOMALY_ACK,
-        经 cap_check 授权 + aud_log; 0x8301 输出动作向量 → cap_exec
-      - 验收: 授权执行+审计 1 条; 未授权 deny
-- [ ] **M115** 异常哨兵 (首刀) — 五职能 A
-      - 事件环 → fujoctx → 7B 分类 → cap_exec(ISOLATE/KILL); 规则降级
-      - 验收: 100 合成事件 (90 正常 + 10 异常) 命中 ≥8/10 误报 ≤2/10 延迟 <2s
-- [ ] **M116** 计划-执行器 — 五职能 B
-      - 工具调用序列生成 (0x8301 → cap_exec), 计划→执行→验证→回滚
-      - 验收: "目标→步骤→执行→验证" 1 闭环
-- [ ] **M117** I/O 预测器 — 五职能 C
-      - 行为序列预测 (预取下一文件/模块/编译), fujoctx 结构态输入
-      - 验收: 预取命中率 vs LRU 30 轮
-- [ ] **M118** 自然语言配置 — 五职能 D
-      - 一句话 → 结构化策略对象 (0x81xx 能力授权), 系统策略生效
-      - 验收: "工作时段禁游戏" → 策略对象生效
-- [ ] **M119** 环境侦察 — 五职能 E
-      - CPUID/传感器/设备树 → 机器类型/场景推断 → 自动适配
-      - 验收: 场景推断 + 适配生效
-- [ ] **M120** Five-AI 回归 (docs/44 扩展)
-      - 五职能集成回归 + 基线对照表 (docs/52 §5)
-      - 验收: 全部 PASS
+- [ ] **M112** 三地基 + 异常哨兵 (首刀, A 职能) — 一次验收四件事
+      - ① shm-link: 复用 M18 fujo_shm (0xA00000/64KiB) + M86 wmap; 宿主
+        qwen_model_server.py 改 shm 桥; FJAI:REQ/RSP 帧语义保留, COM2 降级;
+        验收: 7B 分类 <2s
+      - ② fujoctx 结构态 + 事件环 (ev_syscall/ev_file/ev_window/ev_exit/ev_anomaly)
+        + 0x8002 订阅; 验收: 100 事件回读 + 订阅 mask
+      - ③ cap_exec (0x8105): KILL/ISOLATE/LAUNCH/SET_CFG/SUSPEND/ANOMALY_ACK,
+        cap_check 授权 + aud_log; 0x8301 动作向量绑定; 验收: 授权执行/deny
+      - A 异常哨兵: 事件环 → fujoctx → 7B 分类 → cap_exec(ISOLATE/KILL), 规则降级;
+        验收: 100 合成事件 (90 正常+10 异常) 命中 ≥8/10 误报 ≤2/10 延迟 <2s
+- [ ] **M113** 计划-执行器 (B) + I/O 预测器 (C) — 工具/序列组
+      - B: 工具调用序列生成 (0x8301 → cap_exec), 计划→执行→验证→回滚;
+        验收: "目标→步骤→执行→验证" 1 闭环
+      - C: 行为序列预测 (预取下一文件/模块/编译); 验收: 命中率 vs LRU 30 轮
+- [ ] **M114** 自然语言配置 (D) + 环境侦察 (E) — 策略/感知组
+      - D: 一句话 → 结构化策略对象 (0x81xx 能力授权); 验收: "工作时段禁游戏"生效
+      - E: CPUID/传感器/设备树 → 机器类型/场景推断 → 自动适配; 验收: 适配生效
+- [ ] **M115** Five-AI 回归 (docs/44 扩展 + 对照表)
+      - 五职能集成回归 + 基线对照表 (docs/52 §5); 验收: 全部 PASS
 
 # 里程碑 101–106 · 桌面可操作面 (Win1.0 级交互闭环)
 
