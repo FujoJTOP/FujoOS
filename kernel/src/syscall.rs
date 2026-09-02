@@ -379,6 +379,8 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x8A06 => crate::net::fujo_net_rx(a0, a1),
         // ---- W15: 应用管理器 (ABI 冻结面) ----
         0x8B01 => crate::vfs::fujo_app_list(a0),
+        // ---- W16: 内存执行 (编译产物直入; 用户缓冲 -> 内核暂存 -> ELF 装载 -> iretq) ----
+        0x8B02 => fujo_exec_mem(a0, a1),
         // ---- M94: 模型注册表 + fupm ----
         0x8401 => crate::modelreg::fujo_fupm_install(a0, a1, a2),
         0x8402 => crate::modelreg::fujo_reg_list(a0),
@@ -1982,6 +1984,41 @@ fn dump_hex_bytes(addr: u64, n: usize) {
         }
     }
     serial::write_line("");
+}
+
+/// W16: 从用户内存执行 ELF (编译产物直入; 内核暂存用帧分配器, 恒等映射)。
+/// 成功不返回 (iretq 切到新入口); 失败返回负 errno。
+#[no_mangle]
+pub extern "C" fn fujo_exec_mem(src: u64, len: u64) -> i64 {
+    const EXEC_STACK: u64 = 0x5FFFF8;
+    if !(0x400000..0xC00000).contains(&src) || len == 0 || len > 0x100000 {
+        return -14; // -EFAULT
+    }
+    unsafe {
+        let n = ((len as usize + 0xFFF) / 0x1000).max(1);
+        let tmp = match crate::mem::alloc_frames_kernel(n) {
+            Some(p) => p,
+            None => return -12, // -ENOMEM
+        };
+        for k in 0..len as usize {
+            ((tmp as *mut u8).add(k)).write_volatile((src as *const u8).add(k).read_volatile());
+        }
+        match crate::elf_loader::load_elf(tmp as u32, len as u32) {
+            Ok(entry) => {
+                serial::write_str("exec : mem-exec entry=0x");
+                print_hex(entry);
+                serial::write_line("");
+                fujo_enter_user(entry, EXEC_STACK);
+            }
+            Err(e) => {
+                serial::write_str("exec : mem-exec FAILED (");
+                serial::write_str(e);
+                serial::write_line(")");
+                return -22; // -EINVAL
+            }
+        }
+    }
+    0
 }
 
 /// 进入用户态 (M2: 优先装载 multiboot 模块中的 ELF 文件; 回退内嵌二进制)。

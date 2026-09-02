@@ -57,6 +57,7 @@ CASES = [
       "-device", "virtio-net-pci,netdev=net0,mac=52:54:00:12:34:57,disable-modern=on,disable-legacy=off"],
      {"tcp_client": [18080, b"fujo-tcp-echo-payload-64x!", 12.0]}),
     ("m126-abi", "ELF64 x appmgr", "sdk/build/m126_multi.initrd", "M126 RESULT: PASS", [], {}),
+    ("m127-exec", "ELF64 x exec-mem", "sdk/linux/m127_exec.elf", "exec-child-ok", [], {}),
 ]
 
 MON_PORT = 4568
