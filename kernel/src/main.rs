@@ -15,6 +15,7 @@ mod ai;
 mod a11y;
 mod acpi;
 mod virtio;
+mod net;
 mod ata;
 mod audio;
 mod asm;
@@ -283,6 +284,7 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     if vblk {
         out_line("vblk : virtio-blk ready (legacy PCI, polled vring)");
     }
+    crate::net::init(); // W14: virtio-net (参考机 QEMU user-net)
     if !gfx_ok {
         out_line("gfx  : framebuffer unavailable (VBE not present), geometry logo skipped");
     } else {

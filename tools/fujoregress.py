@@ -48,6 +48,10 @@ CASES = [
     ("m123-vblk", "ELF64 x virtio", "sdk/linux/m123_vblk.elf", "M123 RESULT: PASS",
      ["-drive", f"if=none,id=vblk,file={os.path.join(ROOT, 'sdk', 'vblk.img')},format=raw",
       "-device", "virtio-blk-pci,drive=vblk,disable-modern=on,disable-legacy=off,queue-size=16"]),
+    ("m124-net", "ELF64 x udp-echo", "sdk/linux/m124_net.elf", "M124 RESULT: PASS",
+     ["-netdev", "user,id=net0",
+      "-device", "virtio-net-pci,netdev=net0,mac=52:54:00:12:34:57,disable-modern=on,disable-legacy=off"],
+     {"udp_echo": True, "port": 7777}),
 ]
 
 MON_PORT = 4568
@@ -62,6 +66,26 @@ def qemu():
 def run_case(kernel, case, timeout_s):
     name, label, rel, needle = case[:4]
     extra = list(case[4]) if len(case) > 4 else []
+    opts = case[5] if len(case) > 5 else {}
+    # host 侧 UDP echo (m124: QEMU slirp 10.0.2.2:port -> 127.0.0.1:port)
+    echo_stop = [False]
+    if opts.get("udp_echo"):
+        import socket as sk
+        import threading
+        eport = int(opts.get("port", 7777))
+
+        def srv():
+            s = sk.socket(sk.AF_INET, sk.SOCK_DGRAM)
+            s.bind(("127.0.0.1", eport))
+            s.settimeout(0.2)
+            while not echo_stop[0]:
+                try:
+                    d, a = s.recvfrom(2048)
+                    print(f"echo: rx {len(d)}B", flush=True)
+                    s.sendto(d, a)
+                except sk.timeout:
+                    pass
+        threading.Thread(target=srv, daemon=True).start()
     initrd = os.path.join(ROOT, rel)
     if not os.path.exists(initrd):
         return ("MISS", f"initrd not found: {initrd}", "")
@@ -103,6 +127,7 @@ def run_case(kernel, case, timeout_s):
         p.kill()
     except Exception:
         pass
+    echo_stop[0] = True
     log_txt = ""
     if os.path.exists(log):
         log_txt = open(log, errors="replace").read()
