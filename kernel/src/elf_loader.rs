@@ -91,3 +91,61 @@ pub fn load_elf(base: u32, len: u32) -> Result<u64, &'static str> {
         Ok(e_entry)
     }
 }
+
+/// W16: 重定位装载 —— 将静态 ET_EXEC 平移至 0x400000 (tcc 默认 TEXT=0x200000)。
+/// 语义: 所有 PT_LOAD 段按 delta = 0x400000 - min_vaddr 平移拷贝; entry += delta。
+pub fn load_elf_rebase(base: u32, len: u32) -> Result<u64, &'static str> {
+    let buf = base as *const u8;
+    unsafe {
+        if len < 0x40 || buf.read() != 0x7F {
+            return Err("elf: bad");
+        }
+        let e_type = (buf.add(0x10) as *const u16).read();
+        if e_type != 2 && e_type != 3 {
+            return Err("elf: not EXEC");
+        }
+        let e_entry = (buf.add(0x18) as *const u64).read();
+        let e_phoff = (buf.add(0x20) as *const u64).read() as usize;
+        let e_phnum = (buf.add(0x38) as *const u16).read() as usize;
+        let mut min_vaddr = u64::MAX;
+        for i in 0..e_phnum {
+            let ph = buf.add(e_phoff + i * 56);
+            let p_type = (ph as *const u32).read();
+            if p_type != 1 {
+                continue;
+            }
+            let v = (ph.add(16) as *const u64).read();
+            if v < min_vaddr {
+                min_vaddr = v;
+            }
+        }
+        if min_vaddr == u64::MAX {
+            return Err("elf: no load seg");
+        }
+        let delta = 0x400000u64.saturating_sub(min_vaddr);
+        for i in 0..e_phnum {
+            let ph = buf.add(e_phoff + i * 56);
+            let p_type = (ph as *const u32).read();
+            if p_type != 1 {
+                continue;
+            }
+            let p_offset = (ph.add(8) as *const u64).read() as usize;
+            let p_vaddr = (ph.add(16) as *const u64).read() as usize;
+            let p_filesz = (ph.add(32) as *const u64).read() as usize;
+            let p_memsz = (ph.add(40) as *const u64).read() as usize;
+            if p_memsz == 0 || p_offset + p_filesz > len as usize {
+                continue;
+            }
+            let dst = (p_vaddr as u64 + delta) as *mut u8;
+            for k in 0..p_filesz {
+                core::ptr::write_volatile(dst.add(k), core::ptr::read_volatile(buf.add(p_offset + k)));
+            }
+            if p_memsz > p_filesz {
+                for k in p_filesz..p_memsz {
+                    core::ptr::write_volatile(dst.add(k), 0);
+                }
+            }
+        }
+        Ok(e_entry + delta)
+    }
+}

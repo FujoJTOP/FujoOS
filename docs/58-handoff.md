@@ -17,7 +17,7 @@
 | 工作目录 | `D:\Dev\FujoOS`(2026-09 从 `C:\Users\hooya\Documents\FujoOS` 迁移;旧目录保留为备份,勿再使用) |
 | 分支 | `fujoos-ai-dev`(工作分支,所有里程碑提交在此) |
 | 远端 | `https://github.com/FujoJTOP/FujoOS.git` |
-| HEAD | `b6ac379`(57 路线图;M112–M115 均已完成并验证) |
+| HEAD | `8a760f0`(W16a exec-from-mem;W13c3 起每波即推) |
 | 主机 | Windows 11 / PowerShell / Rust 工具链 / QEMU 9.2 / LLVM clang / Python 3 / Ollama(qwen2.5:7b) |
 
 **push 技巧**:代理 `127.0.0.1:20085` 时断时续 —— 先 `git push origin fujoos-ai-dev`(走代理),失败再 `git -c http.proxy= push origin fujoos-ai-dev`(直连);反之亦然,交替重试即可。
@@ -32,9 +32,21 @@
 - **W10 完成(M120 蒸馏+自改进)**:R5 FJRU v1 确定性字节码规则引擎(0x830B,五职责规则优先 engine=3,模型调用率→0),R6 审计环捕获/导出(0x830C/D,IO 自监督命中标签);工具 tools/distill_rules.py(7B 归纳+保真度 100% 门),保真度曲线 fidelity.csv;fujoregress 12/12,7B 回归 PASS。
 - **W11 完成(M121 独立地址空间)**:每任务页表链 + CR3 切换(进程隔离:同 VA 不同物),fork 堆页物理拷贝,mnumap 撤销补全;系统/隐式任务逐字节兼容;fujoregress 13/13,桌面冒烟正常;详情 docs/62。
 - **W12 完成(M122 VFS 抽象+tmpfs+/dev/model0)**:模型即设备 open/write/read/close;tmpfs 命名内存文件;/dev/model0 与 0x5101 同核(R5 规则优先);fujoregress 14/14;详情 docs/63。
-- **W13a 完成(M123 PCI 模型+virtio 骨架)**:PCI 配置空间读写原语+查找+命令使能;virtio-blk legacy 探测/vring/提交/轮询骨架(m123 检测级 PASS);fujoregress 15/15。
-- **W13b 调查进行中**:QEMU monitor 取证(纯 legacy/BAR1=MSI-X/queue-size=256)+ STATUS 字节写回显但 DRIVER_OK 后自复位(队列无效);eliminated: 命令使能/BAR/偏移/宽度/queue-size=16;待选路径 = ①ring 布局按设备尺寸核对(KVM 源码 virtqueue 布局)②virtio 1.0 现代传输;详见 docs/64 §4。
-- **阶段一完成,W11/W12 完成,W13a/b(PCI 模型 + 调查)进行中**;下一步 = W13c(virtio 数据路径收口)→ W14(TCP/IP)。
+- **W13 完成 (W13c3, m123 数据级 PASS)**:virtio-blk legacy 全数据路径: 读/写/读回往返,
+  m123 T3/T4 断言 (read i%256 参考盘 + write sector7 模式 + readback);
+  **根因 = QEMU vring.align=4096 → used 独立页 (desc+0x1000)**, 源码取证 (virtio.c
+  virtio_queue_update_rings), `alloc_frames_kernel(n)` 连续帧; docs/64。
+- **W14 完成 (m124 UDP + m125 TCP)**:virtio-net legacy 驱动 (rx/tx, 3 页 vring size=256,
+  MAC@config, ARP 应答), 手工 ETH/IPv4/UDP 回显 + 最小 TCP 状态机 (SYN→SYN-ACK→PSH echo→FIN,
+  伪头校验和), 全部经 QEMU slirp; **坑: 设备 MAC 与 slirp 网关 MAC 同值 (52:54:00:12:34:56)
+  需显式 mac=…57; 转发前 slirp 必须 ARP 应答**; docs/65。
+- **W15 完成 (m126 PASS)**:ABI v1 冻结文档 (docs/66), 应用管理器 (FUJOMULT 2..n 段注册表,
+  0x8B01 app_list, `os run NAME` 注册表启动), shell `ls/cat/echo/app list`,
+  fujoregress 早退修复 (needle 命中即杀, 60min→8min); docs/66。
+- **W16a 完成 (m127 PASS)**:exec-from-mem (0x8B02): 用户缓冲 ELF → 内核帧暂存 → 装载 → iretq;
+  子程序打印并退出。生成器坑 (e_phoff/rel32) 见 docs/67。
+- **阶段二完成 (W10–W15); 阶段三进行中: W16a done, W16b (tcc 自托管编译) 准备中**;
+  fujoregress 19/19 PASS (早退版 ~8min)。
 
 ## 4. 构建与验证(铁律优先)
 

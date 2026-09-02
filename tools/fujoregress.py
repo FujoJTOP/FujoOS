@@ -58,6 +58,13 @@ CASES = [
      {"tcp_client": [18080, b"fujo-tcp-echo-payload-64x!", 12.0]}),
     ("m126-abi", "ELF64 x appmgr", "sdk/build/m126_multi.initrd", "M126 RESULT: PASS", [], {}),
     ("m127-exec", "ELF64 x exec-mem", "sdk/linux/m127_exec.elf", "exec-child-ok", [], {}),
+    # W16b: 自托管编译链 —— 注入: 写源码 -> tcc 编译 -> runfile 运行
+    ("m128-tcc", "ELF64 x tcc-chain", "sdk/build/m128_tcc.initrd",
+     "tcc-compiled hello from fujo",
+     [],
+     {"bootsleep": 12.0,
+      "keys": ["m", "b", "u", "i", "l", "d", "ret", "wait:5",
+               "r", "u", "n", "f", "i", "l", "e", "spc", "slash", "t", "m", "p", "slash", "h", "e", "l", "l", "o", "ret"]}),
 ]
 
 MON_PORT = 4568
@@ -127,14 +134,27 @@ def run_case(kernel, case, timeout_s):
         "-monitor", f"telnet:127.0.0.1:{MON_PORT},server,nowait",
         "-display", "none", "-no-reboot",
     ] + extra)
-    time.sleep(9.0)
+    time.sleep(float(opts.get("bootsleep", 9.0)))
     try:
         s = socket.create_connection(("127.0.0.1", MON_PORT), timeout=3)
         f = s.makefile("w")
-        for k in KEYS:
+        keys = opts.get("keys", KEYS)
+        t0 = time.time()
+        for ki, k in enumerate(keys):
+            if isinstance(k, str) and k.startswith("wait:"):
+                time.sleep(float(k[5:]))
+                continue
+            if isinstance(k, str) and k == "reconnect":
+                try:
+                    s.close()
+                except Exception:
+                    pass
+                s = socket.create_connection(("127.0.0.1", MON_PORT), timeout=3)
+                f = s.makefile("w")
+                continue
             f.write(f"sendkey {k}\n")
             f.flush()
-            time.sleep(0.10)
+            time.sleep(0.25)
         s.close()
     except OSError:
         pass

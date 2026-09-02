@@ -88,6 +88,13 @@ pub fn set_multi() {
     }
 }
 
+/// W16: 复位单任务模式 (exit 回 shell 后清残留)。
+pub fn set_single() {
+    unsafe {
+        MULTI = false;
+    }
+}
+
 pub fn multi_task() -> bool {
     unsafe { MULTI }
 }

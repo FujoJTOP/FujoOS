@@ -39,6 +39,26 @@ fn hex_str(v: u64) -> &'static [u8; 18] {
     }
 }
 
+/// 十进制字符串辅助 (shell dump)。
+#[allow(dead_code)]
+fn dec_str(v: u64) -> &'static [u8; 24] {
+    static mut BUF: [u8; 24] = [0; 24];
+    unsafe {
+        let mut x = v;
+        let mut i = 24;
+        if x == 0 {
+            BUF[23] = b'0';
+            return &BUF;
+        }
+        while x > 0 {
+            i -= 1;
+            BUF[i] = b'0' + (x % 10) as u8;
+            x /= 10;
+        }
+        &BUF
+    }
+}
+
 /// 读取一行 (环形缓冲轮询, 无 hlt —— TCG 安全); 仅在回车后返回。
 fn read_line(buf: &mut [u8]) -> usize {
     let mut n = 0usize;
@@ -112,6 +132,26 @@ pub fn argv_cmd_n() -> usize {
     unsafe { ARGV_CMD_N }
 }
 
+static mut ARGV0: [u8; 32] = [0; 32];
+static mut ARGV0_LEN: usize = 0;
+
+/// W16: argv[0] 通用化 (os run <app> [args...] 用; busybox 路径兼容默认值)。
+pub fn set_argv0(s: &str) {
+    unsafe {
+        let b = s.as_bytes();
+        let n = b.len().min(31);
+        for k in 0..n {
+            ARGV0[k] = b[k];
+        }
+        ARGV0[n] = 0;
+        ARGV0_LEN = n;
+    }
+}
+
+pub fn argv0_bytes() -> &'static [u8] {
+    unsafe { &ARGV0[..ARGV0_LEN] }
+}
+
 pub fn shell(mbi: u32) -> ! {
     vga::set_color(0x07);
     out_line("");
@@ -120,8 +160,15 @@ pub fn shell(mbi: u32) -> ! {
     out_line("os   :   app list        show app registry");
     out_line("os   :   ls              list /boot /proc /dev /tmp");
     out_line("os   :   cat <path>      dump file (kernel VFS)");
+    out_line("os   :   runfile <path>  run ELF from file (W16 compile output)");
     out_line("os   :   echo <text>     print text");
     out_line("os   :   help            show this list");
+    shell_loop(mbi)
+}
+
+/// W16: shell 主循环 (exit_to_shell 的跳转目标; 不再返回)。
+pub fn shell_loop(mbi: u32) -> ! {
+    vga::set_color(0x07);
     let mut line = [0u8; 64];
     loop {
         out_raw("os> ");
@@ -171,6 +218,7 @@ pub fn shell(mbi: u32) -> ! {
                 } else if t2 == "busybox" {
                     // M23: 静态 busybox (argc/argv 栈帧); 额外词 -> argv[1..]
                     set_argv_mode(true);
+                    set_argv0("busybox");
                     let mut words: [&str; 8] = [""; 8];
                     let mut wn = 0usize;
                     while wn < 8 {
@@ -190,9 +238,23 @@ pub fn shell(mbi: u32) -> ! {
                     out_line("os   : launching winsubsys PE demo ...");
                     syscall::enter_user_test(mbi); // > !: 不再返回
                 } else {
-                    // W15: 通用注册表应用 (多模块镜像的 2..n 项; lib_find)
+                    // W15/W16: 通用注册表应用 (多模块镜像的 2..n 项; lib_find), 剩余词为 argv
                     match crate::vfs::lib_find(t2) {
                         Some((addr, len)) => {
+                            set_argv_mode(true);
+                            set_argv0(t2);
+                            let mut words: [&str; 8] = [""; 8];
+                            let mut wn = 0usize;
+                            while wn < 8 {
+                                match parts.next() {
+                                    Some(w) => {
+                                        words[wn] = w;
+                                        wn += 1;
+                                    }
+                                    None => break,
+                                }
+                            }
+                            set_argv_cmd(&words[..wn]);
                             out_line("os   : launching registry app '");
                             out_raw(t2);
                             out_line("' ...");
@@ -249,6 +311,96 @@ pub fn shell(mbi: u32) -> ! {
                     }
                     crate::vfs::fujo_close(fd as u64);
                     out_line("");
+                }
+            }
+            "mbuild" => {
+                // W16: 自托管编译链一步命令: 写 hello.c (单文件; tcc 无 GOT 需同编译单元)
+                // -> 启动 tcc 编译 (argv 内核构造) -> runfile 运行
+                const SRC: &str = "typedef long i64;\n\
+                static i64 sy4(i64 n, i64 a, i64 b, i64 c) {\n\
+                \x20 i64 r;\n\
+                \x20 asm volatile(\"syscall\" : \"=a\"(r) : \"a\"(n), \"D\"(a), \"S\"(b), \"d\"(c) : \"rcx\", \"r11\", \"memory\");\n\
+                \x20 return r;\n\
+                }\n\
+                static const char MSG[] = \"tcc-compiled hello from fujo!\\n\";\n\
+                void _start(void) {\n\
+                \x20 sy4(1, 1, (i64)MSG, sizeof(MSG) - 1);\n\
+                \x20 for (;;) {}\n\
+                }\n";
+                let w1 = crate::vfs::write_kernel_file("/tmp/hello.c", SRC.as_bytes());
+                if w1 <= 0 {
+                    out_line("os   : mbuild write fail");
+                } else {
+                    match crate::vfs::lib_find("tcc-static") {
+                        Some((addr, len)) => {
+                            set_argv_mode(true);
+                            set_argv0("tcc-static");
+                            let args: [&str; 5] = [
+                                "-nostdlib", "-static", "-o", "/tmp/hello", "/tmp/hello.c",
+                            ];
+                            set_argv_cmd(&args[..]);
+                            out_line("os   : launching tcc-static (compile hello) ...");
+                            syscall::set_module_override(addr as u32, len as u32, "tcc-static");
+                            syscall::enter_user_test(mbi); // > !: 不再返回
+                        }
+                        None => {
+                            out_line("os   : mbuild: tcc-static not registered");
+                        }
+                    }
+                }
+            }
+            "runfile" => {
+                // W16: 从文件系统运行 ELF (tcc 编译产物; 载入帧区 -> override -> enter_user_test)
+                let name = parts.next().unwrap_or("");
+                let fd = crate::vfs::fujo_open_name(name, 0);
+                if fd < 0 {
+                    out_line("os   : runfile: no such file");
+                } else {
+                    let size = crate::vfs::fujo_size(fd as u64);
+                    if size <= 0 {
+                        out_line("os   : runfile: empty");
+                        crate::vfs::fujo_close(fd as u64);
+                    } else {
+                        let n = ((size as usize + 0xFFF) / 0x1000).max(1);
+                        match crate::mem::alloc_frames_kernel(n) {
+                            Some(phys) => {
+                                let mut buf = [0u8; 256];
+                                let mut off = 0usize;
+                                let p = phys as *mut u8;
+                                loop {
+                                    let k = crate::vfs::read_kernel(fd as u64, &mut buf);
+                                    if k == 0 {
+                                        break;
+                                    }
+                                    unsafe {
+                                        for i in 0..k {
+                                            p.add(off + i).write(buf[i]);
+                                        }
+                                    }
+                                    off += k;
+                                }
+                                crate::vfs::fujo_close(fd as u64);
+                                // W16: rebase 装到 0x400000 (tcc 输出默认 0x200000; 现为 0x400000 系, delta=0)
+                                match crate::elf_loader::load_elf_rebase(phys as u32, off as u32) {
+                                    Ok(entry) => {
+                                        out_line("os   : runfile entry=0x");
+                                        out_raw(core::str::from_utf8(hex_str(entry)).unwrap_or("?"));
+                                        out_line("");
+                                        crate::syscall::run_user(entry); // > !: 不再返回
+                                    }
+                                    Err(e) => {
+                                        out_line("os   : runfile: bad elf (");
+                                        out_raw(e);
+                                        out_line(")");
+                                    }
+                                }
+                            }
+                            None => {
+                                crate::vfs::fujo_close(fd as u64);
+                                out_line("os   : runfile: oom");
+                            }
+                        }
+                    }
                 }
             }
             "echo" => {

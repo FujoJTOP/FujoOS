@@ -497,7 +497,28 @@ pub fn lib_addr_at(i: usize) -> u64 {
     }
 }
 
-/// W15: 内核态直接读 (shell cat 等; 绕过用户指针检查)。
+/// W16: 内核态写 tmpfs 文件 (shell mbuild 用; 覆盖/新建)。
+pub fn write_kernel_file(path: &str, data: &[u8]) -> i64 {
+    unsafe {
+        if let Some(tname) = path.strip_prefix("/tmp/") {
+            let idx = tmpfs_find_or_create(tname.as_bytes());
+            if idx < 0 {
+                return -28;
+            }
+            let n = data.len().min(TMPFS_MAX);
+            let e = &mut *core::ptr::addr_of_mut!(TMPFS[idx as usize]);
+            for k in 0..n {
+                e.data[k] = data[k];
+            }
+            e.len = n;
+            return n as i64;
+        }
+    }
+    -2
+}
+
+/// W16: lseek(fd, off, whence) — 文件 pos 调整 (tcc 等静态 glibc 程序需要)。
+/// (M29 已有 fujo_lseek; W16 仅补 syscall 分发 8 => 原函数)
 pub fn read_kernel(fd: u64, out: &mut [u8]) -> usize {
     unsafe {
         if fd < 3 || (fd as usize) >= MAX_OPEN {
@@ -660,6 +681,9 @@ pub fn fujo_open_name(name: &str, _flags: u64) -> i64 {
 /// 系统调用 read(nr0): fd -> 用户缓冲区。
 #[no_mangle]
 pub extern "C" fn fujo_read(fd: u64, buf: u64, len: u64) -> i64 {
+    if len == 0 {
+        return 0; // W16: read(fd, NULL, 0) 必须返回 0 (tcc .o 解析)
+    }
     if !(0x400000..0xC00000).contains(&buf) {
         return -14; // -EFAULT
     }

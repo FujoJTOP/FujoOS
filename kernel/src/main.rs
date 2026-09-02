@@ -294,6 +294,8 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     serial::write_line("");
 
     // ---- 引导路由 ----
+    // W16: FUJOMULT 多模块解析前置 (注册表在 shell 阶段可见; 原在首次 os run 时才解析)
+    syscall::parse_multi_early();
     // M108: boot 模块 = m108_desk.elf -> 用户态桌面代理 (自驱动; 无命令注入)
     if syscall::boot_module_is_desk_proxy() {
         crate::sched::set_proxy_mode();

@@ -408,6 +408,8 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         2 => crate::vfs::fujo_open(a0, a1, a2),
         // close(fd) — M15 VFS
         3 => crate::vfs::fujo_close(a0),        // ---- M11: 内存原语 (linux ABI 直通) ----
+        // lseek(fd, off, whence) — M29 已有实现; W16 补分发 (tcc 静态 stdio)
+        8 => crate::vfs::fujo_lseek(a0, a1 as i64, a2),
         // mmap(addr, len, prot, flags, fd, off) — 匿名私有子集
         9 => crate::mem::fujo_mmap(a0, a1, a2, a3, a4, a5),
         // munmap(addr, len) — v0 no-op
@@ -506,15 +508,52 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         257 => crate::vfs::fujo_open(a1, a2, a3),
         // getrandom(buf, len, flags) — PIT 混哈希假熵
         317 => sys_getrandom(a0, a1),
+        // W16: 静态 glibc 运行面 (tcc 0.9.27):
+        // getcwd(buf, size) — 返回 "/" (进程无目录概念)
+        79 => {
+            if a0 != 0 {
+                unsafe {
+                    (a0 as *mut u8).write(b'/');
+                    (a0 as *mut u8).add(1).write(0);
+                }
+            }
+            a0 as i64
+        }
+        // fcntl(fd, cmd, ...) — F_GETFL(3) 返回 O_WRONLY|O_LARGEFILE (0x8001;
+        // tcc fopen 输出流据此判定可写; 0=O_RDONLY 会让 FILE* 只读)
+        72 => {
+            if a1 == 3 {
+                0x8001
+            } else {
+                0
+            }
+        },
+        // unix (87, legacy Linux nsfs 遗留) — 返回 0 容忍
+        87 => 0,
+        // prlimit64(resource, new, old) -> 写 old 为 RLIM_INFINITY
+        302 => {
+            if a2 != 0 {
+                unsafe {
+                    let o = a2 as *mut u64;
+                    o.write_volatile(u64::MAX);
+                    o.add(1).write_volatile(u64::MAX);
+                }
+            }
+            0
+        }
+        // memfd_create(name, flags) -> -ENOSYS (tcc 未强制)
+        318 => -38,
+        // clock_nanosleep -> 立即完成
+        228 => 0,
         // ---- fujo 原生 Win32 shim 通道 (M3/M26 基础 + M27 mingw CRT + M28/M30) ----
         0x5001..=0x5018 | 0x5201..=0x522B | 0x5019..=0x5024 => shim_dispatch(nr, args),
-        // exit(code) / exit_group(code) -> 内核接管并停机
+        // exit(code) / exit_group(code) -> 返回 shell (W16: 编译链三步可串行; 原 M6 halt)
         60 | 231 => {
-            serial::write_line("user : sys_exit() - kernel takeover, M6 verified");
-            serial::write_str("timer : pit ticks=");
-            print_dec(interrupts::ticks());
-            serial::write_line(" (~100 Hz since boot)");
-            halt_forever();
+            serial::write_str("user : sys_exit code=");
+            print_dec(a0);
+            serial::write_line(" - return to shell (M6/W16)");
+            crate::sched::set_single();
+            exit_to_shell();
         }
         // ---- M9/M10: fujonn 模型调用原语 (fujoos-ai-dev) ----
         // fujo_ai_classify(ptr, len) -> intent (engine=qwen COM2 链路 / 规则降级)
@@ -822,6 +861,9 @@ pub fn debug_hex(v: u64) {
 }
 
 fn user_write(fd: u64, ptr: u64, len: u64) -> i64 {    // M15: fd>=3 先走 VFS (内存盘追加); /dev/tty 与 fd<3 走串口
+    if len == 0 {
+        return 0; // W16: write(fd, NULL, 0) 返回 0
+    }
     if fd == 1 && len > 0 {
         crate::desk::tty_feed(ptr, len); // M107: 桌面窗口 TTY 捕获 (串口照走)
     }
@@ -889,6 +931,31 @@ fn print_hex(v: u64) {
 fn halt_forever() -> ! {
     loop {
         crate::hlt();
+    }
+}
+
+/// W16: 跳转到用户入口 (runfile 等直接装载路径; 不再返回)。
+pub fn run_user(entry: u64) -> ! {
+    unsafe {
+        fujo_enter_user(entry, 0x5FFFF8);
+    }
+    loop {
+        crate::hlt();
+    }
+}
+
+/// W16: exit -> 回到 shell 主循环 (重设内核栈 + sti + 跳转; 旧调用链废弃, 不再返回)。
+#[no_mangle]
+pub extern "C" fn exit_to_shell() -> ! {
+    unsafe {
+        core::arch::asm!(
+            "mov rsp, [rip + {ksp}]",
+            "sti",
+            "jmp {sh}",
+            ksp = sym sys_kernel_rsp,
+            sh = sym crate::shell::shell_loop,
+            options(noreturn)
+        );
     }
 }
 
@@ -2021,6 +2088,69 @@ pub extern "C" fn fujo_exec_mem(src: u64, len: u64) -> i64 {
     0
 }
 
+/// W16: FUJOMULT 多模块解析 (注册表登记所有段; 首段返回为可执行体)。
+/// 返回 Some((main_start, main_len)) 当首段有效。
+pub fn parse_multi(start: u32, len: u32) -> Option<(u32, u32)> {
+    unsafe {
+        let mut new_start = start;
+        let mut new_len = len;
+        let mut have_main = false;
+        if !((start as *const u8).read() == b'F'
+            && (start as *const u8).add(1).read() == b'U'
+            && (start as *const u8).add(2).read() == b'J'
+            && (start as *const u8).add(3).read() == b'O'
+            && (start as *const u8).add(4).read() == b'M'
+            && (start as *const u8).add(5).read() == b'U'
+            && (start as *const u8).add(6).read() == b'L'
+            && (start as *const u8).add(7).read() == b'T')
+        {
+            return None;
+        }
+        let cnt = (start as *const u64).add(1).read();
+        for i in 0..cnt.min(8) {
+            let e = (start as *const u8).add(16 + i as usize * 32);
+            let off = (e as *const u64).read();
+            let l = (e as *const u64).add(1).read();
+            let name_b = e.add(16);
+            let mut nm = [0u8; 16];
+            for k in 0..15 {
+                nm[k] = name_b.add(k).read();
+            }
+            let nm_end = nm.iter().position(|&b| b == 0).unwrap_or(15);
+            let nm_s = core::str::from_utf8(&nm[..nm_end]).unwrap_or("?");
+            crate::vfs::fujo_lib_register(nm_s, start as u64 + off, l);
+            if i == 0 {
+                new_start = start + off as u32;
+                new_len = l as u32;
+                have_main = true;
+                serial::write_str("multi: exec module '");
+                serial::write_str(nm_s);
+                serial::write_line("'");
+            } else {
+                serial::write_str("multi: lib module '");
+                serial::write_str(nm_s);
+                serial::write_line("' -> /lib");
+            }
+        }
+        if have_main {
+            serial::write_str("multi: main @");
+            print_hex(new_start as u64);
+            print_dec(new_len as u64);
+            serial::write_line(" bytes");
+            Some((new_start, new_len))
+        } else {
+            None
+        }
+    }
+}
+
+/// W16: boot 期注册 (引导路由前; shell 阶段注册表即就绪)。
+pub fn parse_multi_early() {
+    if let Some((s, l, _n)) = module_snapshot() {
+        let _ = parse_multi(s, l);
+    }
+}
+
 /// 进入用户态 (M2: 优先装载 multiboot 模块中的 ELF 文件; 回退内嵌二进制)。
 pub fn enter_user_test(mbi: u32) -> ! {
     const LOAD_DEFAULT: u64 = 0x400000;
@@ -2056,45 +2186,9 @@ pub fn enter_user_test(mbi: u32) -> ! {
                     && (start as *const u8).add(7).read() == b'T'
             };
             if is_multi {
-                unsafe {
-                    let cnt = (start as *const u64).add(1).read();
-                    let mut ent = start as *const u8;
-                    let mut new_start = start;
-                    let mut new_len = len;
-                    let mut have_main = false;
-                    for i in 0..cnt.min(8) {
-                        let e = ent.add(16 + i as usize * 32);
-                        let off = (e as *const u64).read();
-                        let l = (e as *const u64).add(1).read();
-                        let name_b = e.add(16);
-                        let mut nm = [0u8; 16];
-                        for k in 0..15 {
-                            nm[k] = name_b.add(k).read();
-                        }
-                        let nm_end = nm.iter().position(|&b| b == 0).unwrap_or(15);
-                        let nm_s = core::str::from_utf8(&nm[..nm_end]).unwrap_or("?");
-                        if i == 0 {
-                            new_start = start + off as u32;
-                            new_len = l as u32;
-                            have_main = true;
-                            serial::write_str("multi: exec module '");
-                            serial::write_str(nm_s);
-                            serial::write_line("'");
-                        } else {
-                            crate::vfs::fujo_lib_register(nm_s, start as u64 + off, l);
-                            serial::write_str("multi: lib module '");
-                            serial::write_str(nm_s);
-                            serial::write_line("' -> /lib");
-                        }
-                    }
-                    if have_main {
-                        start = new_start;
-                        len = new_len;
-                        serial::write_str("multi: main @");
-                        print_hex(start as u64);
-                        print_dec(len as u64);
-                        serial::write_line(" bytes");
-                    }
+                if let Some((ns, nl)) = parse_multi(start, len) {
+                    start = ns;
+                    len = nl;
                 }
             }
             if is_run && !is_multi {
@@ -2236,13 +2330,35 @@ pub fn enter_user_test(mbi: u32) -> ! {
             let mut ptrs = [0u64; 16];
             let mut strs: [[u8; 32]; 9] = [[0; 32]; 9];
             {
-                let bb = b"busybox";
-                for k in 0..bb.len() {
-                    strs[0][k] = bb[k];
+                let a0 = crate::shell::argv0_bytes();
+                for k in 0..a0.len().min(31) {
+                    strs[0][k] = a0[k];
                 }
             }
             for i in 0..cmdn.min(8) {
                 strs[1 + i] = cmds[i];
+            }
+            for si in 0..argc {
+                serial::write_str("argv[");
+                let mut tb = [0u8; 4];
+                let mut tv = si as u64;
+                let mut ti = 4;
+                if tv == 0 {
+                    tb[3] = b'0';
+                }
+                while tv > 0 {
+                    ti -= 1;
+                    tb[ti] = b'0' + (tv % 10) as u8;
+                    tv /= 10;
+                }
+                serial::write_str(core::str::from_utf8(&tb[ti..]).unwrap_or("0"));
+                serial::write_str("]='");
+                let mut eb = 0usize;
+                while eb < 32 && strs[si.min(8)][eb] != 0 {
+                    eb += 1;
+                }
+                serial::write_str(core::str::from_utf8(&strs[si.min(8)][..eb]).unwrap_or("?"));
+                serial::write_line("'");
             }
             // 字符串放置: 从后往前 (argv[argc-1] 先放高地址, argv[0] 最后放
             // 最低地址) —— 低地址留给 argv[0], 避免后放置覆盖先放字符串。
