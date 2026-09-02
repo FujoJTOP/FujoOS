@@ -377,6 +377,8 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x8A04 => crate::net::fujo_net_info(a0),
         0x8A05 => crate::net::fujo_net_tx(a0, a1),
         0x8A06 => crate::net::fujo_net_rx(a0, a1),
+        // ---- W15: 应用管理器 (ABI 冻结面) ----
+        0x8B01 => crate::vfs::fujo_app_list(a0),
         // ---- M94: 模型注册表 + fupm ----
         0x8401 => crate::modelreg::fujo_fupm_install(a0, a1, a2),
         0x8402 => crate::modelreg::fujo_reg_list(a0),
@@ -2327,8 +2329,26 @@ pub fn remember_module(mbi: u32) {
     }
 }
 
+/// W15: 应用管理器 —— 指定运行模块 (shell `os run NAME`: 注册表命中后覆盖快照)。
+static mut MOD_OVERRIDE: (u32, u32) = (0, 0);
+static mut MOD_OVERRIDE_NAME: [u8; 16] = [0; 16];
+
+pub fn set_module_override(start: u32, len: u32, name: &str) {
+    unsafe {
+        MOD_OVERRIDE = (start, len);
+        for (k, b) in name.as_bytes().iter().take(15).enumerate() {
+            MOD_OVERRIDE_NAME[k] = *b;
+        }
+        MOD_OVERRIDE_NAME[15] = 0;
+    }
+}
+
 pub fn module_snapshot() -> Option<(u32, u32, *const u8)> {
     unsafe {
+        let (os, ol) = MOD_OVERRIDE;
+        if os != 0 && ol != 0 {
+            return Some((os, ol, MOD_OVERRIDE_NAME.as_ptr()));
+        }
         let (s, l, n) = MOD_SNAP;
         if s == 0 || l == 0 || n == 0 {
             return None;

@@ -388,6 +388,135 @@ fn fujo_lib_find(name: &[u8]) -> Option<(*const u8, usize)> {
     None
 }
 
+/// W15: 应用管理器 —— 注册表查询 (name -> (phys addr, len)); shell `os run NAME` 用。
+pub fn lib_find(name: &str) -> Option<(u64, u64)> {
+    let b = name.as_bytes();
+    if let Some((a, l)) = fujo_lib_find(b) {
+        return Some((a as u64, l as u64));
+    }
+    None
+}
+
+/// W15: 应用管理器 —— 列表导出 (用户态; 0x8B01)。
+/// out 布局: +0 u64 count; 每项 24B = name[16] (NUL 终止) + addr u64。
+#[no_mangle]
+pub extern "C" fn fujo_app_list(out: u64) -> i64 {
+    if !(0x400000..0xC00000).contains(&out) {
+        return -14;
+    }
+    unsafe {
+        let o = out as *mut u8;
+        let mut cnt = 0usize;
+        (out as *mut u64).write(0u64);
+        for i in 0..LIB_COUNT {
+            let (nm, addr, len) = LIBS[i];
+            if len == 0 {
+                continue;
+            }
+            let e = o.add(8 + cnt * 24);
+            for k in 0..16 {
+                e.add(k).write(nm[k]);
+            }
+            (e.add(16) as *mut u64).write(addr);
+            cnt += 1;
+        }
+        (out as *mut u64).write(cnt as u64);
+        cnt as i64
+    }
+}
+
+/// W15: tmpfs 名称列表 (shell ls 用)。
+pub fn tmpfs_count() -> usize {
+    unsafe {
+        let p = core::ptr::addr_of!(TMPFS);
+        let mut n = 0usize;
+        for i in 0..TMPFS_N {
+            if (*p)[i].len > 0 {
+                n += 1;
+            }
+        }
+        n
+    }
+}
+
+pub fn tmpfs_name(i: usize) -> &'static str {
+    unsafe {
+        let p = core::ptr::addr_of!(TMPFS);
+        if i < TMPFS_N && (*p)[i].len > 0 {
+            let nm = &(*p)[i].name;
+            let mut end = 16usize;
+            for k in 0..16 {
+                if nm[k] == 0 {
+                    end = k;
+                    break;
+                }
+            }
+            core::str::from_utf8(&nm[..end]).unwrap_or("?")
+        } else {
+            ""
+        }
+    }
+}
+
+/// W15: 注册表访问 (shell app list 用)。
+pub fn lib_count() -> usize {
+    unsafe { LIB_COUNT }
+}
+
+pub fn lib_name_at(i: usize) -> &'static str {
+    unsafe {
+        static mut BUF: [u8; 16] = [0; 16];
+        if i < LIB_COUNT {
+            let (nm, _a, _l) = LIBS[i];
+            let mut end = 16usize;
+            for k in 0..16 {
+                if nm[k] == 0 {
+                    end = k;
+                    break;
+                }
+            }
+            for k in 0..end {
+                BUF[k] = nm[k];
+            }
+            BUF[end] = 0;
+            core::str::from_utf8(&BUF[..end]).unwrap_or("?")
+        } else {
+            static EMPTY: &str = "";
+            EMPTY
+        }
+    }
+}
+
+pub fn lib_addr_at(i: usize) -> u64 {
+    unsafe {
+        if i < LIB_COUNT {
+            LIBS[i].1
+        } else {
+            0
+        }
+    }
+}
+
+/// W15: 内核态直接读 (shell cat 等; 绕过用户指针检查)。
+pub fn read_kernel(fd: u64, out: &mut [u8]) -> usize {
+    unsafe {
+        if fd < 3 || (fd as usize) >= MAX_OPEN {
+            return 0;
+        }
+        let f = &mut *core::ptr::addr_of_mut!(FILES[fd as usize]);
+        if f.data_ptr as u64 == 0 {
+            return 0;
+        }
+        let remaining = f.data_len.saturating_sub(f.pos);
+        let n = out.len().min(remaining as usize);
+        for k in 0..n {
+            out[k] = core::ptr::read_volatile(f.data_ptr.add(f.pos as usize + k));
+        }
+        f.pos += n as u64;
+        n
+    }
+}
+
 /// 系统调用 open(nr2): 匹配固定表; flags: 0=RDONLY, 1=WRONLY, 2=RDWR。
 #[no_mangle]
 pub extern "C" fn fujo_open(ptr: u64, len: u64, flags: u64) -> i64 {

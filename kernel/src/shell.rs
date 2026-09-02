@@ -24,6 +24,21 @@ fn out_line(s: &str) {
     serial::write_line(s);
 }
 
+/// 16 位十六进制字符串 (内核态打印辅助)。
+fn hex_str(v: u64) -> &'static [u8; 18] {
+    static mut BUF: [u8; 18] = [0; 18];
+    unsafe {
+        const HX: &[u8; 16] = b"0123456789abcdef";
+        BUF[0] = b'0';
+        BUF[1] = b'x';
+        for i in 0..16 {
+            let d = ((v >> (4 * (15 - i))) & 0xF) as u8;
+            BUF[2 + i] = HX[d as usize];
+        }
+        &BUF
+    }
+}
+
 /// 读取一行 (环形缓冲轮询, 无 hlt —— TCG 安全); 仅在回车后返回。
 fn read_line(buf: &mut [u8]) -> usize {
     let mut n = 0usize;
@@ -101,17 +116,12 @@ pub fn shell(mbi: u32) -> ! {
     vga::set_color(0x07);
     out_line("");
     out_line("os   : fujo shell v0 - commands:");
-    out_line("os   :   os run hermes    launch Hermes CLI (agent + qwen model call)");
-    out_line("os   :   os run threads   launch 2 tasks (M13 timeslice demo)");
-    out_line("os   :   os run ipc       launch IPC demo (pipe+shm+sig, M18)");
-    out_line("os   :   os run kobj      launch kobj table demo (M19)");
-    out_line("os   :   os run crash     launch exc-isolation demo (M20)");
-    out_line("os   :   os run stress    launch leak-stress demo (M20)");
-    out_line("os   :   os run m21      launch syscall-surface demo (M21)");
-    out_line("os   :   os run fork      launch fork demo (M22)");
-    out_line("os   :   os run busybox   launch static busybox (M23)");
-    out_line("os   :   os run win       launch winsubsys PE demo (M26)");
-    out_line("os   :   help             show this list");
+    out_line("os   :   os run <app>    launch app (hermes|threads|...; registry names too)");
+    out_line("os   :   app list        show app registry");
+    out_line("os   :   ls              list /boot /proc /dev /tmp");
+    out_line("os   :   cat <path>      dump file (kernel VFS)");
+    out_line("os   :   echo <text>     print text");
+    out_line("os   :   help            show this list");
     let mut line = [0u8; 64];
     loop {
         out_raw("os> ");
@@ -122,41 +132,43 @@ pub fn shell(mbi: u32) -> ! {
             "os" => {
                 let t1 = parts.next().unwrap_or("");
                 let t2 = parts.next().unwrap_or("");
-                if t1 == "run" && t2 == "hermes" {
+                if t1 != "run" {
+                    out_line("os   : unknown os subcommand (try: os run hermes)");
+                } else if t2 == "hermes" {
                     out_line("os   : launching hermes (ring3) ...");
                     syscall::enter_user_test(mbi); // > !: 不再返回
-                } else if t1 == "run" && t2 == "threads" {
+                } else if t2 == "threads" {
                     // M13: 同一镜像双任务, PIT 时间片轮转 (验证抢占调度)
                     crate::sched::set_multi();
                     out_line("os   : launching 2 tasks (timeslice round-robin) ...");
                     syscall::enter_user_test(mbi); // > !: 不再返回
-                } else if t1 == "run" && t2 == "ipc" {
+                } else if t2 == "ipc" {
                     // M18: IPC demo (管道 + 共享内存 + 信号)
                     crate::sched::set_multi();
                     out_line("os   : launching IPC demo (2 tasks: pipe/shm/sig) ...");
                     syscall::enter_user_test(mbi); // > !: 不再返回
-                } else if t1 == "run" && t2 == "kobj" {
+                } else if t2 == "kobj" {
                     // M19: 内核对象表 demo
                     out_line("os   : launching kobj table demo ...");
                     syscall::enter_user_test(mbi); // > !: 不再返回
-                } else if t1 == "run" && t2 == "crash" {
+                } else if t2 == "crash" {
                     // M20: 用户态异常隔离 (A 存活 / B ud2 崩溃)
                     crate::sched::set_multi();
                     out_line("os   : launching exc-isolation demo (A vs B#UD) ...");
                     syscall::enter_user_test(mbi); // > !: 不再返回
-                } else if t1 == "run" && t2 == "stress" {
+                } else if t2 == "stress" {
                     // M20: 资源压力/泄漏检测 (管道×128 + kobj×512)
                     out_line("os   : launching leak-stress demo ...");
                     syscall::enter_user_test(mbi); // > !: 不再返回
-                } else if t1 == "run" && t2 == "m21" {
+                } else if t2 == "m21" {
                     // M21: linuxsubsys syscall 面 (~20 个)
                     out_line("os   : launching syscall-surface demo ...");
                     syscall::enter_user_test(mbi); // > !: 不再返回
-                } else if t1 == "run" && t2 == "fork" {
+                } else if t2 == "fork" {
                     // M22: fork 克隆 (父/子共享地址空间, 用户栈物理拷贝)
                     out_line("os   : launching fork demo ...");
                     syscall::enter_user_test(mbi); // > !: 不再返回
-                } else if t1 == "run" && t2 == "busybox" {
+                } else if t2 == "busybox" {
                     // M23: 静态 busybox (argc/argv 栈帧); 额外词 -> argv[1..]
                     set_argv_mode(true);
                     let mut words: [&str; 8] = [""; 8];
@@ -173,25 +185,80 @@ pub fn shell(mbi: u32) -> ! {
                     set_argv_cmd(&words[..wn]);
                     out_line("os   : launching busybox (argv mode) ...");
                     syscall::enter_user_test(mbi); // > !: 不再返回
-                } else if t1 == "run" && t2 == "win" {
+                } else if t2 == "win" {
                     // M26: winsubsys PE32+ (kernel32 垫片家族)
                     out_line("os   : launching winsubsys PE demo ...");
                     syscall::enter_user_test(mbi); // > !: 不再返回
                 } else {
-                    // TEMP-DEBUG
-                    out_line("os   : unknown os subcommand (try: os run hermes | os run threads)");
-                    out_raw("dbg  : t1='");
-                    out_raw(t1);
-                    out_raw("' t2='");
-                    out_raw(t2);
-                    out_raw("' full='");
-                    out_raw(cmd);
-                    out_raw("'\n");
+                    // W15: 通用注册表应用 (多模块镜像的 2..n 项; lib_find)
+                    match crate::vfs::lib_find(t2) {
+                        Some((addr, len)) => {
+                            out_line("os   : launching registry app '");
+                            out_raw(t2);
+                            out_line("' ...");
+                            syscall::set_module_override(addr as u32, len as u32, t2);
+                            syscall::enter_user_test(mbi); // > !: 不再返回
+                        }
+                        None => {
+                            out_line("os   : unknown app (try: app list)");
+                        }
+                    }
                 }
             }
-            "help" | "?" => out_line("os   : commands: os run hermes | help"),
+            "app" => {
+                let t1 = parts.next().unwrap_or("");
+                if t1 == "list" {
+                    out_line("os   : app registry:");
+                    // 内核直读注册表 (LIBS 私有; 经 vfs 访问器)
+                    if crate::vfs::lib_count() == 0 {
+                        out_line("os   :   (none - single-module image)");
+                    } else {
+                        for i in 0..crate::vfs::lib_count() {
+                            out_raw("os   :     ");
+                            out_raw(crate::vfs::lib_name_at(i));
+                            out_raw(" @ 0x");
+                            out_raw(core::str::from_utf8(hex_str(crate::vfs::lib_addr_at(i))).unwrap_or("?"));
+                            out_line("");
+                        }
+                    }
+                } else {
+                    out_line("os   : app subcommands: list");
+                }
+            }
+            "ls" => {
+                out_line("os   : /boot/module  /proc/meminfo  /dev/tty  /dev/model0");
+                for i in 0..crate::vfs::tmpfs_count() {
+                    out_raw("os   : /tmp/");
+                    out_raw(crate::vfs::tmpfs_name(i));
+                    out_line("");
+                }
+            }
+            "cat" => {
+                let name = parts.next().unwrap_or("");
+                let fd = crate::vfs::fujo_open_name(name, 0);
+                if fd < 0 {
+                    out_line("os   : cat: no such file");
+                } else {
+                    let mut buf = [0u8; 256];
+                    loop {
+                        let k = crate::vfs::read_kernel(fd as u64, &mut buf);
+                        if k == 0 {
+                            break;
+                        }
+                        out_raw(core::str::from_utf8(&buf[..k]).unwrap_or("<bin>"));
+                    }
+                    crate::vfs::fujo_close(fd as u64);
+                    out_line("");
+                }
+            }
+            "echo" => {
+                let rest = cmd.strip_prefix("echo").unwrap_or("");
+                out_raw(rest.trim_start());
+                out_line("");
+            }
+            "help" | "?" => out_line("os   : commands: os run <app> | app list | ls | cat | echo | help"),
             "" => {}
-            _ => out_line("os   : unknown command (try: os run hermes)"),
+            _ => out_line("os   : unknown command (try: help)"),
         }
     }
 }

@@ -56,6 +56,7 @@ CASES = [
      ["-netdev", "user,id=net0,hostfwd=tcp:127.0.0.1:18080-:8080",
       "-device", "virtio-net-pci,netdev=net0,mac=52:54:00:12:34:57,disable-modern=on,disable-legacy=off"],
      {"tcp_client": [18080, b"fujo-tcp-echo-payload-64x!", 12.0]}),
+    ("m126-abi", "ELF64 x appmgr", "sdk/build/m126_multi.initrd", "M126 RESULT: PASS", [], {}),
 ]
 
 MON_PORT = 4568
@@ -143,6 +144,15 @@ def run_case(kernel, case, timeout_s):
                 break
         except Exception:
             break
+        # W15: 命中 needle 即提前杀 (demo 完成后内核回 shell, QEMU 不退出 ——
+        # 原逻辑每用例空等满 timeout, 17 用例 ~60min; 现在 ~25s/用例)
+        if needle and os.path.exists(log):
+            try:
+                with open(log, errors="replace") as lf:
+                    if needle in lf.read():
+                        break
+            except Exception:
+                pass
         time.sleep(0.5)
     time.sleep(1.0)
     try:
