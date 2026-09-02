@@ -47,7 +47,7 @@ CASES = [
     ("m122-dev", "ELF64 x modeldev", "sdk/linux/m122_dev.elf", "M122 RESULT: PASS"),
     ("m123-vblk", "ELF64 x virtio", "sdk/linux/m123_vblk.elf", "M123 RESULT: PASS",
      ["-drive", f"if=none,id=vblk,file={os.path.join(ROOT, 'sdk', 'vblk.img')},format=raw",
-      "-device", "virtio-blk-pci,drive=vblk,disable-modern=on,disable-legacy=off"]),
+      "-device", "virtio-blk-pci,drive=vblk,disable-modern=on,disable-legacy=off,queue-size=16"]),
 ]
 
 MON_PORT = 4568

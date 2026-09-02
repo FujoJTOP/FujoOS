@@ -110,9 +110,10 @@ pub fn init() -> bool {
                 serial::write_str(" dev=");
                 syscall::debug_dec((did >> 16) as u64);
                 serial::write_line("");
-                // 状态: RESET(0) -> ACK(1) -> DRIVER(2)
-                outl(io, VIO_STATUS, 0);
-                outl(io, VIO_STATUS, 1 | 2);
+                // 状态: RESET(0) -> ACK(1) -> DRIVER(2) —— 必须字节写 (0x15-0x17 是
+                // QEMU legacy 的保留/其它寄存器, dword 写会污染 -> 拒收)
+                outb(io, VIO_STATUS, 0);
+                outb(io, VIO_STATUS, 1 | 2);
                 // vring 帧 (4KiB 清零; 恒等映射, guest-physical 直用)
                 let phys = match crate::mem::alloc_frame_kernel() {
                     Some(p) => p,
@@ -140,8 +141,8 @@ pub fn init() -> bool {
                 syscall::debug_hex(st_ro as u64);
                 serial::write_line("");
                 let _ = qsz;
-                // DRIVER_OK
-                outl(io, VIO_STATUS, 1 | 2 | 4);
+                // DRIVER_OK (字节写)
+                outb(io, VIO_STATUS, 1 | 2 | 4);
                 SECTOR_DATA = phys + OFF_DATA as u64;
                 VQ_READY = true;
                 true
@@ -206,20 +207,26 @@ pub extern "C" fn fujo_vblk_read(lba: u64, out: u64, cap: u64) -> i64 {
         (vq.add(0x100 + 2) as *mut u16).write_volatile(avail_idx.wrapping_add(1));
         // notify (queue 0)
         outw(IO_BASE, VIO_QUEUE_NOTIFY, 0);
-        // 轮询 used.idx (返回 -2 = 提交/等待超时, 数据路径未到)
+        // 轮询 used.idx (QEMU 布局双候选: 0x124 无对齐 / 0x128 align8)
         let mut spin: u64 = 0;
         loop {
-            let used_idx = (vq.add(0x128 + 2) as *mut u16).read_volatile();
+            let u1 = (vq.add(0x124 + 2) as *mut u16).read_volatile();
+            let u2 = (vq.add(0x128 + 2) as *mut u16).read_volatile();
+            let used_idx = if u1 != 0 { u1 } else { u2 };
             if used_idx != LAST_USED {
                 LAST_USED = used_idx;
                 let status = (vq.add(OFF_STATUS) as *mut u8).read_volatile();
-                if status == 0 {
+                let st = status;
+                if st == 0 {
                     // 512B 拷给用户
                     for k in 0..512usize {
                         (out as *mut u8).add(k).write_volatile(vq.add(OFF_DATA + k).read_volatile());
                     }
                     return 0;
                 }
+                serial::write_str("vblk : req status=0x");
+                syscall::debug_hex(st as u64);
+                serial::write_line("");
                 return -1;
             }
             spin += 1;
