@@ -52,6 +52,10 @@ CASES = [
      ["-netdev", "user,id=net0",
       "-device", "virtio-net-pci,netdev=net0,mac=52:54:00:12:34:57,disable-modern=on,disable-legacy=off"],
      {"udp_echo": True, "port": 7777}),
+    ("m125-tcp", "ELF64 x tcp-echo", "sdk/linux/m125_tcp.elf", "M125 RESULT: PASS",
+     ["-netdev", "user,id=net0,hostfwd=tcp:127.0.0.1:18080-:8080",
+      "-device", "virtio-net-pci,netdev=net0,mac=52:54:00:12:34:57,disable-modern=on,disable-legacy=off"],
+     {"tcp_client": [18080, b"fujo-tcp-echo-payload-64x!", 12.0]}),
 ]
 
 MON_PORT = 4568
@@ -68,10 +72,10 @@ def run_case(kernel, case, timeout_s):
     extra = list(case[4]) if len(case) > 4 else []
     opts = case[5] if len(case) > 5 else {}
     # host 侧 UDP echo (m124: QEMU slirp 10.0.2.2:port -> 127.0.0.1:port)
+    import socket as sk
+    import threading
     echo_stop = [False]
     if opts.get("udp_echo"):
-        import socket as sk
-        import threading
         eport = int(opts.get("port", 7777))
 
         def srv():
@@ -86,6 +90,24 @@ def run_case(kernel, case, timeout_s):
                 except sk.timeout:
                     pass
         threading.Thread(target=srv, daemon=True).start()
+    # host 侧 TCP client (m125: 经 slirp hostfwd -> guest:8080)
+    if opts.get("tcp_client"):
+        cport = int(opts["tcp_client"][0])
+        pay = opts["tcp_client"][1]
+        cdelay = float(opts["tcp_client"][2]) if len(opts["tcp_client"]) > 2 else 11.0
+
+        def cli():
+            time.sleep(cdelay)
+            try:
+                s = sk.create_connection(("127.0.0.1", cport), timeout=6)
+                s.sendall(pay)
+                r = s.recv(2048)
+                ok = r == pay
+                print(f"tcpclient: rx {len(r)}B ok={ok}", flush=True)
+                s.close()
+            except Exception as e:
+                print(f"tcpclient: fail {e}", flush=True)
+        threading.Thread(target=cli, daemon=True).start()
     initrd = os.path.join(ROOT, rel)
     if not os.path.exists(initrd):
         return ("MISS", f"initrd not found: {initrd}", "")
