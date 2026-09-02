@@ -364,6 +364,10 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         // ---- M118 (W8): R3 时延一致性探针 + R1 公理化自检 ----
         0x8309 => crate::ai::fujo_r3_probe(a0, a1, a2, a3),
         0x830A => crate::ai::fujo_inv_run(a0, a1),
+        // ---- W10 (R5/R6): 蒸馏字节码规则 + AI 统计/审计导出 ----
+        0x830B => crate::ai::fujo_rules_load(a0, a1),
+        0x830C => crate::ai::fujo_ai_stats(a0),
+        0x830D => crate::ai::fujo_ai_audit(a0, a1),
         // ---- M94: 模型注册表 + fupm ----
         0x8401 => crate::modelreg::fujo_fupm_install(a0, a1, a2),
         0x8402 => crate::modelreg::fujo_reg_list(a0),

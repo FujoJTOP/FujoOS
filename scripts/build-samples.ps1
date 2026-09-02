@@ -17,6 +17,10 @@ function Build-Elf([string]$name) {
     if ($LASTEXITCODE -ne 0) { throw "build failed: $name" }
 }
 
+# --- W10: 策略蒸馏字节码 (FJRU v1; 离线确定性; demo m120 内嵌) ---
+python "$root\tools\distill_rules.py" --out "$root\sdk\rulebook\fjru.bin" --header "$root\sdk\rulebook\rulebook.h"
+if ($LASTEXITCODE -ne 0) { throw "distill failed" }
+
 # --- ELF 样例 (fujoci MILESTONES + 矩阵) ---
 foreach ($n in @('m30_linux','m33_trace','m35_bench','m36_mouse','m37_wm','m38_wm',
                  'm39_font','m40_ime','m41_kit','m42_gui','m43_clip','m44_icon','m45_term',
@@ -27,7 +31,7 @@ foreach ($n in @('m30_linux','m33_trace','m35_bench','m36_mouse','m37_wm','m38_w
                  'm75_dbg','m76_trace','m77_win','m82_ut','m83_leak','m84_dump','m86_wmap',
                  'm87_mcard','m88_sess','m89_ctx','m90_ctx','m91_cap','m92_route','m93_infer',
                  'm94_fupm','m95_life','m96_acpi','m97_hw','m98_install','m99_upd',
-                 'm112_ai','m113_plan','m114_nlc','m115_five','m118_r3','m119_inv','m116_dom')) {
+                 'm112_ai','m113_plan','m114_nlc','m115_five','m118_r3','m119_inv','m116_dom','m120_distill')) {
     Build-Elf $n
 }
 Write-Host "samples: elf ok"

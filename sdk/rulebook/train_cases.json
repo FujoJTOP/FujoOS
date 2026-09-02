@@ -1,0 +1,19 @@
+{
+  "source": "M112-M115 7B 实测记录 (docs/44-Ext, docs/53 §4) + IO 7B prompt 训练示例; 结果为内核自动计算标签",
+  "cases": [
+    {"duty": 2, "text": "ev pid=0 rate=99 wr=dead", "value": 1, "a0": 80, "a1": 0, "conf": 80, "param": 0},
+    {"duty": 2, "text": "ev pid=0 rate=3 wr=ok", "value": 0, "a0": 20, "a1": 0, "conf": 20, "param": 0},
+    {"duty": 2, "text": "ev pid=0 rate=5 wr=1", "value": 0, "a0": 20, "a1": 0, "conf": 20, "param": 0},
+    {"duty": 1, "text": "run the game", "value": 1, "a0": 0, "a1": 0, "conf": 90, "param": 0},
+    {"duty": 1, "text": "open a file", "value": 3, "a0": 0, "a1": 0, "conf": 90, "param": 0},
+    {"duty": 1, "text": "exit", "value": 4, "a0": 0, "a1": 0, "conf": 90, "param": 0},
+    {"duty": 1, "text": "hello", "value": 2, "a0": 0, "a1": 0, "conf": 90, "param": 0},
+    {"duty": 4, "text": "0 1 2 3 4", "value": 5, "a0": 0, "a1": 0, "conf": 90, "param": 0},
+    {"duty": 4, "text": "3 4 5 0 1", "value": 2, "a0": 0, "a1": 0, "conf": 90, "param": 0},
+    {"duty": 3, "text": "isolate task 1", "value": 2, "a0": 1, "a1": 0, "conf": 90, "param": 1},
+    {"duty": 3, "text": "kill task 2", "value": 1, "a0": 2, "a1": 0, "conf": 90, "param": 1},
+    {"duty": 3, "text": "set anomaly threshold to 70", "value": 4, "a0": 1, "a1": 70, "conf": 90, "param": 0},
+    {"duty": 5, "text": "ban games during 0 to 24", "value": 3, "a0": 1, "a1": 0, "conf": 90, "param": 0},
+    {"duty": 5, "text": "ban games 9 to 18", "value": 3, "a0": 1, "a1": 0, "conf": 90, "param": 0}
+  ]
+}

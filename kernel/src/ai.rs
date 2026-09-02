@@ -234,6 +234,7 @@ fn shm_write_req(seq: u64, kind: u32, payload: &[u8]) {
 
 /// 发送请求: shm 帧 + COM2 触发线 "FJAI:SHM <seq> <kind> <len>"。
 fn shm_send_req(kind: u32, payload: &[u8]) -> u64 {
+    unsafe { AI_CALLS += 1 }
     let seq = unsafe {
         AI_SEQ = AI_SEQ.wrapping_add(1);
         AI_SEQ
@@ -471,7 +472,15 @@ pub extern "C" fn fujo_ai_classify(ptr: u64, len: u64) -> i64 {
     serial::write_str(core::str::from_utf8(&text[..len]).unwrap_or(""));
     serial::write_str("') -> ");
 
+    // W10 R5: 蒸馏规则字节码优先 (命中 = 零模型调用; 陌生情况才走模型)。
+    if let Some((v, _a0, _a1, _c)) = rules_match(lower.as_bytes(), SHM_KIND_CLASSIFY as u64) {
+        serial::write_str(intent_name(v as i64));
+        serial::write_line("  [engine=rulebook]");
+        ai_aud_note(1, 3, v, 0, 0, 0, &text[..len]);
+        return v as i64;
+    }
     if let Some((intent, tag, el)) = qwen_classify(lower.as_bytes()) {
+        ai_aud_note(1, 1, intent as u64, 0, 0, 0, &text[..len]);
         serial::write_str(intent_name(intent));
         serial::write_str("  [engine=qwen; model=");
         serial::write_str(core::str::from_utf8(&tag[..tag.iter().position(|&b| b == 0).unwrap_or(0)]).unwrap_or("?"));
@@ -481,6 +490,7 @@ pub extern "C" fn fujo_ai_classify(ptr: u64, len: u64) -> i64 {
         intent
     } else {
         let intent = rules_classify(lower);
+        ai_aud_note(1, 2, intent as u64, 0, 0, 0, &text[..len]);
         serial::write_str(intent_name(intent));
         serial::write_line("  [engine=rules-fallback; link timeout]");
         intent
@@ -717,17 +727,26 @@ pub extern "C" fn fujo_anom_run(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 
     }
     let s = &text[..len];
 
-    let (anom, conf, tag, engine) = match anom_llm(s) {
-        Some((a, c, tag)) => (a, c, tag, 1u64),
-        None => {
-            serial::write_line("anom : shm timeout -> rules fallback");
-            let (a, c) = rules_anom(s);
+    // W10 R5: 蒸馏字节码优先; 陌生 → 模型; 超时 → 规则。
+    let (anom, conf, tag, engine) =
+        if let Some((v, a0, _a1, _c)) = rules_match(s, SHM_KIND_ANOMALY as u64) {
             let mut t = [0u8; 24];
-            t[..7].copy_from_slice(b"fjrules");
-            (a, c, t, 2u64)
-        }
-    };
+            t[..8].copy_from_slice(b"rulebook");
+            (v, a0, t, 3u64)
+        } else {
+            match anom_llm(s) {
+                Some((a, c, tag)) => (a, c, tag, 1u64),
+                None => {
+                    serial::write_line("anom : shm timeout -> rules fallback");
+                    let (a, c) = rules_anom(s);
+                    let mut t = [0u8; 24];
+                    t[..7].copy_from_slice(b"fjrules");
+                    (a, c, t, 2u64)
+                }
+            }
+        };
 
+    let mut iso_rc: i64 = 0;
     if anom == 1 {
         unsafe {
             ANOM_TOTAL += 1;
@@ -740,10 +759,11 @@ pub extern "C" fn fujo_anom_run(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 
             && conf as i64 >= crate::capability::fujo_cfg_get(1)
         {
             if let Some(pid) = parse_pid(s) {
-                let _ = crate::capability::fujo_cap_exec(crate::capability::ACT_ISOLATE, pid, 0);
+                iso_rc = crate::capability::fujo_cap_exec(crate::capability::ACT_ISOLATE, pid, 0);
             }
         }
     }
+    ai_aud_note(2, engine, anom, conf, 0, iso_rc as u64, &text[..len]);
 
     let o = out as *mut u64;
     unsafe {
@@ -908,37 +928,47 @@ pub extern "C" fn fujo_plan_run(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 
         }
     }
     let mut plan = [0u8; 96];
-    let (_, plen) = match plan_llm(&goal[..len]) {
-        Some((l, ln)) => {
-            // 提取 PLAN= 字段 (内容含空格, 以 " TAG" 或行尾终止)
-            let mut i = 0usize;
-            while i + 5 <= ln {
-                if l[i..].starts_with(b"PLAN=") {
-                    let mut j = i + 5;
-                    let mut p = 0usize;
-                    while j < ln && p < 92 && !l[j..].starts_with(b" TAG") {
-                        plan[p] = l[j];
-                        p += 1;
-                        j += 1;
+    let mut eng: u64 = 0;
+    let (_, plen) = if let Some((v, a0, a1, _c)) = rules_match(&goal[..len], SHM_KIND_PLAN as u64) {
+        // 蒸馏字节码: "A<act> <a0> <a1>;" (a1=0 时同 push_action 省略)
+        let n = push_action(&mut plan, 0, v, a0, a1);
+        eng = 3;
+        ((), n)
+    } else {
+        match plan_llm(&goal[..len]) {
+            Some((l, ln)) => {
+                eng = 1;
+                // 提取 PLAN= 字段 (内容含空格, 以 " TAG" 或行尾终止)
+                let mut i = 0usize;
+                while i + 5 <= ln {
+                    if l[i..].starts_with(b"PLAN=") {
+                        let mut j = i + 5;
+                        let mut p = 0usize;
+                        while j < ln && p < 92 && !l[j..].starts_with(b" TAG") {
+                            plan[p] = l[j];
+                            p += 1;
+                            j += 1;
+                        }
+                        break;
                     }
-                    break;
+                    i += 1;
                 }
-                i += 1;
+                let n = plan.iter().position(|&b| b == 0).unwrap_or(0);
+                if n == 0 {
+                    plan[0] = b'A';
+                    plan[1] = b'6';
+                    plan[2] = b' ';
+                    plan[3] = b'0';
+                    plan[4] = b';';
+                }
+                ((), n.min(92))
             }
-            let n = plan.iter().position(|&b| b == 0).unwrap_or(0);
-            if n == 0 {
-                plan[0] = b'A';
-                plan[1] = b'6';
-                plan[2] = b' ';
-                plan[3] = b'0';
-                plan[4] = b';';
+            None => {
+                serial::write_line("plan: shm timeout -> rules fallback");
+                eng = 2;
+                let n = rules_plan(&goal[..len], &mut plan);
+                ((), n)
             }
-            ((), n.min(92))
-        }
-        None => {
-            serial::write_line("plan: shm timeout -> rules fallback");
-            let n = rules_plan(&goal[..len], &mut plan);
-            ((), n)
         }
     };
     let mut n_ok = 0u64;
@@ -968,6 +998,7 @@ pub extern "C" fn fujo_plan_run(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 
         o.add(1).write(n_fail);
         o.add(2).write(if n_fail == 0 { 1 } else { 0 });
     }
+    ai_aud_note(3, eng, n_ok, n_fail, if n_fail == 0 { 1 } else { 0 }, 0, &goal[..len]);
     serial::write_str("plan: goal [");
     serial::write_str(core::str::from_utf8(&goal[..len.min(60)]).unwrap_or(""));
     serial::write_str("] -> ");
@@ -1033,13 +1064,30 @@ pub extern "C" fn fujo_io_predict(ptr: u64, len: u64, out: u64, _cap: u64) -> i6
             seq[i] = (ptr as *const u8).add(i).read();
         }
     }
-    let next = match io_llm(&seq[..len]) {
-        Some(v) => v,
-        None => {
-            serial::write_line("io   : shm timeout -> rules (last-block)");
-            last_num(&seq[..len])
+    let (next, eng) = if let Some((v, _a0, _a1, _c)) = rules_match(&seq[..len], SHM_KIND_IO as u64) {
+        (v, 3u64)
+    } else {
+        match io_llm(&seq[..len]) {
+            Some(v) => (v, 1u64),
+            None => {
+                serial::write_line("io   : shm timeout -> rules (last-block)");
+                (last_num(&seq[..len]), 2u64)
+            }
         }
     };
+    // R6 自监督结果标签: 上次预测是否被本次实际块证实 (0=未中 1=命中 2=首次)。
+    let hit = unsafe {
+        let h = if PREV_IO == u64::MAX {
+            2
+        } else if PREV_IO == next {
+            1
+        } else {
+            0
+        };
+        PREV_IO = next;
+        h
+    };
+    ai_aud_note(4, eng, next, hit, 0, 0, &seq[..len]);
     unsafe {
         (out as *mut u64).write(next);
     }
@@ -1140,31 +1188,41 @@ pub extern "C" fn fujo_nlc_set(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 {
         }
     }
     let mut pol = [0u8; 96];
-    let plen = match nlc_llm(&text[..len]) {
-        Some((l, ln)) => {
-            let mut i = 0usize;
-            while i + 4 <= ln {
-                if l[i..].starts_with(b"POL=") {
-                    let mut j = i + 4;
-                    let mut p = 0usize;
-                    while j < ln && p < 92 && !l[j..].starts_with(b" TAG") {
-                        pol[p] = l[j];
-                        p += 1;
-                        j += 1;
+    let mut eng: u64 = 0;
+    let plen = if let Some((v, a0, _a1, _c)) = rules_match(&text[..len], SHM_KIND_NLC as u64) {
+        // 蒸馏字节码: "POL=<key>:<val>;"
+        let n = push_pol(&mut pol, 0, v, a0);
+        eng = 3;
+        n
+    } else {
+        match nlc_llm(&text[..len]) {
+            Some((l, ln)) => {
+                eng = 1;
+                let mut i = 0usize;
+                while i + 4 <= ln {
+                    if l[i..].starts_with(b"POL=") {
+                        let mut j = i + 4;
+                        let mut p = 0usize;
+                        while j < ln && p < 92 && !l[j..].starts_with(b" TAG") {
+                            pol[p] = l[j];
+                            p += 1;
+                            j += 1;
+                        }
+                        break;
                     }
-                    break;
+                    i += 1;
                 }
-                i += 1;
+                // 空: 默认
+                if !pol.iter().any(|&b| b != 0) {
+                    pol[..6].copy_from_slice(b"POL=6:");
+                }
+                pol.iter().position(|&b| b == 0).unwrap_or(92).min(92)
             }
-            // 空: 默认
-            if !pol.iter().any(|&b| b != 0) {
-                pol[..6].copy_from_slice(b"POL=6:");
+            None => {
+                serial::write_line("nlc : shm timeout -> rules fallback");
+                eng = 2;
+                rules_nlc(&text[..len], &mut pol)
             }
-            pol.iter().position(|&b| b == 0).unwrap_or(92).min(92)
-        }
-        None => {
-            serial::write_line("nlc : shm timeout -> rules fallback");
-            rules_nlc(&text[..len], &mut pol)
         }
     };
     // 解析 "POL=k:v;POL=k:v"
@@ -1196,6 +1254,7 @@ pub extern "C" fn fujo_nlc_set(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 {
     unsafe {
         (out as *mut u64).write(n_applied);
     }
+    ai_aud_note(5, eng, n_applied, 0, 0, 0, &text[..len]);
     serial::write_str("nlc : policy [");
     serial::write_str(core::str::from_utf8(&pol[..plen.min(60)]).unwrap_or(""));
     serial::write_str("] applied=");
@@ -1276,8 +1335,10 @@ pub extern "C" fn fujo_env_scan(out: u64, _cap: u64) -> i64 {
     put(&num[..n]);
 
     let mut scene_buf = [0u8; 12];
+    let mut eng: u64 = 0;
     let (scene_len, profile) = match env_llm(&digest[..d]) {
         Some((l, ln)) => {
+            eng = 1;
             let mut sn = 0usize;
             let mut prof = 2u64;
             let mut i = 0usize;
@@ -1305,6 +1366,7 @@ pub extern "C" fn fujo_env_scan(out: u64, _cap: u64) -> i64 {
         }
         None => {
             serial::write_line("env : shm timeout -> rules (desktop/2)");
+            eng = 2;
             scene_buf[..7].copy_from_slice(b"desktop");
             (7usize, 2u64)
         }
@@ -1312,6 +1374,7 @@ pub extern "C" fn fujo_env_scan(out: u64, _cap: u64) -> i64 {
     let scene = &scene_buf[..scene_len];
     let code = scene_code(scene);
     let _ = crate::capability::cfg_set(6, profile);
+    ai_aud_note(6, eng, profile, code, 0, 0, &digest[..d.min(40)]);
     let o = out as *mut u64;
     unsafe {
         o.write(profile);
@@ -1464,4 +1527,199 @@ pub extern "C" fn fujo_inv_run(out: u64, cap: u64) -> i64 {
     crate::syscall::debug_hex(mask);
     serial::write_line("");
     0
+}
+
+// ---------------------------------------------------------------------------
+// W10 · R5 策略蒸馏: 确定性字节码规则引擎 (FJRU v1) + R6 审计捕获/导出
+//
+// 蒸馏闭环: 审计/实测记录 (train_cases.json) -> 7B 归纳 if-then 规则 ->
+// tools/distill_rules.py 编译为 FJRU v1 字节码 -> 0x830B 载入内核 ->
+// 五职责先查规则 (命中 = 零模型调用), 未命中才走模型 (模型只处理陌生情况)。
+// 字节码条目: [nl u8][needle ≤40B][value u8][a0 u8][a1 u8][conf u8]
+//            [param u8: 1=needle 后数字解析 a0][duty u8: 1..6, 0=任意];
+// duty 与 SHM_KIND_* 一一对应。命中返回 (value, a0, a1, conf)。
+// ---------------------------------------------------------------------------
+
+const RULE_MAGIC: u32 = 0x5552_4A46; // "FJRU" LE
+const RULE_MAX: usize = 64;
+const RULE_NL_MAX: usize = 40;
+const RULE_META: usize = 6; // value/a0/a1/conf/param/duty
+
+static mut RULE_N: usize = 0;
+static mut RULE_NEEDLE: [[u8; RULE_NL_MAX]; RULE_MAX] = [[0; RULE_NL_MAX]; RULE_MAX];
+static mut RULE_LEN: [u8; RULE_MAX] = [0; RULE_MAX];
+static mut RULE_VAL: [u8; RULE_MAX] = [0; RULE_MAX];
+static mut RULE_A0: [u8; RULE_MAX] = [0; RULE_MAX];
+static mut RULE_A1: [u8; RULE_MAX] = [0; RULE_MAX];
+static mut RULE_CONF: [u8; RULE_MAX] = [0; RULE_MAX];
+static mut RULE_PARAM: [u8; RULE_MAX] = [0; RULE_MAX];
+static mut RULE_DUTY: [u8; RULE_MAX] = [0; RULE_MAX];
+static mut RULE_HITS: u64 = 0;
+/// 模型调用次数 (shm 请求计数; 保真度曲线 = 调用率下降)。
+static mut AI_CALLS: u64 = 0;
+
+fn find_sub(text: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || needle.len() > text.len() {
+        return None;
+    }
+    for i in 0..=(text.len() - needle.len()) {
+        let mut ok = true;
+        for k in 0..needle.len() {
+            if text[i + k] != needle[k] {
+                ok = false;
+                break;
+            }
+        }
+        if ok {
+            return Some(i);
+        }
+    }
+    None
+}
+
+/// 规则字节码匹配 (duty: SHM_KIND_*; 0=any)。命中即 RULE_HITS+1。
+fn rules_match(text: &[u8], duty: u64) -> Option<(u64, u64, u64, u64)> {
+    unsafe {
+        if RULE_N == 0 {
+            return None;
+        }
+        for i in 0..RULE_N {
+            let d = RULE_DUTY[i] as u64;
+            if d != 0 && d != duty {
+                continue;
+            }
+            let nl = RULE_LEN[i] as usize;
+            if nl == 0 {
+                continue;
+            }
+            if let Some(pos) = find_sub(text, &RULE_NEEDLE[i][..nl]) {
+                RULE_HITS += 1;
+                let mut a0 = RULE_A0[i] as u64;
+                if RULE_PARAM[i] != 0 {
+                    let mut j = pos + nl;
+                    while j < text.len() && text[j] == b' ' {
+                        j += 1;
+                    }
+                    let mut v = 0u64;
+                    let mut saw = false;
+                    while j < text.len() && (text[j] as char).is_ascii_digit() {
+                        v = v * 10 + (text[j] - b'0') as u64;
+                        saw = true;
+                        j += 1;
+                    }
+                    if saw {
+                        a0 = v;
+                    }
+                }
+                return Some((RULE_VAL[i] as u64, a0, RULE_A1[i] as u64, RULE_CONF[i] as u64));
+            }
+        }
+    }
+    None
+}
+
+/// 0x830B: 载入 FJRU v1 规则字节码 (用户缓冲 -> 内核静态表)。返回规则条数。
+#[no_mangle]
+pub extern "C" fn fujo_rules_load(ptr: u64, len: u64) -> i64 {
+    if !(0x400000..0x800000).contains(&ptr) || len < 0x10 || len > 0x2000 {
+        return -22;
+    }
+    let b = ptr as *const u8;
+    unsafe {
+        let magic = (b.add(0x0) as *const u32).read();
+        let ver = (b.add(0x4) as *const u32).read();
+        let count = ((b.add(0x8) as *const u16).read() as usize).min(RULE_MAX);
+        if magic != RULE_MAGIC || ver != 1 {
+            return -22;
+        }
+        let mut pos = 0x10usize;
+        let mut n = 0usize;
+        while n < count && pos + 1 + RULE_META <= len as usize && n < RULE_MAX {
+            let nl = (b.add(pos).read() as usize).min(RULE_NL_MAX);
+            if pos + 1 + nl + RULE_META > len as usize || nl == 0 {
+                break;
+            }
+            RULE_LEN[n] = nl as u8;
+            for k in 0..nl {
+                RULE_NEEDLE[n][k] = b.add(pos + 1 + k).read();
+            }
+            RULE_VAL[n] = b.add(pos + 1 + nl).read();
+            RULE_A0[n] = b.add(pos + 2 + nl).read();
+            RULE_A1[n] = b.add(pos + 3 + nl).read();
+            RULE_CONF[n] = b.add(pos + 4 + nl).read();
+            RULE_PARAM[n] = b.add(pos + 5 + nl).read();
+            RULE_DUTY[n] = b.add(pos + 6 + nl).read();
+            pos += 1 + nl + RULE_META;
+            n += 1;
+        }
+        RULE_N = n;
+        RULE_HITS = 0;
+        serial::write_str("rules: load ");
+        crate::syscall::debug_dec(n as u64);
+        serial::write_line(" entries (FJRU v1)");
+        n as i64
+    }
+}
+
+// ---- R6: 审计捕获 (上下文/职责/引擎/结果, self-labeled 结果标签) ----
+const AIAUD_N: usize = 16;
+const AIAUD_SZ: usize = 88; // 6×u64 + 40B 文本
+static mut AIAUD: [u8; AIAUD_N * AIAUD_SZ] = [0; AIAUD_N * AIAUD_SZ];
+static mut AIAUD_POS: usize = 0;
+/// IO 自监督命中标签: 上次预测; u64::MAX = 无先前。
+static mut PREV_IO: u64 = u64::MAX;
+
+fn ai_aud_note(duty: u64, engine: u64, out: u64, a: u64, b: u64, result: u64, text: &[u8]) {
+    unsafe {
+        let s = AIAUD_POS % AIAUD_N;
+        let e = &mut AIAUD[s * AIAUD_SZ..(s + 1) * AIAUD_SZ];
+        (e.as_mut_ptr() as *mut u64).write(engine);
+        (e.as_mut_ptr().add(8) as *mut u64).write(duty);
+        (e.as_mut_ptr().add(16) as *mut u64).write(out);
+        (e.as_mut_ptr().add(24) as *mut u64).write(a);
+        (e.as_mut_ptr().add(32) as *mut u64).write(b);
+        (e.as_mut_ptr().add(40) as *mut u64).write(result);
+        let tlen = text.len().min(40);
+        for i in 0..tlen {
+            e[48 + i] = text[i];
+        }
+        e[48 + tlen] = 0;
+        AIAUD_POS += 1;
+    }
+}
+
+/// 0x830C: 统计 (out[0]=模型调用数, out[1]=规则条数, out[2]=规则命中, out[3]=审计条数)。
+#[no_mangle]
+pub extern "C" fn fujo_ai_stats(out: u64) -> i64 {
+    if !(0x400000..0x800000).contains(&out) {
+        return -14;
+    }
+    unsafe {
+        let o = out as *mut u64;
+        o.write(AI_CALLS);
+        o.add(1).write(RULE_N as u64);
+        o.add(2).write(RULE_HITS);
+        o.add(3).write(AIAUD_POS as u64);
+    }
+    0
+}
+
+/// 0x830D: 审计导出 -> (entries, 返回条数)。
+#[no_mangle]
+pub extern "C" fn fujo_ai_audit(ptr: u64, cap: u64) -> i64 {
+    if !(0x400000..0x800000).contains(&ptr) {
+        return -14;
+    }
+    unsafe {
+        let n = ((cap / AIAUD_SZ as u64) as usize).min(AIAUD_N).min(AIAUD_POS);
+        for i in 0..n {
+            let idx = (AIAUD_POS as usize + AIAUD_N - n + i) % AIAUD_N;
+            let src = &AIAUD[idx * AIAUD_SZ..(idx + 1) * AIAUD_SZ];
+            let dst = (ptr as *mut u8).add(i * AIAUD_SZ);
+            for k in 0..AIAUD_SZ {
+                dst.add(k).write(src[k]);
+            }
+        }
+        n as i64
+    }
 }
