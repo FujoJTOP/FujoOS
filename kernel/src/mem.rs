@@ -461,9 +461,13 @@ pub fn as_copy_heap(dst_h0: u64, dst_h1: u64, src_h0: u64, src_h1: u64) {
     }
 }
 
+/// W13: 内核用帧分配 (virtio vring 等; 恒等映射直写, guest-physical 直用)。
+pub fn alloc_frame_kernel() -> Option<u64> {
+    frame_alloc_zero()
+}
+
 /// 释放帧 (帧分配器位图清位; 仅 16MiB..63MiB 池内)。
-pub fn frame_free(phys: u64) {
-    unsafe {
+pub fn frame_free(phys: u64) {    unsafe {
         if phys < FRAME_BASE || phys >= FRAME_END {
             return;
         }

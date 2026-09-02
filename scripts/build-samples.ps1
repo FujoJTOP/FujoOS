@@ -21,6 +21,10 @@ function Build-Elf([string]$name) {
 python "$root\tools\distill_rules.py" --out "$root\sdk\rulebook\fjru.bin" --header "$root\sdk\rulebook\rulebook.h"
 if ($LASTEXITCODE -ne 0) { throw "distill failed" }
 
+# --- W13: virtio-blk 参考盘 (mk_vblk.py; demo m123 逐字节比对) ---
+python "$root\tools\mk_vblk.py" "$root\sdk\vblk.img"
+if ($LASTEXITCODE -ne 0) { throw "mk_vblk failed" }
+
 # --- ELF 样例 (fujoci MILESTONES + 矩阵) ---
 foreach ($n in @('m30_linux','m33_trace','m35_bench','m36_mouse','m37_wm','m38_wm',
                  'm39_font','m40_ime','m41_kit','m42_gui','m43_clip','m44_icon','m45_term',
@@ -31,7 +35,7 @@ foreach ($n in @('m30_linux','m33_trace','m35_bench','m36_mouse','m37_wm','m38_w
                  'm75_dbg','m76_trace','m77_win','m82_ut','m83_leak','m84_dump','m86_wmap',
                  'm87_mcard','m88_sess','m89_ctx','m90_ctx','m91_cap','m92_route','m93_infer',
                  'm94_fupm','m95_life','m96_acpi','m97_hw','m98_install','m99_upd',
-                 'm112_ai','m113_plan','m114_nlc','m115_five','m118_r3','m119_inv','m116_dom','m120_distill','m121_isol','m122_dev')) {
+                 'm112_ai','m113_plan','m114_nlc','m115_five','m118_r3','m119_inv','m116_dom','m120_distill','m121_isol','m122_dev','m123_vblk')) {
     Build-Elf $n
 }
 Write-Host "samples: elf ok"

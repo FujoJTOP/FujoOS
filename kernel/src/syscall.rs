@@ -370,6 +370,9 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x830D => crate::ai::fujo_ai_audit(a0, a1),
         // ---- W11: 当前 CR3 探针 (调试) ----
         0x830E => crate::mem::fujo_cr3_probe(a0),
+        // ---- W13: virtio-blk (PCI 总线模型 + 驱动) ----
+        0x8A01 => crate::virtio::fujo_vblk_read(a0, a1, a2),
+        0x8A02 => crate::virtio::fujo_vblk_info(a0),
         // ---- M94: 模型注册表 + fupm ----
         0x8401 => crate::modelreg::fujo_fupm_install(a0, a1, a2),
         0x8402 => crate::modelreg::fujo_reg_list(a0),

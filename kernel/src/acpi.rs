@@ -43,6 +43,50 @@ fn pci_read_cfg(bus: u8, slot: u8, func: u8, reg: u8) -> u32 {
     }
 }
 
+/// W13: PCI 配置空间写 (virtio BAR/命令寄存器等)。
+pub fn pci_write_cfg(bus: u8, slot: u8, func: u8, reg: u8, val: u32) {
+    let addr = 0x8000_0000u32 | ((bus as u32) << 16) | ((slot as u32) << 11)
+        | ((func as u32) << 8) | ((reg as u32) & 0xFC);
+    let port_cfg = 0xCF8u16;
+    let port_data = 0xCFCu16;
+    unsafe {
+        core::arch::asm!(
+            "out dx, eax",
+            in("dx") port_cfg,
+            in("eax") addr,
+            options(nomem, nostack)
+        );
+        core::arch::asm!(
+            "out dx, eax",
+            in("dx") port_data,
+            in("eax") val,
+            options(nomem, nostack)
+        );
+    }
+}
+
+/// W13: 按 (vendor, device) 查找 PCI 设备 (func 0 起; 返回 (bus, slot, func, bar0))。
+pub fn pci_find(vid: u16, did: u16) -> Option<(u8, u8, u8, u32)> {
+    for bus in 0..3u8 {
+        for slot in 0..32u8 {
+            for func in 0..8u8 {
+                let v = pci_read_cfg(bus, slot, func, 0x00);
+                if v == 0xFFFF_FFFF || v == 0 {
+                    break; // 无设备: 更高 func 也无
+                }
+                if v & 0xFFFF == vid as u32 && (v >> 16) & 0xFFFF == did as u32 {
+                    let bar0 = pci_read_cfg(bus, slot, func, 0x10);
+                    return Some((bus, slot, func, bar0));
+                }
+                if func == 0 {
+                    break; // func0 无设备: 本 slot 空
+                }
+            }
+        }
+    }
+    None
+}
+
 /// 搜索 RSDP (magic "RSD PTR " 前 8 字节)。
 fn find_rsdp() -> Option<u64> {
     let mut p = 0xE0000u64;

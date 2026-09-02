@@ -45,6 +45,9 @@ CASES = [
     ("m120-distill", "ELF64 x distill", "sdk/linux/m120_distill.elf", "M120 RESULT: PASS"),
     ("m121-isol", "ELF64 x aspace", "sdk/linux/m121_isol.elf", "M121 RESULT: PASS"),
     ("m122-dev", "ELF64 x modeldev", "sdk/linux/m122_dev.elf", "M122 RESULT: PASS"),
+    ("m123-vblk", "ELF64 x virtio", "sdk/linux/m123_vblk.elf", "M123 RESULT: PASS",
+     ["-drive", f"if=none,id=vblk,file={os.path.join(ROOT, 'sdk', 'vblk.img')},format=raw",
+      "-device", "virtio-blk-pci,drive=vblk,disable-modern=on,disable-legacy=off"]),
 ]
 
 MON_PORT = 4568
@@ -57,7 +60,8 @@ def qemu():
 
 
 def run_case(kernel, case, timeout_s):
-    name, label, rel, needle = case
+    name, label, rel, needle = case[:4]
+    extra = list(case[4]) if len(case) > 4 else []
     initrd = os.path.join(ROOT, rel)
     if not os.path.exists(initrd):
         return ("MISS", f"initrd not found: {initrd}", "")
@@ -74,7 +78,7 @@ def run_case(kernel, case, timeout_s):
         "-serial", f"tcp:127.0.0.1:{SER_PORT},server=on,wait=off",
         "-monitor", f"telnet:127.0.0.1:{MON_PORT},server,nowait",
         "-display", "none", "-no-reboot",
-    ])
+    ] + extra)
     time.sleep(9.0)
     try:
         s = socket.create_connection(("127.0.0.1", MON_PORT), timeout=3)

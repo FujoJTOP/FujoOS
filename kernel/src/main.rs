@@ -14,6 +14,7 @@
 mod ai;
 mod a11y;
 mod acpi;
+mod virtio;
 mod ata;
 mod audio;
 mod asm;
@@ -278,6 +279,10 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     crate::editor::selftest(); // M73: 迷你编辑器就绪
     crate::utest::init(); // M82: 单元测试套件注册
     crate::acpi::scan_all(); // M96: PCI 枚举 (真机引导最小集)
+    let vblk = crate::virtio::init(); // W13: virtio-blk (参考机可复现)
+    if vblk {
+        out_line("vblk : virtio-blk ready (legacy PCI, polled vring)");
+    }
     if !gfx_ok {
         out_line("gfx  : framebuffer unavailable (VBE not present), geometry logo skipped");
     } else {
