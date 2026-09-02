@@ -24,16 +24,20 @@ pub struct Task {
     pub sig_handler: u64,
     pub sig_pending: bool,
     pub sig_active: bool,
+    /// M116 (W9): 权限域 id (0=系统域; 任务级绑定, 可撤销)。
+    pub domain: u64,
 }
 
 static mut TASKS: [Task; MAX_TASKS] = [
-    Task { saved_rsp: 0, kstack_top: 0, state: 0, sig_handler: 0, sig_pending: false, sig_active: false };
+    Task { saved_rsp: 0, kstack_top: 0, state: 0, sig_handler: 0, sig_pending: false, sig_active: false, domain: 0 };
     MAX_TASKS
 ];
 static mut TASK_COUNT: usize = 0;
 static mut CUR: usize = 0;
 static mut SWITCHES: u64 = 0;
 static mut MULTI: bool = false;
+/// M116: 隐式单任务 (未登记) 的域绑定 (0x8108 目标)。
+static mut BOUND_DOMAIN: u64 = 0;
 
 /// 切换桩引用的全局: 下一任务的内核栈保存帧指针 (桩 mov rsp, [rip + ...])。
 #[no_mangle]
@@ -115,6 +119,28 @@ pub fn game_mode() -> bool {
 /// 当前任务 id (M14: 演示/进程标识)。
 pub fn current_task() -> usize {
     unsafe { CUR }
+}
+
+/// M116: 当前任务域 id —— 已登记任务读表项, 隐式单任务读 BOUND_DOMAIN (默认系统域 0)。
+pub fn current_domain_id() -> u64 {
+    unsafe {
+        if CUR < MAX_TASKS && TASKS[CUR].state != 0 {
+            TASKS[CUR].domain
+        } else {
+            BOUND_DOMAIN
+        }
+    }
+}
+
+/// M116: 0x8108 绑定当前任务到域 (0=解绑回系统域)。
+pub fn set_current_domain(id: u64) {
+    unsafe {
+        if CUR < MAX_TASKS && TASKS[CUR].state != 0 {
+            TASKS[CUR].domain = id;
+        } else {
+            BOUND_DOMAIN = id;
+        }
+    }
 }
 
 /// M112: 存活任务数 (state != 0)。
@@ -265,6 +291,7 @@ pub fn fork_current(rip: u64, rsp: u64, regs: &[u64; 8]) -> Option<usize> {
                 sig_handler: 0,
                 sig_pending: false,
                 sig_active: false,
+                domain: 0,
             };
             TASK_COUNT = 1;
             crate::gdt::set_rsp0(0x380000);
@@ -282,6 +309,7 @@ pub fn fork_current(rip: u64, rsp: u64, regs: &[u64; 8]) -> Option<usize> {
             sig_handler: 0,
             sig_pending: false,
             sig_active: false,
+            domain: 0,
         };
         TASK_COUNT += 1;
         serial::write_str("sched: fork parent=");
@@ -345,6 +373,7 @@ fn spawn(kstack_top: u64, user_stack: u64, entry: u64) -> usize {
             sig_handler: 0,
             sig_pending: false,
             sig_active: false,
+            domain: 0,
         };
         TASK_COUNT += 1;
         idx
@@ -421,6 +450,7 @@ pub fn spawn_proxy(entry: u64) -> usize {
             sig_handler: 0,
             sig_pending: false,
             sig_active: false,
+            domain: 0,
         };
         TASK_COUNT = 1;
         CUR = 0;
@@ -450,6 +480,7 @@ fn spawn_at(idx: usize, kstack_top: u64, user_stack: u64, entry: u64) {
             sig_handler: 0,
             sig_pending: false,
             sig_active: false,
+            domain: 0,
         };
         if idx >= TASK_COUNT {
             TASK_COUNT = idx + 1;
@@ -525,6 +556,7 @@ pub fn exec_spawn(entry: u64) -> i64 {
                 sig_handler: 0,
                 sig_pending: false,
                 sig_active: false,
+                domain: 0,
             };
             TASK_COUNT = 1;
             crate::gdt::set_rsp0(0x380000);

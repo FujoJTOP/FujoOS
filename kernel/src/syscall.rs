@@ -337,6 +337,14 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         // ---- M112: AI 动作 (cap_exec 经 syscall 现场; LAUNCH 需寄存器) ----
         0x8105 => cap_exec(args),
         0x8106 => crate::capability::fujo_cfg_get(a0),
+        // ---- M116 (W9): 权限域 (cap 集合 / 地址空间 / 中断域, 可撤销) ----
+        0x8107 => crate::capability::fujo_dom_create(a0, a1, a2),
+        0x8108 => {
+            crate::sched::set_current_domain(a0.min(4));
+            0
+        }
+        0x8109 => crate::capability::fujo_dom_revoke(a0),
+        0x810A => crate::capability::fujo_dom_info(a0),
         // ---- M92: 意图路由增强 ----
         0x8201 => crate::ai::fujo_route_set(a0),
         0x8202 => crate::ai::fujo_route_classify(a0, a1),
@@ -1756,6 +1764,14 @@ fn cap_exec(args: *const u64) -> i64 {
             serial::write_str("cap  : deny exec #");
             print_dec(act);
             serial::write_line("");
+            return -1;
+        }
+        // M116: 地址空间门 —— LAUNCH 入口必须落在当前域允许区域。
+        if act == crate::capability::ACT_LAUNCH && !crate::capability::launch_entry_ok(a0) {
+            crate::capability::aud_exec(act, 1);
+            serial::write_str("cap  : deny LAUNCH entry outside domain as (");
+            print_hex(a0);
+            serial::write_line(")");
             return -1;
         }
         let rc = if act == crate::capability::ACT_LAUNCH {

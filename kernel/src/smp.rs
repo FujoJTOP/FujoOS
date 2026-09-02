@@ -180,6 +180,11 @@ pub fn fujo_tss_info(ptr: u64) -> i64 {
 
 /// 0x6B04: irq_route(mask) — 中断目标核掩码。
 pub fn fujo_irq_route(mask: u64) -> i64 {
+    // M116: 中断域门 —— 域无 IRQ 权限禁止改路由。
+    if !crate::capability::dom_irq_ok() {
+        crate::serial::write_line("irq  : deny route (domain irq off)");
+        return -1;
+    }
     unsafe {
         IRQ_ROUTE = mask & 3;
     }

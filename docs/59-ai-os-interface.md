@@ -91,7 +91,7 @@ FJAI:RSP <seq> ANOM=0 CONF=10 TAG=qwen2.5:7b TTL=1320
 
 - `python tools/verify_ai.py --demo m118_r3 --needle "M118 RESULT: PASS" --model qwen2.5:7b` (在线, 7B)
 - `python tools/fujoregress.py` → 10/10 (新增 r1-invariants 用例 = 离线跑 A1–A4)
-- BSS 尾 < 0x2A0000 (新增静态仅 ~64B)
+- BSS 尾 < 0x2C0000 (镜像尾 0x2A1D50; load_end/pad 已随 M116 提至 0x2C0000/0x1C0000)
 
 ## 5. 已知简化 (ponytail)
 

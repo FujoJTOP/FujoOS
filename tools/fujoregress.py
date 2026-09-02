@@ -41,6 +41,7 @@ CASES = [
     ("pe-m27", "PE32+ x winsubsys", "sdk/win/m27_mingw.exe", "M27 RESULT: PASS"),
     ("pe-m30", "PE32+ x winsubsys", "sdk/win/m30_win.exe", "M30 RESULT: PASS"),
     ("r1-invariants", "ELF64 x aximatic", "sdk/linux/m119_inv.elf", "M119 RESULT: PASS"),
+    ("m116-domain", "ELF64 x explosion", "sdk/linux/m116_dom.elf", "M116 RESULT: PASS"),
 ]
 
 MON_PORT = 4568

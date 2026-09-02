@@ -117,11 +117,11 @@ static MB_HEADER: MultibootHeader = MultibootHeader {
     // M15 又踩: 镜像 1.18MB 已超 0x120000 -> 尾部覆盖引导模块区 (bad magic);
     // M20 再踩: 镜像 1.38MB=0x151D18, 0x100000+0x151D18=0x251D18 > 0x230000
     //   -> 模块区(load_end 之后)与内核尾部重叠, ELF 头被部分覆盖。
-    // 当前覆盖到 0x2A2000 (镜像尾 0x2A1D50 + 4K 对齐余量; M118 起镜像越过 0x2A0000)。
-    // 约束: 必须是 0x100000 + flatten --pad 值 (QEMU multiboot 精确读
-    // load_end-load_addr 字节; 超出文件大小 -> fread() failed)。
-    load_end_addr: 0x002A_2000,
-    bss_end_addr: 0x002A_2000,
+    // 当前覆盖到 0x2C0000 (M116 镜像尾 0x2A2E20; 逐波向 0x2A 页界顶升,
+    // 直接留出 W9/W10 余量 —— 约束: 必须是 0x100000 + flatten --pad 值
+    // (QEMU multiboot 精确读 load_end-load_addr 字节; 超出文件大小 -> fread() failed))。
+    load_end_addr: 0x002C_0000,
+    bss_end_addr: 0x002C_0000,
     entry_addr: 0x0010_1000,
 };
 

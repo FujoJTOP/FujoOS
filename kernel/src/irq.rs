@@ -49,6 +49,11 @@ pub fn note() {
 
 /// 0x6D01
 pub fn fujo_irq_set_window(w: u64) -> i64 {
+    // M116: 中断域门 —— 域无 IRQ 权限禁止配置合并窗口。
+    if !crate::capability::dom_irq_ok() {
+        crate::serial::write_line("irq  : deny set_window (domain irq off)");
+        return -1;
+    }
     unsafe {
         WINDOW = w.clamp(1, 64);
         W_START = IRQS; // 窗口切换: 基点重置 (批数从 0 起)

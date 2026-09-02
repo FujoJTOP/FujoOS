@@ -72,14 +72,13 @@ pub fn fujo_cfg_get(key: u64) -> i64 {
     }
 }
 
-/// M112: exec 动作授权检查 (槽 6 + perm bit)。
+/// M116: exec 动作授权检查 —— 当前任务域门 (域 0 读全局槽 6, 兼容不变)。
 pub fn exec_authorized(act: u64) -> bool {
     if act == 0 || act > 6 {
         return false;
     }
-    unsafe {
-        CAP_GRANT[EXEC_SLOT] && (CAP_PERM[EXEC_SLOT] & (1u64 << (act - 1))) != 0
-    }
+    let (g, p) = domain_perm(cur_dom());
+    g && (p & (1u64 << (act - 1))) != 0
 }
 
 /// M112: exec 审计落笔。
@@ -197,4 +196,142 @@ pub fn aud_tail() -> (u64, u64, u64, u64) {
         }
         AUD[(AUD_POS.wrapping_sub(1) % N_AUD as u64) as usize]
     }
+}
+
+// ---------------------------------------------------------------------------
+// M116 (W9) · 权限域: 域 := { cap 集合, 地址空间, 中断域 }, 支持可撤销。
+// 域 0 = 系统域 (兼容: 读全局 exec 槽 6, 全地址空间, 中断可配);
+// 域 1..=4 = 显式域 {perm: act 位掩码, as_mask: region 位, irq: bool}。
+// 爆炸半径: 任何 cap_exec 先过当前任务域门; LAUNCH 入口受 as_mask 约束;
+// 中断配置受 irq 约束; 撤销后 granted=false -> 全拒但仍可读。
+// ---------------------------------------------------------------------------
+
+pub const DOM_MAX: usize = 5; // 0=系统域 + 1..=4
+pub const REGION_LOW: u64 = 1; // 0x400000..0xC00000
+pub const REGION_HIGH: u64 = 2; // 0x1000000..0x1080000 (M108 窗口镜像)
+pub const REGION_ANY: u64 = REGION_LOW | REGION_HIGH;
+
+#[derive(Clone, Copy)]
+pub struct Domain {
+    pub perm: u64, // cap 集合 (bit=act-1, 同 exec 槽语义)
+    pub granted: bool,
+    pub as_mask: u64, // 地址空间 (bit=region-1)
+    pub irq: bool, // 中断域: 允许配置 0x6D01/0x6B04
+}
+
+static mut DOM: [Domain; DOM_MAX] = [
+    Domain { perm: 0, granted: true, as_mask: REGION_ANY, irq: true }, // 0: 系统域 (兼容)
+    Domain { perm: 0, granted: false, as_mask: 0, irq: false },
+    Domain { perm: 0, granted: false, as_mask: 0, irq: false },
+    Domain { perm: 0, granted: false, as_mask: 0, irq: false },
+    Domain { perm: 0, granted: false, as_mask: 0, irq: false },
+];
+
+/// 当前任务的域 id (sched 提供; 未绑定 = 系统域 0)。
+fn cur_dom() -> u64 {
+    crate::sched::current_domain_id()
+}
+
+/// 域 perm 读取: 域 0 兼容全局 exec 槽 (M91/M112 语义不变)。
+pub fn domain_perm(d: u64) -> (bool, u64) {
+    unsafe {
+        if d >= DOM_MAX as u64 {
+            return (false, 0);
+        }
+        if d == 0 {
+            (CAP_GRANT[EXEC_SLOT], CAP_PERM[EXEC_SLOT])
+        } else {
+            (DOM[d as usize].granted, DOM[d as usize].perm)
+        }
+    }
+}
+
+/// M116: 0x8107 创建域 (1..=4, 首个空闲槽) -> 域 id; -17 表满。
+pub fn fujo_dom_create(perm: u64, as_mask: u64, irq: u64) -> i64 {
+    unsafe {
+        for i in 1..DOM_MAX {
+            if !DOM[i].granted {
+                DOM[i] = Domain {
+                    perm: perm & ALL_ACTS,
+                    granted: true,
+                    as_mask: as_mask & REGION_ANY,
+                    irq: irq != 0,
+                };
+                aud_dom(i as u64, 0);
+                serial::write_str("dom  : create #");
+                crate::syscall::debug_dec(i as u64);
+                serial::write_str(" perm=");
+                crate::syscall::debug_hex(DOM[i].perm);
+                serial::write_str(" as=");
+                crate::syscall::debug_hex(DOM[i].as_mask);
+                serial::write_line("");
+                return i as i64;
+            }
+        }
+    }
+    -17 // -EEXIST: 无空闲槽
+}
+
+/// M116: 0x8109 撤销域 (granted=false; 之后该域所有 cap_exec/配置被拒)。
+pub fn fujo_dom_revoke(id: u64) -> i64 {
+    unsafe {
+        if id == 0 || id >= DOM_MAX as u64 {
+            return -22;
+        }
+        DOM[id as usize].granted = false;
+        aud_dom(id, 1);
+        serial::write_str("dom  : revoke #");
+        crate::syscall::debug_dec(id);
+        serial::write_line("");
+        0
+    }
+}
+
+/// 域审计: action=3 (domain 操作), subject=域 id, result=0/1。
+pub fn aud_dom(id: u64, result: u64) {
+    aud_note(3, id, result);
+}
+
+/// M116: 0x810A 域表读回 (5×5 u64: [id, perm, granted, as_mask, irq])。
+pub fn fujo_dom_info(ptr: u64) -> i64 {
+    let b = ptr as *mut u64;
+    unsafe {
+        for i in 0..DOM_MAX {
+            let (g, p) = domain_perm(i as u64);
+            b.add(i * 5).write(i as u64);
+            b.add(i * 5 + 1).write(p);
+            b.add(i * 5 + 2).write(if g { 1 } else { 0 });
+            b.add(i * 5 + 3).write(DOM[i].as_mask);
+            b.add(i * 5 + 4).write(if DOM[i].irq { 1 } else { 0 });
+        }
+    }
+    0
+}
+
+/// 当前域是否允许配置中断 (0x6D01/0x6B04 门)。
+pub fn dom_irq_ok() -> bool {
+    let d = cur_dom();
+    if d == 0 {
+        return true;
+    }
+    unsafe { DOM[d as usize].irq }
+}
+
+/// LAUNCH 入口是否落在当前域地址空间内 (domain 0 = 全区域)。
+pub fn launch_entry_ok(entry: u64) -> bool {
+    let d = cur_dom();
+    let region = if (0x400000..0xC00000).contains(&entry) {
+        REGION_LOW
+    } else if (0x1000000..0x1080000).contains(&entry) {
+        REGION_HIGH
+    } else {
+        0
+    };
+    if region == 0 {
+        return false;
+    }
+    if d == 0 {
+        return true;
+    }
+    unsafe { (DOM[d as usize].as_mask & region) != 0 }
 }
