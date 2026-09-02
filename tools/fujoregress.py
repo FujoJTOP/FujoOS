@@ -44,6 +44,7 @@ CASES = [
     ("m116-domain", "ELF64 x explosion", "sdk/linux/m116_dom.elf", "M116 RESULT: PASS"),
     ("m120-distill", "ELF64 x distill", "sdk/linux/m120_distill.elf", "M120 RESULT: PASS"),
     ("m121-isol", "ELF64 x aspace", "sdk/linux/m121_isol.elf", "M121 RESULT: PASS"),
+    ("m122-dev", "ELF64 x modeldev", "sdk/linux/m122_dev.elf", "M122 RESULT: PASS"),
 ]
 
 MON_PORT = 4568

@@ -14,9 +14,10 @@ use crate::serial;
 
 pub const F_KIND_BLOB: u8 = 0; // 静态内存 (模块)
 pub const F_KIND_GEN: u8 = 1; // 生成内容 (proc)
-pub const F_KIND_RAM: u8 = 2; // 内存盘读写
+pub const F_KIND_RAM: u8 = 2; // tmpfs 内存盘读写 (file 保留: data_ptr=entry.data, kslot=entry+1)
 pub const F_KIND_DISK: u8 = 3; // fujofs 磁盘文件 (M16)
 pub const F_KIND_PIPE: u8 = 4; // IPC 管道 (M18; data_ptr=Pipe*)
+pub const F_KIND_MODEL: u8 = 5; // W12: 模型设备 /dev/model0 (写=请求, 读=响应)
 
 pub const MAX_OPEN: usize = 16;
 
@@ -27,7 +28,8 @@ pub struct File {
     pub data_ptr: *const u8,
     pub data_len: u64,
     pub pos: u64,
-    /// M20: 登记的内核对象槽 (pipe 端点; 0=none)
+    /// M20: 登记的内核对象槽 (pipe 端点; 0=none);
+    /// W12: tmpfs 条目槽 +1 (0=none)。
     pub kslot: usize,
 }
 
@@ -106,8 +108,22 @@ static mut MODULE_COPY_LEN: usize = 0;
 static mut DISK_CACHE: [u8; 2048] = [0; 2048];
 static mut DISK_CACHE_LEN: usize = 0;
 static mut DISK_DIRTY: bool = false;
-static mut RAMDISK: [u8; 4096] = [0; 4096];
-static mut RAMDISK_LEN: usize = 0;
+/// W12: tmpfs 命名内存盘 (open /tmp/<name> 即建/开; 8 槽 × 2KiB)。
+pub const TMPFS_N: usize = 8;
+pub const TMPFS_MAX: usize = 2048;
+#[derive(Clone, Copy)]
+pub struct TmpEntry {
+    pub name: [u8; 16],
+    pub len: usize,
+    pub data: [u8; TMPFS_MAX],
+}
+static mut TMPFS: [TmpEntry; TMPFS_N] = [
+    TmpEntry { name: [0; 16], len: 0, data: [0; TMPFS_MAX] };
+    TMPFS_N
+];
+/// W12: 模型设备响应缓冲 (读 /dev/model0 返回; 写时由 model 后端回填)。
+static mut MODEL_BUF: [u8; 64] = [0; 64];
+static mut MODEL_BUF_LEN: usize = 0;
 static mut MEMINFO: [u8; 256] = [0; 256];
 static mut MEMINFO_LEN: usize = 0;
 
@@ -152,15 +168,20 @@ pub fn set_boot_module(addr: u64, len: u64) {
     }
 }
 
-/// 初始化: 内存盘种子 + 生成 /proc/meminfo 内容。
+/// 初始化: tmpfs 种子 (/tmp/hello.txt) + 生成 /proc/meminfo 内容。
 pub fn init() {
     unsafe {
-        // /tmp/hello.txt 种子
+        // /tmp/hello.txt 种子 (tmpfs 槽 0)
         let seed = b"hello from FujoOS ramdisk (M15)\n";
-        for (i, &b) in seed.iter().enumerate() {
-            RAMDISK[i] = b;
+        let mut nm = [0u8; 16];
+        for (k, b) in b"hello.txt".iter().enumerate().take(15) {
+            nm[k] = *b;
         }
-        RAMDISK_LEN = seed.len();
+        TMPFS[0].name = nm;
+        TMPFS[0].len = seed.len();
+        for (i, &b) in seed.iter().enumerate() {
+            TMPFS[0].data[i] = b;
+        }
         // /proc/meminfo 生成
         let mut n = 0usize;
         let tpl: &[u8] = b"mem_total=127MiB\nuser_heap=0x800000..0xC00000\nboot_module=";
@@ -186,10 +207,45 @@ pub fn init() {
             }
         }
         MEMINFO_LEN = n;
-        serial::write_str("vfs  : mounted [memory-backed] /boot/module len=");
+        serial::write_str("vfs  : mounted [memory-backed + tmpfs] /boot/module len=");
         print_dec(blen);
-        serial::write_line("; /proc/meminfo; /tmp/hello.txt; /dev/tty");
+        serial::write_line("; /proc/meminfo; /tmp/* (tmpfs); /dev/tty; /dev/model0");
     }
+}
+
+/// W12: tmpfs 查找/创建 (name 16B 内); 返回槽索引或 -1 表满。
+fn tmpfs_find_or_create(name: &[u8]) -> i64 {
+    unsafe {
+        for k in 0..TMPFS_N {
+            // 存在且同名
+            let mut same = true;
+            for i in 0..16 {
+                let a = TMPFS[k].name[i];
+                let b = if i < name.len() { name[i] } else { 0 };
+                if a != b {
+                    same = false;
+                    break;
+                }
+            }
+            if same {
+                return k as i64;
+            }
+        }
+        // 创建: 首个空槽
+        for k in 0..TMPFS_N {
+            if TMPFS[k].name[0] == 0 {
+                let n = name.len().min(15);
+                let mut nm = [0u8; 16];
+                for i in 0..n {
+                    nm[i] = name[i];
+                }
+                TMPFS[k].name = nm;
+                TMPFS[k].len = 0;
+                return k as i64;
+            }
+        }
+    }
+    -1
 }
 
 fn format_hex(v: u64) -> [u8; 18] {
@@ -202,6 +258,38 @@ fn format_hex(v: u64) -> [u8; 18] {
         buf[2 + i] = HX[d as usize];
     }
     buf
+}
+
+/// W12: /dev/model0 响应文本 "intent=<n>\n"。
+fn format_intent(i: i64) -> [u8; 64] {
+    let mut r = [0u8; 64];
+    let t = b"intent=";
+    let mut n = 0usize;
+    for &b in t.iter() {
+        r[n] = b;
+        n += 1;
+    }
+    let v = i.max(0) as u64;
+    let mut num = [0u8; 20];
+    let mut di = 20usize;
+    if v == 0 {
+        r[n] = b'0';
+        n += 1;
+    } else {
+        let mut x = v;
+        while x > 0 {
+            di -= 1;
+            num[di] = b'0' + (x % 10) as u8;
+            x /= 10;
+        }
+        while di < 20 {
+            r[n] = num[di];
+            n += 1;
+            di += 1;
+        }
+    }
+    r[n] = b'\n';
+    r
 }
 
 fn path_of(ptr: u64, len: u64) -> Option<[u8; 64]> {
@@ -340,13 +428,25 @@ pub fn fujo_open_name(name: &str, _flags: u64) -> i64 {
             f.pos = 0;
             serial::write_line("vfs  : open /proc/meminfo (generated)");
             return fd as i64;
-        } else if name == "/tmp/hello.txt" {
-            f.name = "/tmp/hello.txt";
+        } else if let Some(tname) = name.strip_prefix("/tmp/") {
+            // W12: tmpfs —— open 即建/开 (命名内存文件)
+            let idx = tmpfs_find_or_create(tname.as_bytes());
+            if idx < 0 {
+                NEXT_FD -= 1;
+                serial::write_line("vfs  : tmpfs full -ENOSPC");
+                return -28;
+            }
+            f.name = "/tmp/";
             f.kind = F_KIND_RAM;
-            f.data_ptr = core::ptr::addr_of!(RAMDISK) as *const u8;
-            f.data_len = RAMDISK_LEN as u64;
+            f.data_ptr = core::ptr::addr_of!(TMPFS[idx as usize].data[0]);
+            f.data_len = TMPFS[idx as usize].len as u64;
             f.pos = 0;
-            serial::write_line("vfs  : open /tmp/hello.txt (ramdisk)");
+            f.kslot = idx as usize + 1;
+            serial::write_str("vfs  : tmfs open /tmp/");
+            serial::write_str(tname);
+            serial::write_str(" idx=");
+            print_dec(idx as u64);
+            serial::write_line("");
             return fd as i64;
         } else if name == "/dev/tty" {
             f.name = "/dev/tty";
@@ -354,6 +454,15 @@ pub fn fujo_open_name(name: &str, _flags: u64) -> i64 {
             f.data_len = 0;
             f.pos = 0;
             serial::write_line("vfs  : open /dev/tty (serial)");
+            return fd as i64;
+        } else if name == "/dev/model0" {
+            // W12: 模型即设备 —— open 即就绪; 写=请求 (阻塞), 读=响应文本。
+            f.name = "/dev/model0";
+            f.kind = F_KIND_MODEL;
+            f.data_ptr = core::ptr::addr_of!(MODEL_BUF) as *const u8;
+            f.data_len = MODEL_BUF_LEN as u64;
+            f.pos = 0;
+            serial::write_line("vfs  : open /dev/model0 (model device)");
             return fd as i64;
         } else if let Some(lname) = name.strip_prefix("/lib/") {
             // M32: 多模块库目录 (fujorun 注册的库/资源模块)
@@ -433,6 +542,20 @@ pub extern "C" fn fujo_read(fd: u64, buf: u64, len: u64) -> i64 {
         if f.kind == F_KIND_PIPE {
             // M18: 管道读 (data_ptr = Pipe*)
             return crate::ipc::pipe_read(f.data_ptr as *const crate::ipc::Pipe, buf, len);
+        }
+        if f.kind == F_KIND_MODEL {
+            // W12: 模型设备读 —— 返回最近一次请求的响应文本。
+            if MODEL_BUF_LEN == 0 {
+                return 0;
+            }
+            let n = (len.min(MODEL_BUF_LEN as u64)) as usize;
+            for k in 0..n {
+                core::ptr::write_volatile(
+                    (buf as *mut u8).add(k),
+                    core::ptr::read_volatile(MODEL_BUF.as_ptr().add(k)),
+                );
+            }
+            return n as i64;
         }
         if f.data_ptr as u64 == 0 {
             return 0;
@@ -535,6 +658,23 @@ pub fn file_write(fd: u64, ptr: u64, len: u64) -> Option<i64> {
         if name == "/dev/tty" {
             return None; // 调用方串口回退
         }
+        if FILES[fd as usize].kind == F_KIND_MODEL {
+            // W12: 模型设备写 = 请求 (R5 规则优先 -> 模型 -> 兜底; 阻塞一次往返)
+            let mut text = [0u8; 64];
+            let n = (len.min(64)) as usize;
+            for k in 0..n {
+                text[k] = (ptr as *const u8).add(k).read_volatile();
+            }
+            let intent = crate::ai::model_classify_intent(&text[..n]);
+            let resp = format_intent(intent);
+            MODEL_BUF_LEN = resp.len();
+            for (k, &b) in resp.iter().enumerate() {
+                MODEL_BUF[k] = b;
+            }
+            // 同步该 fd 的响应视图 (read 直接读 MODEL_BUF, data_len 仅提示)
+            FILES[fd as usize].data_len = MODEL_BUF_LEN as u64;
+            return Some(n as i64);
+        }
         if FILES[fd as usize].kind == F_KIND_PIPE {
             // M18: 管道写
             let p = FILES[fd as usize].data_ptr as *mut crate::ipc::Pipe;
@@ -563,17 +703,23 @@ pub fn file_write(fd: u64, ptr: u64, len: u64) -> Option<i64> {
             return Some(n as i64);
         }
         if FILES[fd as usize].kind == F_KIND_RAM {
+            // W12: tmpfs 条目追加写 (entry.len 推进; fd 视图同步)
+            if FILES[fd as usize].kslot == 0 {
+                return None;
+            }
+            let entry = &mut *core::ptr::addr_of_mut!(TMPFS[FILES[fd as usize].kslot - 1]);
             let mut n = 0usize;
-            while (n as u64) < len && RAMDISK_LEN < RAMDISK.len() {
-                RAMDISK[RAMDISK_LEN] = (ptr as *const u8).add(n).read();
-                RAMDISK_LEN += 1;
+            while (n as u64) < len && entry.len < TMPFS_MAX {
+                entry.data[entry.len] = (ptr as *const u8).add(n).read();
+                entry.len += 1;
                 n += 1;
             }
-            serial::write_str("vfs  : write fd=");
+            FILES[fd as usize].data_len = entry.len as u64;
+            serial::write_str("vfs  : tmpfs write fd=");
             print_dec(fd);
             serial::write_str(" +");
             print_dec(n as u64);
-            serial::write_line(" bytes (ramdisk append)");
+            serial::write_line(" bytes");
             return Some(n as i64);
         }
     }

@@ -31,7 +31,8 @@
 - **W9 完成(M116 权限域)**:域 {cap 集合/地址空间/中断域} + 可撤销,爆炸半径定理可断言,系统域=全局槽 6 兼容;详情 docs/60。**load_end/pad 提至 0x2C0000/0x1C0000**(BSS 尾 0x2A4DA0)。
 - **W10 完成(M120 蒸馏+自改进)**:R5 FJRU v1 确定性字节码规则引擎(0x830B,五职责规则优先 engine=3,模型调用率→0),R6 审计环捕获/导出(0x830C/D,IO 自监督命中标签);工具 tools/distill_rules.py(7B 归纳+保真度 100% 门),保真度曲线 fidelity.csv;fujoregress 12/12,7B 回归 PASS。
 - **W11 完成(M121 独立地址空间)**:每任务页表链 + CR3 切换(进程隔离:同 VA 不同物),fork 堆页物理拷贝,mnumap 撤销补全;系统/隐式任务逐字节兼容;fujoregress 13/13,桌面冒烟正常;详情 docs/62。
-- **阶段一(AI 完备期)完成,W11(阶段二首站)完成**;下一步 = W12(VFS 抽象 + tmpfs,`/dev/model0` 模型即设备)。
+- **W12 完成(M122 VFS 抽象+tmpfs+/dev/model0)**:模型即设备 open/write/read/close;tmpfs 命名内存文件;/dev/model0 与 0x5101 同核(R5 规则优先);fujoregress 14/14;详情 docs/63。
+- **阶段一完成,W11/W12(阶段二)完成**;下一步 = W13(PCI 总线模型 + virtio 驱动)。
 
 ## 4. 构建与验证(铁律优先)
 

@@ -446,6 +446,38 @@ fn parse_rsp(line: &[u8], seq: u64) -> Option<(i64, [u8; 24])> {
     }
 }
 
+/// W12: /dev/model0 后端 —— 与 0x5101 同核 (R5 规则字节码优先 → 模型 → 兜底),
+/// AI 接口 UNIX 化: write=请求 (阻塞一次往返), read=响应文本。
+pub fn model_classify_intent(text: &[u8]) -> i64 {
+    let n = text.len().min(64);
+    let mut lower = [0u8; 64];
+    for i in 0..n {
+        let b = text[i];
+        lower[i] = if b.is_ascii_uppercase() { b + 32 } else { b };
+    }
+    let lower = &lower[..n];
+    if let Some((v, _a0, _a1, _c)) = rules_match(lower, SHM_KIND_CLASSIFY as u64) {
+        serial::write_str("model: /dev/model0 '");
+        serial::write_str(core::str::from_utf8(&text[..n]).unwrap_or(""));
+        serial::write_line("' -> rulebook");
+        ai_aud_note(1, 3, v, 0, 0, 0, &text[..n]);
+        return v as i64;
+    }
+    if let Some((intent, tag, _el)) = qwen_classify(lower) {
+        ai_aud_note(1, 1, intent as u64, 0, 0, 0, &text[..n]);
+        serial::write_str("model: /dev/model0 -> ");
+        serial::write_str(intent_name(intent));
+        serial::write_str(" [qwen=");
+        serial::write_str(core::str::from_utf8(&tag[..tag.iter().position(|&b| b == 0).unwrap_or(0)]).unwrap_or("?"));
+        serial::write_line("]");
+        intent
+    } else {
+        let intent = rules_classify(core::str::from_utf8(lower).unwrap_or(""));
+        ai_aud_note(1, 2, intent as u64, 0, 0, 0, &text[..n]);
+        intent
+    }
+}
+
 /// 系统调用 fujo_ai_classify (0x5101) —— 意图分类 (engine=qwen, 规则降级)。
 #[no_mangle]
 pub extern "C" fn fujo_ai_classify(ptr: u64, len: u64) -> i64 {
