@@ -202,3 +202,188 @@ pub fn fujo_irq_stats(ptr: u64) -> i64 {
     }
     0
 }
+
+// ---------------------------------------------------------------------------
+// W17: AP 启动 (SMP) —— 映射 LAPIC MMIO + 拷贝 trampoline@0x8000 + SIPI
+// ---------------------------------------------------------------------------
+
+pub static mut AP_ONLINE: bool = false;
+static AP_STACK: u64 = 0x3A0000; // TSS1.rsp0 同栈区 (gdt.rs M65)
+
+fn mmio_wr32(addr: u64, v: u32) {
+    unsafe {
+        core::arch::asm!("mov [{}], eax", in(reg) addr, in("eax") v, options(nomem));
+    }
+}
+
+fn mmio_rd32(addr: u64) -> u32 {
+    let v: u32;
+    unsafe {
+        core::arch::asm!("mov eax, [{}]", in(reg) addr, out("eax") v, options(nomem));
+    }
+    v
+}
+
+fn rdtsc() -> u64 {
+    let lo: u32;
+    let hi: u32;
+    unsafe {
+        core::arch::asm!("rdtsc", out("eax") lo, out("edx") hi, options(nomem, nostack));
+    }
+    ((hi as u64) << 32) | lo as u64
+}
+
+/// W17: TCG 忙等 (INIT->SIPI 间隔用; PIT 被屏蔽时唯一可靠)。
+fn delay_ticks(n: u64) {
+    let t0 = rdtsc();
+    while rdtsc().wrapping_sub(t0) < n {
+        core::hint::spin_loop();
+    }
+}
+
+/// W17: 映射 LAPIC MMIO (0xFEE00000) 进恒等页表 (PML4[0].PDPT[3].PD[503]→PT[0])。
+/// boot 恒等只到 1GiB; 0xFEE00000 = 3GB+0x2E00000 → PDPT[3], PD 索引 0x7F7 & 0x1FF = 503。
+fn map_lapic() -> bool {
+    unsafe {
+        let cr3 = crate::mem::cr3_phys();
+        let pm4 = cr3 as *mut u64;
+        let pdpt_raw = pm4.read();
+        if pdpt_raw & 1 == 0 {
+            return false;
+        }
+        let pdpt = (pdpt_raw & 0x000F_FFFF_FFFF_F000) as *mut u64;
+        // 0xFD000000 (LFB) 与 0xFEE00000 (LAPIC) 同属 PDPT[3] (pdi 488/503);
+        // 不复用整链, 只复用旧 PD, 在 PD[503] 插 LAPIC PT (LFB 链不动)。
+        let old_pd_raw = pdpt.add(3).read();
+        let old_pd = old_pd_raw & 0x000F_FFFF_FFFF_F000;
+        let pd: u64;
+        if old_pd_raw & 1 != 0 && old_pd != 0 {
+            pd = old_pd;
+        } else {
+            pd = match crate::mem::alloc_frames_kernel(2) {
+                Some(p) => p,
+                None => return false,
+            };
+            pdpt.add(3).write(pd | 0x3);
+        }
+        let pdt = pd as *mut u64;
+        let la = match crate::mem::alloc_frame_kernel() {
+            Some(p) => p,
+            None => return false,
+        };
+        // PT 帧清零后填 1 项
+        for k in 0..512 {
+            ((la as *mut u64).add(k)).write(0);
+        }
+        ((la as *mut u64)).write(0xFEE00000 | 0x0B); // RW|P|PWT|PCD
+        pdt.add(503).write(la | 0x3);
+        serial::write_str("smp  : lapic pd=0x");
+        crate::syscall::log_hex(pd);
+        serial::write_str(" pt=0x");
+        crate::syscall::log_hex(la);
+        serial::write_line("");
+        serial::write_line("smp  : lapic MMIO mapped (0xFEE00000)");
+    }
+    let id = mmio_rd32(0xFEE00020);
+    serial::write_str("smp  : lapic id=");
+    serial::write_str(if (id >> 24) == 0 { "0 (BSP)" } else { "?" });
+    serial::write_line("");
+    // LAPIC SVR: APIC software enable (bit 8) — 复位后 ICR 不执行直到启用
+    mmio_wr32(0xFEE003F0, 0x1FF);
+    serial::write_str("smp  : svr=0x");
+    crate::syscall::log_hex(mmio_rd32(0xFEE003F0) as u64);
+    serial::write_line("");
+    true
+}
+
+// ---------------------------------------------------------------------------
+// W17: AP 入口 (trampoline retf 到 0x08:fujo_ap_entry; AP GDT = trampoline GDT)
+// ---------------------------------------------------------------------------
+core::arch::global_asm!(r#"
+    .text
+    .global fujo_ap_entry
+    .p2align 4
+fujo_ap_entry:
+    cli
+    mov ax, 0x10
+    mov ds, ax
+    mov ss, ax
+    mov rsp, 0x3A0000
+    call fujo_ap_main
+.aphlt:
+    hlt
+    jmp .aphlt
+"#);
+
+extern "C" {
+    fn fujo_ap_entry();
+}
+
+/// W17: AP 启动序列 (仅 ncpu>=2 时; 拷贝 trampoline -> 回填 -> SIPI@0x8000)。
+pub fn ap_bringup() {
+    if ncpu() < 2 {
+        return;
+    }
+    unsafe {
+        if !map_lapic() {
+            return;
+        }
+        let tramp: &[u8] = include_bytes!("../../sdk/linux/tramp.bin");
+        let base = 0x8000u64 as *mut u8;
+        for k in 0..tramp.len() {
+            base.add(k).write(tramp[k]);
+        }
+        // 回填数据槽 (+0x200 cr3, +0x204 entry)
+        let cr3 = crate::mem::cr3_phys() as u32;
+        (base.add(0x200) as *mut u32).write(cr3);
+        let entry = fujo_ap_entry as *const () as u64 as u32;
+        (base.add(0x204) as *mut u32).write(entry);
+        serial::write_line("smp  : SIPI -> AP @0x8000 (trampoline)");
+        // INIT(短延时) + SIPI×2 (TCG AP 冷启动需 INIT 唤醒; 长 delay 会导致 BSP 假死)
+        mmio_wr32(0xFEE00310, 0x01000000);
+        mmio_wr32(0xFEE00300, 0x00000500); // INIT
+        delay_ticks(200_000);
+        for _ in 0..2 {
+            mmio_wr32(0xFEE00310, 0x01000000); // dest APIC ID 1
+            mmio_wr32(0xFEE00300, 0x00000608); // SIPI, vector 0x8 (=> 0x8000)
+        }
+        serial::write_str("smp  : icr_readback=0x");
+        crate::syscall::log_hex(mmio_rd32(0xFEE00300) as u64);
+        serial::write_line("");
+        serial::write_line("smp  : SIPI sent");
+        // 探测: AP 是否执行到 trampoline 末尾 (marker @0x8220)
+        delay_ticks(100_000);
+        let mk = (0x8220u64 as *const u32).read_volatile();
+        serial::write_str("smp  : ap marker=0x");
+        crate::syscall::log_hex(mk as u64);
+        serial::write_line("");
+    }
+}
+
+/// AP 主入口 (trampoline retf 到达; AP 自己的栈/GDT (trampoline 内核段)).
+#[no_mangle]
+pub extern "C" fn fujo_ap_main() {
+    unsafe {
+        core::arch::asm!("mov rsp, {}", in(reg) AP_STACK, options(nostack));
+        serial::write_line("smp  : AP1 online (id=1, cli+hlt loop)");
+        AP_ONLINE = true;
+    }
+    loop {
+        crate::hlt();
+    }
+}
+
+/// W17: 0x8B03 — smp_state(ptr): u64×3 = (ncpu, ap_online, lapic_id)。
+#[no_mangle]
+pub extern "C" fn fujo_smp_state(ptr: u64) -> i64 {
+    unsafe {
+        if !(0x400000..0xC00000).contains(&ptr) {
+            return -14;
+        }
+        let w = ptr as *mut u64;
+        w.write(ncpu() as u64);
+        w.add(1).write(if AP_ONLINE { 1 } else { 0 });
+        w.add(2).write(lapic_id() as u64);
+    }
+    0
+}

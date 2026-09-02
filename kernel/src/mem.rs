@@ -39,6 +39,11 @@ unsafe fn read_cr3() -> u64 {
     v
 }
 
+/// W17: 当前 CR3 物理 (AP trampoline 回填用)。
+pub fn cr3_phys() -> u64 {
+    unsafe { read_cr3() }
+}
+
 /// ① U 位硬化: 遍历恒等低 1GiB (PML4[0]) 全部 4KiB 页, 用户区设 U, 其余清 U。
 /// 返回处理过的页数。
 pub fn harden_user_guard() -> u64 {
