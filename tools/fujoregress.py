@@ -66,6 +66,10 @@ CASES = [
       "keys": ["m", "b", "u", "i", "l", "d", "ret", "wait:5",
                "r", "u", "n", "f", "i", "l", "e", "spc", "slash", "t", "m", "p", "slash", "h", "e", "l", "l", "o", "ret"]}),
     ("m130-audit", "ELF64 x unified-audit", "sdk/linux/m130_aud.elf", "M130 RESULT: PASS", [], {}),
+    # W18: 标准软件移植 —— 静态 busybox (musl) 原生命令在 FujoOS 内执行
+    ("m131-bbx", "ELF64 x busybox-cmd", "sdk/busybox-musl", "m131-busybox-ok", [],
+     {"keys": ["o", "s", "spc", "r", "u", "n", "spc", "b", "u", "s", "y", "b", "o", "x", "spc",
+               "e", "c", "h", "o", "spc", "m", "1", "3", "1", "minus", "b", "u", "s", "y", "b", "o", "x", "minus", "o", "k", "ret"]}),
 ]
 
 MON_PORT = 4568

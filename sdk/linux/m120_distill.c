@@ -193,6 +193,8 @@ static void run(void)
         int all_rulebook = 1;
         int saw_duty[7] = { 0, 0, 0, 0, 0, 0, 0 };
         for (i = 0; i < n && i < 16; i++) {
+            if (aud[i * 11 + 0] == 0)
+                continue; /* W19: boot 标记条目 (engine=0), 不属于规则引擎审计 */
             if (aud[i * 11 + 0] != 3)
                 all_rulebook = 0;
             if (aud[i * 11 + 1] >= 1 && aud[i * 11 + 1] <= 6)
@@ -206,6 +208,13 @@ static void run(void)
         wrdec((u64)n);
         wrstr(" allEngine3=");
         wrdec((u64)all_rulebook);
+        wrstr(" duties=");
+        {
+            int k;
+            for (k = 1; k <= 5; k++) {
+                wrdec(saw_duty[k] ? 1u : 0u);
+            }
+        }
         wrstr("\n");
         if (!(st2[0] == 0 && (long)st2[0] == calls_pre && st2[2] >= 8 && n >= 8 && all_rulebook == 1
               && saw_duty[1] && saw_duty[2] && saw_duty[3] && saw_duty[4] && saw_duty[5]))
