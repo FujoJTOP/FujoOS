@@ -19,8 +19,11 @@ use crate::syscall;
 const VIRTIO_VENDOR: u16 = 0x1AF4;
 const VIRTIO_BLK: u16 = 0x1001;
 
-// legacy I/O 寄存器 (0.9.5 布局; QEMU 9.2 legacy 与 Linux virtio_pci_legacy.c 同源)
-const VIO_STATUS: usize = 0x12; // 字节 (0x13 = ISR; 0.9.5 地图, 非 1.0 transitional 的 0x14)
+// legacy I/O 寄存器 —— 0.9.5 地图 (Linux virtio_pci_legacy.c 同源; 数值为字节偏移):
+// HOST_FEATURES@0x00 u32 / GUEST_FEATURES@0x04 / QUEUE_PFN@0x08 / QUEUE_NUM@0x0C /
+// QUEUE_SEL@0x0E / QUEUE_NOTIFY@0x10 / STATUS@0x12 字节 / ISR@0x13 字节
+// (W13c 实证: STATUS 写 0x12 后回读粘住 = 该地图; 0x14 是 config 容量区)
+const VIO_STATUS: usize = 0x12; // 字节 (ISR@0x13)
 const VIO_QUEUE_PFN: usize = 0x08;
 const VIO_QUEUE_SIZE: usize = 0x0C;
 const VIO_QUEUE_SEL: usize = 0x0E;
@@ -110,8 +113,7 @@ pub fn init() -> bool {
                 serial::write_str(" dev=");
                 syscall::debug_dec((did >> 16) as u64);
                 serial::write_line("");
-                // 状态: RESET(0) -> ACK(1) -> DRIVER(2) —— 必须字节写 (0x15-0x17 是
-                // QEMU legacy 的保留/其它寄存器, dword 写会污染 -> 拒收)
+                // 状态: RESET(0) -> ACK(1) -> DRIVER(2) —— 必须字节写
                 outb(io, VIO_STATUS, 0);
                 outb(io, VIO_STATUS, 1 | 2);
                 // vring 帧 (4KiB 清零; 恒等映射, guest-physical 直用)
@@ -142,8 +144,12 @@ pub fn init() -> bool {
                 syscall::debug_hex(st_ro as u64);
                 serial::write_line("");
                 let _ = qsz;
-                // DRIVER_OK (字节写)
+                // DRIVER_OK (字节写) + 回读核实
                 outb(io, VIO_STATUS, 1 | 2 | 4);
+                let st_ok = inb(io, VIO_STATUS);
+                serial::write_str("vblk : status_ok=0x");
+                syscall::debug_hex(st_ok as u64);
+                serial::write_line("");
                 SECTOR_DATA = phys + OFF_DATA as u64;
                 VQ_READY = true;
                 true
@@ -188,28 +194,65 @@ pub extern "C" fn fujo_vblk_read(lba: u64, out: u64, cap: u64) -> i64 {
         (vq.add(OFF_REQ) as *mut u32).write_volatile(0);
         (vq.add(OFF_REQ + 4) as *mut u32).write_volatile(0);
         (vq.add(OFF_REQ + 8) as *mut u64).write_volatile(lba);
-        // 描述符 0/1/2
-        let d = vq.add(0x000) as *mut u32;
-        d.add(0).write_volatile((VQ_PHYS + OFF_REQ as u64) as u32); // addr
-        d.add(1).write_volatile(16); // len
-        d.add(2).write_volatile(0x1); // NEXT
-        d.add(3).write_volatile(1); // next desc
-        d.add(4).write_volatile(SECTOR_DATA as u32);
-        d.add(5).write_volatile(512);
-        d.add(6).write_volatile(0x3); // NEXT|WRITE
-        d.add(7).write_volatile(2);
-        d.add(8).write_volatile((VQ_PHYS + OFF_STATUS as u64) as u32);
-        d.add(9).write_volatile(1);
-        d.add(10).write_volatile(0x2); // WRITE (last)
-        d.add(11).write_volatile(0);
+        // 描述符 0/1/2 —— vring_desc 布局: [addr u64][len u32][flags u16][next u16] = 16B
+        let d = vq.add(0x000) as *mut u8;
+        // desc0: req header (IN)
+        (d.add(0) as *mut u64).write_volatile(VQ_PHYS + OFF_REQ as u64);
+        (d.add(8) as *mut u32).write_volatile(16);
+        (d.add(12) as *mut u16).write_volatile(0x1); // NEXT
+        (d.add(14) as *mut u16).write_volatile(1);
+        // desc1: data (device->host, WRITE)
+        (d.add(16) as *mut u64).write_volatile(SECTOR_DATA);
+        (d.add(24) as *mut u32).write_volatile(512);
+        (d.add(28) as *mut u16).write_volatile(0x3); // NEXT|WRITE
+        (d.add(30) as *mut u16).write_volatile(2);
+        // desc2: status (device->host, WRITE, last)
+        (d.add(32) as *mut u64).write_volatile(VQ_PHYS + OFF_STATUS as u64);
+        (d.add(40) as *mut u32).write_volatile(1);
+        (d.add(44) as *mut u16).write_volatile(0x2); // WRITE (last)
+        (d.add(46) as *mut u16).write_volatile(0);
         // avail 投递 (紧随 desc 表: flags@0x100, idx@0x102, ring@0x104)
         let avail_idx = (vq.add(0x100 + 2) as *mut u16).read_volatile();
         (vq.add(0x100 + 4 + ((avail_idx as usize % VQ_N) * 2)) as *mut u16).write_volatile(0);
         (vq.add(0x100 + 2) as *mut u16).write_volatile(avail_idx.wrapping_add(1));
         // notify (queue 0) —— u32 宽度 (QEMU 对 legacy notify 按 4B 访问)
+        let sel_ro = inw(IO_BASE, VIO_QUEUE_SEL);
+        let num_ro = inw(IO_BASE, VIO_QUEUE_SIZE);
+        serial::write_str("vblk : sel_ro=");
+        syscall::debug_dec(sel_ro as u64);
+        serial::write_str(" num_ro=");
+        syscall::debug_dec(num_ro as u64);
+        serial::write_line("");
         outl(IO_BASE, VIO_QUEUE_NOTIFY, 0);
-        // 轮询: used.idx (linux vring_init 布局 = align8(avail+4+2*qsz); 双候选覆盖)
+        // 轮询 + 带区 u16 扫描
         let mut spin: u64 = 0;
+        while spin < 20_000_000 {
+            spin += 1;
+            if spin % 1_000_000 == 0 {
+                let mut any = 0usize;
+                let mut first: usize = 0;
+                let mut fv: u16 = 0;
+                for off in (0x100..0x300).step_by(2) {
+                    let w = (vq.add(off) as *mut u16).read_volatile();
+                    if w != 0 {
+                        any += 1;
+                        if first == 0 {
+                            first = off;
+                            fv = w;
+                        }
+                    }
+                }
+                if any > 0 {
+                    serial::write_str("vblk : ring nonzero=");
+                    syscall::debug_dec(any as u64);
+                    serial::write_str(" first=0x");
+                    syscall::debug_hex(first as u64);
+                    serial::write_str(" v=0x");
+                    syscall::debug_hex(fv as u64);
+                    serial::write_line("");
+                }
+            }
+        }
         loop {
             let u1 = (vq.add(0x124 + 2) as *mut u16).read_volatile();
             let u2 = (vq.add(0x128 + 2) as *mut u16).read_volatile();
@@ -231,7 +274,7 @@ pub extern "C" fn fujo_vblk_read(lba: u64, out: u64, cap: u64) -> i64 {
                 return -1;
             }
             spin += 1;
-            if spin > 200_000_000 {
+            if spin > 100_000_000 {
                 return -2;
             }
         }
