@@ -43,10 +43,19 @@
 - **W15 完成 (m126 PASS)**:ABI v1 冻结文档 (docs/66), 应用管理器 (FUJOMULT 2..n 段注册表,
   0x8B01 app_list, `os run NAME` 注册表启动), shell `ls/cat/echo/app list`,
   fujoregress 早退修复 (needle 命中即杀, 60min→8min); docs/66。
-- **W16a 完成 (m127 PASS)**:exec-from-mem (0x8B02): 用户缓冲 ELF → 内核帧暂存 → 装载 → iretq;
-  子程序打印并退出。生成器坑 (e_phoff/rel32) 见 docs/67。
-- **阶段二完成 (W10–W15); 阶段三进行中: W16a done, W16b (tcc 自托管编译) 准备中**;
-  fujoregress 19/19 PASS (早退版 ~8min)。
+- **W16 完成 (m128 PASS)**:自托管编译链 —— 静态 TinyCC 0.9.27 (WSL gcc -static + ELF_PAGE_SIZE=0x1000 patch) 在 OS 内编译 hello.c → runfile 装载运行
+  ("tcc-compiled hello from fujo!"); exec-mem 0x8B02; exit→shell (M6 升级); runfile/mbuild 命令;
+  大坑清单 (GOT/PLT 单文件规避, fcntl F_GETFL=0x8001, read NULL 0) 见 docs/68。
+- **W17a 完成 (待 W17b)**:SMP 基础设施 —— LAPIC MMIO 映射 (复用 PD, 保 LFB)、
+  16→64 位 trampoline@0x8000 (kernel/src/tramp.S + sdk/linux/tramp.bin)、SVR 使能、
+  ICR/SIPI (QEMU monitor 佐证 SPIV/ICR); **卡点: QEMU 9.2 TCG (-smp 2) 下 INIT ICR 冻结
+  BSP (thread=single 减轻未除), SIPI-only 不唤醒 AP (marker=0)**; 下波 = 对照 Linux
+  INIT-SIPI 时序 (ICR 值/电平/延时) 或换参考机配置; docs/69。
+- **W18 完成 (m131 PASS)**:busybox (musl 静态) 原生命令 `os run busybox echo m131-busybox-ok`;
+  fujoregress case; 限制: 目录命令 (ls) 需 getdents64 未实现 (W18 二期); docs/71。
+- **W19 核心完成 (m130 PASS)**:统一审计 0x8C01 (cap 环 + AI 环同构导出, boot 标记
+  保证 AI 环非空; m120 基准已跳过 boot 条目); docs/70。
+- **fujoregress 22/22 PASS (早退版)**; 阶段二 (W13-W15) + 阶段三 (W16/W18/W19 + W17a) 已推。
 
 ## 4. 构建与验证(铁律优先)
 
