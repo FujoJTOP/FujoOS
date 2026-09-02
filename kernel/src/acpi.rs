@@ -43,6 +43,11 @@ fn pci_read_cfg(bus: u8, slot: u8, func: u8, reg: u8) -> u32 {
     }
 }
 
+/// W13b: 配置空间读 (公开)。
+pub fn pci_cfg_read(bus: u8, slot: u8, func: u8, reg: u8) -> u32 {
+    pci_read_cfg(bus, slot, func, reg)
+}
+
 /// W13: PCI 配置空间写 (virtio BAR/命令寄存器等)。
 pub fn pci_write_cfg(bus: u8, slot: u8, func: u8, reg: u8, val: u32) {
     let addr = 0x8000_0000u32 | ((bus as u32) << 16) | ((slot as u32) << 11)

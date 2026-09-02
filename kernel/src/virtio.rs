@@ -19,8 +19,8 @@ use crate::syscall;
 const VIRTIO_VENDOR: u16 = 0x1AF4;
 const VIRTIO_BLK: u16 = 0x1001;
 
-// legacy I/O 寄存器 (BAR 基址 + 偏移)
-const VIO_STATUS: usize = 0x14;
+// legacy I/O 寄存器 (0.9.5 布局; QEMU 9.2 legacy 与 Linux virtio_pci_legacy.c 同源)
+const VIO_STATUS: usize = 0x12; // 字节 (0x13 = ISR; 0.9.5 地图, 非 1.0 transitional 的 0x14)
 const VIO_QUEUE_PFN: usize = 0x08;
 const VIO_QUEUE_SIZE: usize = 0x0C;
 const VIO_QUEUE_SEL: usize = 0x0E;
@@ -124,10 +124,11 @@ pub fn init() -> bool {
                 for i in 0..VQ_PAGE as usize {
                     vq.add(i).write(0);
                 }
-                // 队列 0: size 声明 + 页帧
+                // 队列 0: size 声明 + 页帧 + 特性零协商
                 outw(io, VIO_QUEUE_SEL, 0);
                 let qsz = inw(io, VIO_QUEUE_SIZE).min(VQ_N as u16) as usize;
                 outl(io, VIO_QUEUE_PFN, (phys >> 12) as u32);
+                outl(io, 0x04, 0); // GUEST_FEATURES = 0 (无特性协商)
                 // 读回校验
                 let pfn_ro = inl(io, VIO_QUEUE_PFN);
                 let st_ro = inb(io, VIO_STATUS);
@@ -205,9 +206,9 @@ pub extern "C" fn fujo_vblk_read(lba: u64, out: u64, cap: u64) -> i64 {
         let avail_idx = (vq.add(0x100 + 2) as *mut u16).read_volatile();
         (vq.add(0x100 + 4 + ((avail_idx as usize % VQ_N) * 2)) as *mut u16).write_volatile(0);
         (vq.add(0x100 + 2) as *mut u16).write_volatile(avail_idx.wrapping_add(1));
-        // notify (queue 0)
-        outw(IO_BASE, VIO_QUEUE_NOTIFY, 0);
-        // 轮询 used.idx (QEMU 布局双候选: 0x124 无对齐 / 0x128 align8)
+        // notify (queue 0) —— u32 宽度 (QEMU 对 legacy notify 按 4B 访问)
+        outl(IO_BASE, VIO_QUEUE_NOTIFY, 0);
+        // 轮询: used.idx (linux vring_init 布局 = align8(avail+4+2*qsz); 双候选覆盖)
         let mut spin: u64 = 0;
         loop {
             let u1 = (vq.add(0x124 + 2) as *mut u16).read_volatile();
