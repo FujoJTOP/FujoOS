@@ -42,12 +42,15 @@ MON_PORT = int(os.environ.get("FUJO_MON_PORT", "4568"))
 OLLAMA = "http://127.0.0.1:11434"
 MODEL = os.environ.get("FUJO_MODEL", "qwen2.5:0.5b")
 
-# M112 shm 帧布局 (与 kernel ai.rs 对齐)
+# M112 shm 帧布局 (与 kernel ai.rs 对齐); M118 R3: 帧头 v2 带快照@t0
 SHM_BASE = 0xA00000
-SHM_DUMP_LEN = 0xE00  # payload@0x18..0x418 + ctx@0x800..0xE00
-SHM_OFF_PAYLOAD = 0x18
+SHM_DUMP_LEN = 0xE00  # payload@0x30..0x430 + ctx@0x800..0xE00
+SHM_OFF_PAYLOAD = 0x30
 SHM_PAYLOAD_MAX = 0x400
 SHM_OFF_CTX = 0x800
+SHM_OFF_T0 = 0x18   # u64 快照时刻 (PIT ticks @100Hz)
+SHM_OFF_EVW = 0x20  # u64 事件环写位置
+SHM_OFF_CRIT = 0x28  # u32 关键事件掩码
 
 PROMPT_TPL = (
     "Classify the user command. Reply with only one digit, nothing else.\n"
@@ -311,33 +314,48 @@ MON = None
 
 
 def shm_read_frame() -> tuple:
-    """pmemsave -> (payload bytes, seq, kind, ctx text)。一切以帧头为准
-    (触发线仅唤醒: 帧可能已推进 —— 服务端始终应答最新帧)。"""
+    """pmemsave -> (payload bytes, seq, kind, ctx text, t0_ticks, evw, crit)。
+    一切以帧头为准 (触发线仅唤醒: 帧可能已推进 —— 服务端始终应答最新帧)。"""
     global MON
     if MON is None:
         MON = Monitor(HOST, MON_PORT)
     data = MON.pmemsave(SHM_BASE, SHM_DUMP_LEN)
-    if len(data) < 0x18:
-        return b"", 0, 0, ""
+    if len(data) < 0x28:
+        return b"", 0, 0, "", 0, 0, 0
     frame_seq = int.from_bytes(data[0x08:0x10], "little")
     kind = int.from_bytes(data[0x10:0x14], "little")
     n = min(int.from_bytes(data[0x14:0x18], "little"), SHM_PAYLOAD_MAX)
+    t0 = int.from_bytes(data[SHM_OFF_T0:SHM_OFF_T0 + 8], "little")
+    evw = int.from_bytes(data[SHM_OFF_EVW:SHM_OFF_EVW + 8], "little")
+    crit = int.from_bytes(data[SHM_OFF_CRIT:SHM_OFF_CRIT + 4], "little")
     payload = data[SHM_OFF_PAYLOAD:SHM_OFF_PAYLOAD + n] if len(data) >= SHM_OFF_PAYLOAD + n else b""
     ctxb = data[SHM_OFF_CTX:SHM_OFF_CTX + 0x600]
     ctx = ctxb.split(b"\x00", 1)[0].decode("utf-8", "replace")
-    return payload, frame_seq, kind, ctx
+    return payload, frame_seq, kind, ctx, t0, evw, crit
+
+
+def ttl_from_elapsed(elapsed: float) -> int:
+    """M118 R3: 模型回包声明有效期 (PIT ticks @100Hz)—— 推断耗时 ×2 + 4s 余量,
+    由内核侧按自己的 tick 纪元比较, 故只需宿主侧的*相对*耗时。"""
+    return max(200, int(elapsed * 100.0) * 2 + 400)
 
 
 def classify_shm(seq: str, kind: int, plen: int) -> str:
-    t0 = time.time()
+    t0w = time.time()
     try:
-        payload, frame_seq, frame_kind, ctx = shm_read_frame()
+        payload, frame_seq, frame_kind, ctx, t0, evw, crit = shm_read_frame()
     except OSError as exc:
         print(f"[mon] pmemsave failed: {exc}", flush=True)
         return ""
     seq = str(frame_seq)  # 应答最新帧 (触发 seq 仅供参考)
     kind = frame_kind
+    print(f"[server] shm frame seq={seq} kind={kind} t0={t0} evw={evw} crit={crit}", flush=True)
     text = payload.decode("utf-8", "replace")
+
+    def ttl_now() -> int:
+        # M118 R3: TTL 以推断完成时刻的耗时声明 (内核按自身 tick 比较)。
+        return ttl_from_elapsed(time.time() - t0w)
+
     if kind == 2:
         try:
             anom, conf, tag = ollama_anom(text, ctx)
@@ -346,40 +364,40 @@ def classify_shm(seq: str, kind: int, plen: int) -> str:
         except Exception as exc:  # noqa: BLE001
             print(f"[server] anom classify failed: {exc}", flush=True)
             anom, conf, tag = fjrules_anom(text), "fjrules"
-        print(f"[server] anom: {text[:40]!r} -> {anom}/{conf} ({tag}) in {time.time()-t0:.2f}s", flush=True)
-        return f"FJAI:RSP {seq} INTENT=0 ANOM={anom} CONF={conf} TAG={tag}"
+        print(f"[server] anom: {text[:40]!r} -> {anom}/{conf} ({tag}) in {time.time()-t0w:.2f}s", flush=True)
+        return f"FJAI:RSP {seq} INTENT=0 ANOM={anom} CONF={conf} TAG={tag} TTL={ttl_now()}"
     if kind == 3:  # M113 计划-执行器: PLAN=A2 1;A5 1
         plan, tag = ollama_plan(text, ctx)
         if plan is None:
             plan, tag = "A6 0", "fjrules"
-        print(f"[server] plan: {text[:40]!r} -> {plan} ({tag}) in {time.time()-t0:.2f}s", flush=True)
-        return f"FJAI:RSP {seq} INTENT=0 PLAN={plan} TAG={tag}"
+        print(f"[server] plan: {text[:40]!r} -> {plan} ({tag}) in {time.time()-t0w:.2f}s", flush=True)
+        return f"FJAI:RSP {seq} INTENT=0 PLAN={plan} TAG={tag} TTL={ttl_now()}"
     if kind == 4:  # M113 I/O 预测器: NEXT=x
         nxt, tag = ollama_io(text)
         if nxt is None:
             parts = text.split()
             nxt = int(parts[-1]) if parts and parts[-1].isdigit() else -1
             tag = "fjrules"
-        print(f"[server] io: {text[:40]!r} -> {nxt} ({tag}) in {time.time()-t0:.2f}s", flush=True)
-        return f"FJAI:RSP {seq} INTENT=0 NEXT={nxt} TAG={tag}"
+        print(f"[server] io: {text[:40]!r} -> {nxt} ({tag}) in {time.time()-t0w:.2f}s", flush=True)
+        return f"FJAI:RSP {seq} INTENT=0 NEXT={nxt} TAG={tag} TTL={ttl_now()}"
     if kind == 5:  # M114 自然语言配置: POL=k:v;POL=k:v
         pol, tag = ollama_nlc(text)
         if pol is None:
             pol, tag = "POL=6:0", "fjrules"
-        print(f"[server] nlc: {text[:40]!r} -> {pol} ({tag}) in {time.time()-t0:.2f}s", flush=True)
-        return f"FJAI:RSP {seq} INTENT=0 POL={pol} TAG={tag}"
+        print(f"[server] nlc: {text[:40]!r} -> {pol} ({tag}) in {time.time()-t0w:.2f}s", flush=True)
+        return f"FJAI:RSP {seq} INTENT=0 POL={pol} TAG={tag} TTL={ttl_now()}"
     if kind == 6:  # M114 环境侦察: SCENE=desktop PROFILE=2
         scene, prof, tag = ollama_env(text)
         if scene is None:
             scene, prof, tag = "desktop", 2, "fjrules"
-        print(f"[server] env: {text[:40]!r} -> {scene}/{prof} ({tag}) in {time.time()-t0:.2f}s", flush=True)
-        return f"FJAI:RSP {seq} INTENT=0 SCENE={scene} PROFILE={prof} TAG={tag}"
+        print(f"[server] env: {text[:40]!r} -> {scene}/{prof} ({tag}) in {time.time()-t0w:.2f}s", flush=True)
+        return f"FJAI:RSP {seq} INTENT=0 SCENE={scene} PROFILE={prof} TAG={tag} TTL={ttl_now()}"
     # kind=1 意图
     intent, tag = ollama_classify(text)
     if intent is None:
         intent, tag = fjrules_intent(text), "fjrules"
-    print(f"[server] intent: {text!r} -> {intent} ({tag}) in {time.time()-t0:.2f}s", flush=True)
-    return f"FJAI:RSP {seq} INTENT={intent} TAG={tag}"
+    print(f"[server] intent: {text!r} -> {intent} ({tag}) in {time.time()-t0w:.2f}s", flush=True)
+    return f"FJAI:RSP {seq} INTENT={intent} TAG={tag} TTL={ttl_now()}"
 
 
 def classify(line: str) -> str:

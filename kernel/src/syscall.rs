@@ -353,6 +353,9 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         // ---- M114: 自然语言配置 + 环境侦察 ----
         0x8307 => crate::ai::fujo_nlc_set(a0, a1, a2, a3),
         0x8308 => crate::ai::fujo_env_scan(a0, a1),
+        // ---- M118 (W8): R3 时延一致性探针 + R1 公理化自检 ----
+        0x8309 => crate::ai::fujo_r3_probe(a0, a1, a2, a3),
+        0x830A => crate::ai::fujo_inv_run(a0, a1),
         // ---- M94: 模型注册表 + fupm ----
         0x8401 => crate::modelreg::fujo_fupm_install(a0, a1, a2),
         0x8402 => crate::modelreg::fujo_reg_list(a0),

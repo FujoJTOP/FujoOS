@@ -218,6 +218,36 @@ pub fn ctx_build_text(b: *mut u8, cap: usize) -> usize {
     pos
 }
 
+/// M118 (R3): 事件环写位置快照 (时延一致性协议: 请求@t0 时的游标)。
+pub fn ev_write_pos() -> u64 {
+    unsafe { EV_W as u64 }
+}
+
+/// M118 (R3): 自位置 from 起打上临界(关键)事件的数量。
+/// crit 为 kind 掩码 (bit=kind-1, 同 EV_SUB); from 过早时只查环内保留的最近 EV_N 条。
+pub fn ev_delta_critical(from: u64, crit: u64) -> u64 {
+    unsafe {
+        if EV_W as u64 <= from {
+            return 0;
+        }
+        let mut n = 0u64;
+        let mut i = EV_W;
+        let limit = if EV_W as u64 - from > EV_N as u64 {
+            EV_W - EV_N
+        } else {
+            from as usize
+        };
+        while i > limit {
+            i -= 1;
+            let k = EV[i % EV_N][1];
+            if k >= 1 && k <= 64 && (crit & (1u64 << ((k - 1) & 63))) != 0 {
+                n += 1;
+            }
+        }
+        n
+    }
+}
+
 /// M112: syscall 采样注记 (syscall.rs 每 1000 次调用置一次)。
 pub fn sys_note(pid: u64, total: u64) {
     unsafe {

@@ -57,6 +57,25 @@ const HEXDIG: &[u8; 16] = b"0123456789abcdef";
 
 static mut AI_SEQ: u64 = 0;
 
+/// M118 (R3): 请求@t0 快照 (shm 路径; 检查在 wait_rsp 内消耗一次)。
+static mut SNAP_T0: u64 = 0;
+static mut SNAP_EVW: u64 = 0;
+static mut SNAP_CRIT: u64 = 0;
+static mut SNAP_VALID: bool = false;
+/// 0=接受/超时 1=关键事件丢弃 2=TTL 过期丢弃。
+static mut SNAP_REASON: u64 = 0;
+
+pub fn r3_discarded() -> bool {
+    unsafe { SNAP_REASON != 0 }
+}
+
+fn r3_snap_clear() {
+    unsafe {
+        SNAP_VALID = false;
+        SNAP_REASON = 0;
+    }
+}
+
 fn hex_encode(src: &[u8], dst: &mut [u8]) -> usize {
     let mut n = 0;
     for &b in src {
@@ -98,6 +117,9 @@ fn qwen_classify(text: &[u8]) -> Option<(i64, [u8; 24], u64)> {
             return Some((intent, tag, el));
         }
         serial::write_line("link : shm rsp seq/intent bad, com2 downgrade...");
+    } else if r3_discarded() {
+        // M118 R3: 陈旧建议已丢弃 -> 直接规则兜底 (不再问模型)
+        return None;
     }
     qwen_classify_ser(text)
 }
@@ -105,6 +127,7 @@ fn qwen_classify(text: &[u8]) -> Option<(i64, [u8; 24], u64)> {
 /// COM2 降级路径 (原 FJAI:REQ 行协议, 3 次重发)。
 fn qwen_classify_ser(text: &[u8]) -> Option<(i64, [u8; 24], u64)> {
     const ATTEMPTS: u32 = 3;
+    r3_snap_clear(); // 行协议无快照: 关闭 R3 检查
     for _attempt in 1..=ATTEMPTS {
         let mut frame = [0u8; 192];
         let mut n = 0;
@@ -163,22 +186,43 @@ const SHM_KIND_PLAN: u32 = 3; // M113 计划-执行器
 const SHM_KIND_IO: u32 = 4; // M113 I/O 预测器
 const SHM_KIND_NLC: u32 = 5; // M114 自然语言配置
 const SHM_KIND_ENV: u32 = 6; // M114 环境侦察
-/// 帧布局 (0xA00000 起): magic/ver/seq/kind/len, payload@0x18 (≤1KB), ctx@0x800。
-const SHM_OFF_PAYLOAD: usize = 0x018;
+/// 帧布局 v2 (0xA00000 起, M118 R3 时延一致性):
+/// magic u32 / ver u32 / seq u64 / kind u32 / len u32 / t0 u64 / evw u64 / crit u32,
+/// payload @0x30 (≤1KB), ctx @0x800。
+const SHM_OFF_PAYLOAD: usize = 0x030;
 const SHM_PAYLOAD_MAX: usize = 0x400;
 const SHM_OFF_CTX: usize = 0x800;
 const SHM_CTX_MAX: usize = 0x600;
+const SHM_OFF_T0: usize = 0x018; // u64: 请求写入时刻 (PIT ticks, 100Hz)
+const SHM_OFF_EVW: usize = 0x020; // u64: 事件环写位置快照
+const SHM_OFF_CRIT: usize = 0x028; // u32: 关键事件种类掩码 (bit=kind-1)
+const SHM_VER: u32 = 2;
 
-/// 写请求帧 (payload + 当前 fujoctx 结构态文本)。
+/// R3: 关键事件种类 (到达即使过期建议失效) —— 异常/退出/窗口。
+const EV_CRIT_MASK: u64 = (1u64 << (crate::ctx::EV_ANOMALY - 1))
+    | (1u64 << (crate::ctx::EV_EXIT - 1))
+    | (1u64 << (crate::ctx::EV_WINDOW - 1)); // 0x1C
+
+/// 写请求帧 (payload + 当前 fujoctx 结构态文本); 记录快照@t0 (M118 R3)。
 fn shm_write_req(seq: u64, kind: u32, payload: &[u8]) {
     unsafe {
         let b = crate::ipc::SHM_BASE as *mut u8;
+        let t0 = crate::interrupts::ticks();
+        let evw = crate::ctx::ev_write_pos();
+        SNAP_T0 = t0;
+        SNAP_EVW = evw;
+        SNAP_CRIT = EV_CRIT_MASK;
+        SNAP_VALID = true;
+        SNAP_REASON = 0;
         (b.add(0x000) as *mut u32).write_volatile(SHM_MAGIC);
-        (b.add(0x004) as *mut u32).write_volatile(1); // 帧协议版本
+        (b.add(0x004) as *mut u32).write_volatile(SHM_VER);
         (b.add(0x008) as *mut u64).write_volatile(seq);
         (b.add(0x010) as *mut u32).write_volatile(kind);
         let n = payload.len().min(SHM_PAYLOAD_MAX);
         (b.add(0x014) as *mut u32).write_volatile(n as u32);
+        (b.add(SHM_OFF_T0) as *mut u64).write_volatile(t0);
+        (b.add(SHM_OFF_EVW) as *mut u64).write_volatile(evw);
+        (b.add(SHM_OFF_CRIT) as *mut u32).write_volatile(EV_CRIT_MASK as u32);
         for i in 0..n {
             b.add(SHM_OFF_PAYLOAD + i).write_volatile(payload[i]);
         }
@@ -248,6 +292,9 @@ fn shm_send_req(kind: u32, payload: &[u8]) -> u64 {
 /// 等待 RSP (显式 sti 收 IRQ3, 轮询, 双保险超时); 返回 (行, 行长度, 耗时 ticks)。
 /// M112 硬化: seq 不符的行丢弃继续等 (服务端响应可能属先前请求 ——
 /// 帧/触发漂移时 RSP 会对上最新的帧, 匹配即收)。
+/// M118 (R3): shm 路径在返回前做时延一致性检查 —— t0 后关键事件到达
+/// 或超过回包声明的 TTL => 丢弃建议 (返回 None, SNAP_REASON 标注原因,
+/// 调用方走规则兜底)。
 fn wait_rsp(seq: u64) -> Option<([u8; 96], usize, u64)> {
     unsafe {
         core::arch::asm!("sti", options(nomem, nostack, preserves_flags));
@@ -260,6 +307,33 @@ fn wait_rsp(seq: u64) -> Option<([u8; 96], usize, u64)> {
         if let Some(b) = serial::ser2_poll() {
             if b == b'\n' {
                 if line[..ln].starts_with(b"FJAI:RSP ") && line_seq_ok(&line[..ln], seq) {
+                    // ---- R3 时延一致性 (仅 shm 快照有效时) ----
+                    if unsafe { SNAP_VALID } {
+                        let crit = unsafe {
+                            crate::ctx::ev_delta_critical(SNAP_EVW, SNAP_CRIT)
+                        };
+                        let el = interrupts::ticks().wrapping_sub(unsafe { SNAP_T0 });
+                        let ttl = parse_ttl(&line[..ln]).unwrap_or(u64::MAX);
+                        if crit > 0 {
+                            r3_snap_clear();
+                            unsafe { SNAP_REASON = 1; }
+                            serial::write_str("link : DISCARD crit_ev=");
+                            crate::syscall::debug_dec(crit);
+                            serial::write_line(" -> rules stale suggestion");
+                            return None;
+                        }
+                        if ttl != u64::MAX && el > ttl {
+                            r3_snap_clear();
+                            unsafe { SNAP_REASON = 2; }
+                            serial::write_str("link : DISCARD ttl el=");
+                            crate::syscall::debug_dec(el);
+                            serial::write_str(" ttl=");
+                            crate::syscall::debug_dec(ttl);
+                            serial::write_line(" -> rules stale suggestion");
+                            return None;
+                        }
+                        r3_snap_clear();
+                    }
                     serial::write_str("link : got [");
                     serial::write_str(core::str::from_utf8(&line[..ln]).unwrap_or("?"));
                     serial::write_line("]");
@@ -276,9 +350,28 @@ fn wait_rsp(seq: u64) -> Option<([u8; 96], usize, u64)> {
         }
         spin += 1;
         if spin > 120_000_000 || interrupts::ticks().wrapping_sub(t0) > LINK_TIMEOUT_TICKS {
+            r3_snap_clear();
             return None;
         }
     }
+}
+
+/// 解析回包 TTL=<ticks> (模型声明有效期; 缺省 = 无限制)。
+fn parse_ttl(line: &[u8]) -> Option<u64> {
+    let mut n = 0u64;
+    let mut i = 0usize;
+    while i + 4 <= line.len() {
+        if line[i..].starts_with(b"TTL=") {
+            let mut j = i + 4;
+            while j < line.len() && (line[j] as char).is_ascii_digit() {
+                n = n * 10 + (line[j] - b'0') as u64;
+                j += 1;
+            }
+            return Some(n);
+        }
+        i += 1;
+    }
+    None
 }
 
 /// 校验 RSP 行内 seq。
@@ -1231,6 +1324,144 @@ pub extern "C" fn fujo_env_scan(out: u64, _cap: u64) -> i64 {
     serial::write_str(core::str::from_utf8(scene).unwrap_or("?"));
     serial::write_str(" profile=");
     crate::syscall::debug_dec(profile);
+    serial::write_line("");
+    0
+}
+
+// ---------------------------------------------------------------------------
+// M118 · R3 时延一致性探针 (确定性测试) + R1 公理化自检 (离线可跑)
+// ---------------------------------------------------------------------------
+
+/// 0x8309: R3 协议探针 —— mode bit0=快照后注入关键事件 (EV_ANOMALY),
+/// bit1=强制回包过期 (t0 回拨 1e6 ticks)。out = [engine, reason, crit_n, elapsed]。
+/// engine: 1=模型建议被接受 2=丢弃 -> 规则兜底; reason: 0=接受/超时 1=关键事件 2=TTL。
+#[no_mangle]
+pub extern "C" fn fujo_r3_probe(mode: u64, out: u64, _cap: u64, _x: u64) -> i64 {
+    if !(0x400000..0x800000).contains(&out) {
+        return -14; // -EFAULT
+    }
+    let seq = shm_send_req(SHM_KIND_CLASSIFY, b"run the game");
+    if mode & 1 != 0 {
+        crate::ctx::ev_push(crate::ctx::EV_ANOMALY, 0, 1, 90);
+    }
+    if mode & 2 != 0 {
+        unsafe { SNAP_T0 = SNAP_T0.wrapping_sub(1_000_000) };
+    }
+    let (engine, el) = if let Some((line, ln, el)) = wait_rsp(seq) {
+        if parse_rsp(&line[..ln], seq).is_some() {
+            (1u64, el)
+        } else {
+            (2u64, el)
+        }
+    } else {
+        (2u64, 0u64)
+    };
+    let crit = unsafe { crate::ctx::ev_delta_critical(SNAP_EVW, SNAP_CRIT) };
+    let reason = unsafe { SNAP_REASON };
+    unsafe {
+        let o = out as *mut u64;
+        o.write(engine);
+        o.add(1).write(reason);
+        o.add(2).write(crit);
+        o.add(3).write(el);
+    }
+    serial::write_str("r3   : probe mode=");
+    crate::syscall::debug_dec(mode);
+    serial::write_str(" -> engine=");
+    crate::syscall::debug_dec(engine);
+    serial::write_str(" reason=");
+    crate::syscall::debug_dec(reason);
+    serial::write_line("");
+    0
+}
+
+/// 0x830A: R1 公理化自检 (纯内核, 模型离线可跑) —— 四条不变式。
+/// 前置条件: 调用前 exec 槽未授权 (引导默认; 本函数内部会授予 0x3F)。
+/// out = [结果位掩码 bit0..3=I1..I4, denies 计数, 审计条目总数]。
+#[no_mangle]
+pub extern "C" fn fujo_inv_run(out: u64, cap: u64) -> i64 {
+    if !(0x400000..0x800000).contains(&out) || cap < 24 {
+        return -14;
+    }
+    let mut mask = 0u64;
+
+    // I1 模型永不能执行未授权动作: 未授权 exec 必须拒绝、计数、无副作用。
+    {
+        let d0 = crate::capability::denies();
+        let rc = crate::capability::fujo_cap_exec(crate::capability::ACT_SET_CFG, 1, 42);
+        let d1 = crate::capability::denies();
+        let cfg = crate::capability::fujo_cfg_get(1);
+        if rc == -1 && d1 == d0 + 1 && cfg == 50 {
+            mask |= 1;
+        }
+        serial::write_str("inv  : I1 deny rc=");
+        crate::syscall::debug_dec(rc as u64);
+        serial::write_str(" denies=");
+        crate::syscall::debug_dec(d1);
+        serial::write_line(if mask & 1 != 0 { " [PASS]" } else { " [FAIL]" });
+    }
+
+    // I2 每个动作都有审计记录: 授权 exec 后审计条目 +1 且尾条 (action=2, result=0)。
+    {
+        let n0 = crate::capability::aud_num();
+        let _ = crate::capability::fujo_cap_grant(crate::capability::EXEC_SLOT as u64, crate::capability::ALL_ACTS);
+        let rc = crate::capability::fujo_cap_exec(crate::capability::ACT_SET_CFG, 2, 1);
+        let n1 = crate::capability::aud_num();
+        let (_, a, s, r) = crate::capability::aud_tail();
+        if rc == 0 && n1 == n0 + 1 && a == 2 && s == crate::capability::ACT_SET_CFG && r == 0 {
+            mask |= 2;
+        }
+        serial::write_str("inv  : I2 exec rc=");
+        crate::syscall::debug_dec(rc as u64);
+        serial::write_str(" aud ");
+        crate::syscall::debug_dec(n0);
+        serial::write_str("->");
+        crate::syscall::debug_dec(n1);
+        serial::write_line(if mask & 2 != 0 { " [PASS]" } else { " [FAIL]" });
+    }
+
+    // I3 模型缺席时系统继续运行 (规则兜底确定): 模型缺位后接管的三条规则语义不变。
+    {
+        let (a, c) = rules_anom(b"ev pid=0 rate=99 wr=dead");
+        let (a2, c2) = rules_anom(b"ev pid=0 rate=3 wr=ok");
+        let mut pb = [0u8; 96];
+        let pn = rules_plan(b"isolate task 1", &mut pb);
+        let p_ok = pb[..pn].starts_with(b"A2 ");
+        let mut nb = [0u8; 96];
+        let nn = rules_nlc(b"ban games 0 24", &mut nb);
+        let n_ok = nb[..nn].starts_with(b"POL=3:1");
+        if a == 1 && c == 80 && a2 == 0 && c2 == 20 && p_ok && n_ok {
+            mask |= 4;
+        }
+        serial::write_str("inv  : I3 rules anom=");
+        crate::syscall::debug_dec(a);
+        serial::write_str("/");
+        crate::syscall::debug_dec(a2);
+        serial::write_line(if mask & 4 != 0 { " [PASS]" } else { " [FAIL]" });
+    }
+
+    // I4 每次失败被计数并降级: 拒绝计数 >=1, 系统继续可用 (授权动作生效)。
+    {
+        let d = crate::capability::denies();
+        let cont = crate::capability::fujo_cfg_get(2); // I2 授予的动作: 自动隔离=1
+        if d >= 1 && cont == 1 {
+            mask |= 8;
+        }
+        serial::write_str("inv  : I4 denies=");
+        crate::syscall::debug_dec(d);
+        serial::write_str(" cfg2=");
+        crate::syscall::debug_dec(cont as u64);
+        serial::write_line(if mask & 8 != 0 { " [PASS]" } else { " [FAIL]" });
+    }
+
+    unsafe {
+        let o = out as *mut u64;
+        o.write(mask);
+        o.add(1).write(crate::capability::denies());
+        o.add(2).write(crate::capability::aud_num());
+    }
+    serial::write_str("inv  : mask=");
+    crate::syscall::debug_hex(mask);
     serial::write_line("");
     0
 }

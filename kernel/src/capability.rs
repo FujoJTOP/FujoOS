@@ -183,3 +183,18 @@ pub fn fujo_aud_read(ptr: u64, cap: u64) -> i64 {
 pub fn denies() -> u64 {
     unsafe { DENIES }
 }
+
+/// M118 (R1): 审计条目总数 (公理化自检)。
+pub fn aud_num() -> u64 {
+    unsafe { AUD_NUM }
+}
+
+/// M118 (R1): 最近一条审计 (ts, action, subject, result)。
+pub fn aud_tail() -> (u64, u64, u64, u64) {
+    unsafe {
+        if AUD_NUM == 0 {
+            return (0, 0, 0, 0);
+        }
+        AUD[(AUD_POS.wrapping_sub(1) % N_AUD as u64) as usize]
+    }
+}

@@ -27,7 +27,8 @@
 - **AI For Next(Wave 7)全部完成**:M112(shm-link+事件环+cap_exec+异常哨兵)、M113(计划执行器+IO 预测)、M114(NLC+环境扫描)、M115(五职责回归 + 基线对比)——四波均 7B PASS、fujoregress 9/9、已推送。
 - **实测数据**(docs/44-Ext 表格):哨兵 100 分类 10 命中/0 误报;计划 隔离+恢复 2/0、验证 1;IO 预测 10/30(对照 LRU 0/30);NLC 策略应用 3 条、配置 1/0/24;环境 桌面/配置 2/2;M115 五职责 PASS。
 - **延迟实测**:7B 冷推理 4.6s、warm 0.15–0.17s(CPU)。
-- **下一步**:短期目标 = docs/57 阶段一 **W8**(先 R3 时延一致性协议,再 R1 公理化测试)→ W9(M116 权限域)→ W10(蒸馏+自改进)。**本次新对话的默认任务:启动 W8。**
+- **W8 已启动/完成部分**:M118(R3 时延一致性协议:shm 帧 v2 快照@t0+evw+crit、回包 TTL、wait_rsp 丢弃、0x8309 探针)与 M119(R1 公理化自检 0x830A,A1–A4 离线可跑,入 fujoregress);规格见 docs/59;load_end 随镜像提升至 0x2A2000(pad 0x1A2000)。
+- **下一步**:W8 完成后 → W9(M116 权限域)→ W10(蒸馏+自改进)。**本次新对话的默认任务:W8。**
 
 ## 4. 构建与验证(铁律优先)
 
@@ -39,9 +40,9 @@ cd kernel; cargo build --release
 # 2) 检查新符号已入镜像(llvm-nm)
 llvm-nm kernel/target/x86_64-unknown-none/release/fujo-kernel | Select-String <SYM>
 
-# 3) 展平 + 检查 BSS 尾 < 0x2A0000(pad 0x1A0000)
-python tools/flatten_elf.py kernel/target/x86_64-unknown-none/release/fujo-kernel kernel/fujo-kernel.bin --pad 0x1A0000
-llvm-readobj --sections kernel/fujo-kernel.bin | Select-String -Context 0,2 ".bss"   # 尾 < 0x2A0000
+# 3) 展平 + 检查 BSS 尾 < 0x2A2000(pad 0x1A2000)
+python tools/flatten_elf.py kernel/target/x86_64-unknown-none/release/fujo-kernel kernel/fujo-kernel.bin --pad 0x1A2000
+llvm-readobj --sections kernel/fujo-kernel.bin | Select-String -Context 0,2 ".bss"   # 尾 < 0x2A2000
 
 # 4) AI 职责验证(模型在线,服务器自管 monitor + 注入启动键)
 python tools/verify_ai.py --demo m115_five --needle "M115 RESULT: PASS" --model qwen2.5:7b --timeout 300
