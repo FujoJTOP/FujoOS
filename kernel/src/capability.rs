@@ -188,6 +188,46 @@ pub fn aud_num() -> u64 {
     unsafe { AUD_NUM }
 }
 
+/// W19: 统一审计导出 (0x8C01) —— 双环同构:
+/// out 布局 = u64[0]=cap_n, u64[1]=ai_n, 随后 cap 条目×32B (kind=1,
+/// [ts,action,subject,result]), 再 ai 条目×32B (kind=2, [engine,duty,result,0])。
+/// 返回总条数 (cap_n + ai_n)。
+#[no_mangle]
+pub extern "C" fn fujo_unified_aud(ptr: u64, cap: u64) -> i64 {
+    if !(0x400000..0xC00000).contains(&ptr) {
+        return -14;
+    }
+    unsafe {
+        let w = ptr as *mut u64;
+        let cap_n = (0u64).max(clamp_aud_n(cap));
+        let ai_n = crate::ai::ai_aud_count() as u64;
+        // 先写统计头
+        w.write(cap_n);
+        w.add(1).write(ai_n);
+        let body = ptr + 16;
+        // cap 条目
+        let n = cap_n as usize;
+        for i in 0..n {
+            let idx = (AUD_POS as usize).wrapping_add(N_AUD - n + i) % N_AUD;
+            let (ts, a, s, r) = AUD[idx];
+            let e = (body as *mut u64).add(i * 4);
+            e.write(ts);
+            e.add(1).write(a);
+            e.add(2).write(s);
+            e.add(3).write(r);
+        }
+        // ai 条目
+        let off = (body as u64) + (n as u64) * 32;
+        let ai_ret = crate::ai::ai_aud_export_32(off, ai_n as usize);
+        (cap_n + ai_ret as u64) as i64
+    }
+}
+
+fn clamp_aud_n(cap: u64) -> u64 {
+    let n = ((cap.saturating_sub(16)) / 32).min(N_AUD as u64).min(unsafe { AUD_NUM });
+    n
+}
+
 /// M118 (R1): 最近一条审计 (ts, action, subject, result)。
 pub fn aud_tail() -> (u64, u64, u64, u64) {
     unsafe {

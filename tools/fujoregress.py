@@ -65,6 +65,7 @@ CASES = [
      {"bootsleep": 12.0,
       "keys": ["m", "b", "u", "i", "l", "d", "ret", "wait:5",
                "r", "u", "n", "f", "i", "l", "e", "spc", "slash", "t", "m", "p", "slash", "h", "e", "l", "l", "o", "ret"]}),
+    ("m130-audit", "ELF64 x unified-audit", "sdk/linux/m130_aud.elf", "M130 RESULT: PASS", [], {}),
 ]
 
 MON_PORT = 4568

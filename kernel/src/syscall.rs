@@ -383,6 +383,8 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x8B02 => fujo_exec_mem(a0, a1),
         // ---- W17: SMP 状态 (ncpu/ap_online/lapic_id) ----
         0x8B03 => crate::smp::fujo_smp_state(a0),
+        // ---- W19: 统一审计 (cap + AI 双环同构导出) ----
+        0x8C01 => crate::capability::fujo_unified_aud(a0, a1),
         // ---- M94: 模型注册表 + fupm ----
         0x8401 => crate::modelreg::fujo_fupm_install(a0, a1, a2),
         0x8402 => crate::modelreg::fujo_reg_list(a0),

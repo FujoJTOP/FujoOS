@@ -1721,7 +1721,35 @@ fn ai_aud_note(duty: u64, engine: u64, out: u64, a: u64, b: u64, result: u64, te
 }
 
 /// 0x830C: 统计 (out[0]=模型调用数, out[1]=规则条数, out[2]=规则命中, out[3]=审计条数)。
-#[no_mangle]
+
+/// W19: 统一审计 —— AI 环条目数。
+pub fn ai_aud_count() -> usize {
+    unsafe { AIAUD_POS.min(AIAUD_N) }
+}
+
+/// W19: 统一审计 —— boot 标记条目 (保证 AI 环非空; 确定性)。
+pub fn ai_aud_boot() {
+    ai_aud_note(6, 0, 0, 0, 0, 0, b"boot");
+}
+
+/// W19: 统一审计 —— AI 环导出为统一 32B 条目 {a=engine, b=duty, c=result}。
+/// 返回导出条数。
+pub fn ai_aud_export_32(ptr: u64, max_entries: usize) -> i64 {
+    unsafe {
+        let n = max_entries.min(AIAUD_N).min(AIAUD_POS);
+        for i in 0..n {
+            let idx = (AIAUD_POS + AIAUD_N - n + i) % AIAUD_N;
+            let src = &AIAUD[idx * AIAUD_SZ..(idx + 1) * AIAUD_SZ];
+            let w = (ptr as *mut u64).add(i * 4);
+            // src: +16=out? 取 {a=engine@0, b=duty@8, c=result@40}
+            w.write((src.as_ptr() as *const u64).read()); // engine
+            w.add(1).write((src.as_ptr().add(8) as *const u64).read()); // duty
+            w.add(2).write((src.as_ptr().add(40) as *const u64).read()); // result
+            w.add(3).write(0);
+        }
+        n as i64
+    }
+}#[no_mangle]
 pub extern "C" fn fujo_ai_stats(out: u64) -> i64 {
     if !(0x400000..0x800000).contains(&out) {
         return -14;

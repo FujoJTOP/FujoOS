@@ -286,6 +286,7 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     }
     crate::net::init(); // W14: virtio-net (参考机 QEMU user-net)
     crate::smp::ap_bringup(); // W17: SMP AP 启动 (仅 -smp 2; SIPI@0x8000)
+    crate::ai::ai_aud_boot(); // W19: AI 审计 boot 标记 (统一审计环确定性非空)
     if !gfx_ok {
         out_line("gfx  : framebuffer unavailable (VBE not present), geometry logo skipped");
     } else {
