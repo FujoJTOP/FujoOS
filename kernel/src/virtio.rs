@@ -4,9 +4,12 @@
 //! vendor=0x1AF4 device=0x1001;BAR0 = I/O 端口区 (legacy);
 //! 设备区头部: magic "virt", ver, device_id(=2), vendor_id。
 //!
-//! vring (单队列, 16 描述符) 在帧分配器 4KiB 帧内 (恒等映射, guest-physical):
-//!   0x000 desc[16]×16B | 0x200 avail (idx+ring[16]) | 0x300 used (idx+ring[16])
-//!   0x400 req header 16B | 0x500 data 512B | 0x900 status 1B
+//! vring (单队列, 16 描述符) 在帧分配器 2×4KiB 连续帧内 (恒等映射, guest-physical)。
+//! QEMU legacy (9.2) vring.align 固定 4096: used = vring_align(desc+256+36, 4096)
+//! = desc+0x1000 (独立页!)。布局 (V = 基址):
+//!   V+0x000 desc[16]×16B | V+0x100 avail (flags,idx,ring[16])
+//!   V+0x1000 used (flags,idx,elems[16]×8B) | V+0x300 req 16B |
+//!   V+0x400 data 512B | V+0x800 status 1B
 //! 提交: desc0=header(IN) desc1=data(WRITE) desc2=status(WRITE) -> notify ->
 //! 轮询 used.idx (无中断, TCG 安全), status==0 成功。
 //!
@@ -30,10 +33,11 @@ const VIO_QUEUE_SEL: usize = 0x0E;
 const VIO_QUEUE_NOTIFY: usize = 0x10;
 
 const VQ_N: usize = 16;
-const VQ_PAGE: u64 = 0x4000; // vring + 缓冲 一帧
-const OFF_REQ: usize = 0x400;
-const OFF_DATA: usize = 0x500;
-const OFF_STATUS: usize = 0x900;
+const VQ_PAGE: u64 = 0x2000; // vring + 缓冲 两帧 (used 独立页)
+const OFF_REQ: usize = 0x300;
+const OFF_DATA: usize = 0x400;
+const OFF_STATUS: usize = 0x800;
+const OFF_USED_IDX: usize = 0x1002; // used.idx (设备写; 4096 对齐页)
 
 static mut IO_BASE: u16 = 0;
 static mut VQ_PHYS: u64 = 0;
@@ -116,8 +120,8 @@ pub fn init() -> bool {
                 // 状态: RESET(0) -> ACK(1) -> DRIVER(2) —— 必须字节写
                 outb(io, VIO_STATUS, 0);
                 outb(io, VIO_STATUS, 1 | 2);
-                // vring 帧 (4KiB 清零; 恒等映射, guest-physical 直用)
-                let phys = match crate::mem::alloc_frame_kernel() {
+                // vring 帧 (2×4KiB 连续清零; QEMU legacy: used 独立页)
+                let phys = match crate::mem::alloc_frames_kernel(2) {
                     Some(p) => p,
                     None => return false,
                 };
@@ -179,104 +183,90 @@ pub extern "C" fn fujo_vblk_info(out: u64) -> i64 {
     0
 }
 
-/// 0x8A01: 读扇区 (LBA) -> 用户缓冲 (512B)。0 成功 / -1 失败。
+/// 提交 + 轮询 (type=0 读 / 1 写, 数据经 SECTOR_DATA 512B)。0 成功 / -1 设备错 / -2 超时。
+fn submit_req(ty: u32, lba: u64) -> i64 {
+    unsafe {
+        if !VQ_READY {
+            return -1;
+        }
+        let vq = VQ_PHYS as *mut u8;
+        // 请求头: type, reserved, sector
+        (vq.add(OFF_REQ) as *mut u32).write_volatile(ty);
+        (vq.add(OFF_REQ + 4) as *mut u32).write_volatile(0);
+        (vq.add(OFF_REQ + 8) as *mut u64).write_volatile(lba);
+        // 描述符 0/1/2 —— vring_desc 布局: [addr u64][len u32][flags u16][next u16] = 16B
+        let d = vq.add(0x000) as *mut u8;
+        // desc0: req header (device 读; IN)
+        (d.add(0) as *mut u64).write_volatile(VQ_PHYS + OFF_REQ as u64);
+        (d.add(8) as *mut u32).write_volatile(16);
+        (d.add(12) as *mut u16).write_volatile(0x1); // NEXT
+        (d.add(14) as *mut u16).write_volatile(1);
+        // desc1: data (读=设备写[WRITE] / 写=设备读[无 WRITE])
+        (d.add(16) as *mut u64).write_volatile(SECTOR_DATA);
+        (d.add(24) as *mut u32).write_volatile(512);
+        (d.add(28) as *mut u16).write_volatile(0x3 - 2 * (ty as u16)); // 读: NEXT|WRITE; 写: NEXT
+        (d.add(30) as *mut u16).write_volatile(2);
+        // desc2: status (设备写, WRITE, last)
+        (d.add(32) as *mut u64).write_volatile(VQ_PHYS + OFF_STATUS as u64);
+        (d.add(40) as *mut u32).write_volatile(1);
+        (d.add(44) as *mut u16).write_volatile(0x2); // WRITE
+        (d.add(46) as *mut u16).write_volatile(0);
+        // avail 投递 (flags@0x100, idx@0x102, ring@0x104)
+        let avail_idx = (vq.add(0x100 + 2) as *mut u16).read_volatile();
+        (vq.add(0x100 + 4 + ((avail_idx as usize % VQ_N) * 2)) as *mut u16).write_volatile(0);
+        (vq.add(0x100 + 2) as *mut u16).write_volatile(avail_idx.wrapping_add(1));
+        // notify (queue 0)
+        outl(IO_BASE, VIO_QUEUE_NOTIFY, 0);
+        // 轮询 used.idx (设备写 V+0x1002; 独立页)
+        let mut spin: u64 = 0;
+        loop {
+            spin += 1;
+            let used_idx = (vq.add(OFF_USED_IDX) as *mut u16).read_volatile();
+            if used_idx != LAST_USED {
+                LAST_USED = used_idx;
+                let st = (vq.add(OFF_STATUS) as *mut u8).read_volatile();
+                if st == 0 {
+                    return 0;
+                }
+                return -1;
+            }
+            if spin > 60_000_000 {
+                return -2;
+            }
+        }
+    }
+}
+
+/// 0x8A01: 读扇区 (LBA) -> 用户缓冲 (512B)。0 成功 / -1 失败 / -2 超时。
 #[no_mangle]
 pub extern "C" fn fujo_vblk_read(lba: u64, out: u64, cap: u64) -> i64 {
     if !(0x400000..0xC00000).contains(&out) || cap < 512 {
         return -14;
     }
     unsafe {
-        if !VQ_READY {
-            return -1;
+        let rc = submit_req(0, lba);
+        if rc != 0 {
+            return rc;
         }
         let vq = VQ_PHYS as *mut u8;
-        // 请求头: type=0 (read), reserved=0, sector=lba
-        (vq.add(OFF_REQ) as *mut u32).write_volatile(0);
-        (vq.add(OFF_REQ + 4) as *mut u32).write_volatile(0);
-        (vq.add(OFF_REQ + 8) as *mut u64).write_volatile(lba);
-        // 描述符 0/1/2 —— vring_desc 布局: [addr u64][len u32][flags u16][next u16] = 16B
-        let d = vq.add(0x000) as *mut u8;
-        // desc0: req header (IN)
-        (d.add(0) as *mut u64).write_volatile(VQ_PHYS + OFF_REQ as u64);
-        (d.add(8) as *mut u32).write_volatile(16);
-        (d.add(12) as *mut u16).write_volatile(0x1); // NEXT
-        (d.add(14) as *mut u16).write_volatile(1);
-        // desc1: data (device->host, WRITE)
-        (d.add(16) as *mut u64).write_volatile(SECTOR_DATA);
-        (d.add(24) as *mut u32).write_volatile(512);
-        (d.add(28) as *mut u16).write_volatile(0x3); // NEXT|WRITE
-        (d.add(30) as *mut u16).write_volatile(2);
-        // desc2: status (device->host, WRITE, last)
-        (d.add(32) as *mut u64).write_volatile(VQ_PHYS + OFF_STATUS as u64);
-        (d.add(40) as *mut u32).write_volatile(1);
-        (d.add(44) as *mut u16).write_volatile(0x2); // WRITE (last)
-        (d.add(46) as *mut u16).write_volatile(0);
-        // avail 投递 (紧随 desc 表: flags@0x100, idx@0x102, ring@0x104)
-        let avail_idx = (vq.add(0x100 + 2) as *mut u16).read_volatile();
-        (vq.add(0x100 + 4 + ((avail_idx as usize % VQ_N) * 2)) as *mut u16).write_volatile(0);
-        (vq.add(0x100 + 2) as *mut u16).write_volatile(avail_idx.wrapping_add(1));
-        // notify (queue 0) —— u32 宽度 (QEMU 对 legacy notify 按 4B 访问)
-        let sel_ro = inw(IO_BASE, VIO_QUEUE_SEL);
-        let num_ro = inw(IO_BASE, VIO_QUEUE_SIZE);
-        serial::write_str("vblk : sel_ro=");
-        syscall::debug_dec(sel_ro as u64);
-        serial::write_str(" num_ro=");
-        syscall::debug_dec(num_ro as u64);
-        serial::write_line("");
-        outl(IO_BASE, VIO_QUEUE_NOTIFY, 0);
-        // 轮询 + 带区 u16 扫描
-        let mut spin: u64 = 0;
-        while spin < 20_000_000 {
-            spin += 1;
-            if spin % 1_000_000 == 0 {
-                let mut any = 0usize;
-                let mut first: usize = 0;
-                let mut fv: u16 = 0;
-                for off in (0x100..0x300).step_by(2) {
-                    let w = (vq.add(off) as *mut u16).read_volatile();
-                    if w != 0 {
-                        any += 1;
-                        if first == 0 {
-                            first = off;
-                            fv = w;
-                        }
-                    }
-                }
-                if any > 0 {
-                    serial::write_str("vblk : ring nonzero=");
-                    syscall::debug_dec(any as u64);
-                    serial::write_str(" first=0x");
-                    syscall::debug_hex(first as u64);
-                    serial::write_str(" v=0x");
-                    syscall::debug_hex(fv as u64);
-                    serial::write_line("");
-                }
-            }
+        for k in 0..512usize {
+            (out as *mut u8).add(k).write_volatile(vq.add(OFF_DATA + k).read_volatile());
         }
-        loop {
-            let u1 = (vq.add(0x124 + 2) as *mut u16).read_volatile();
-            let u2 = (vq.add(0x128 + 2) as *mut u16).read_volatile();
-            let used_idx = if u1 != 0 { u1 } else { u2 };
-            if used_idx != LAST_USED {
-                LAST_USED = used_idx;
-                let status = (vq.add(OFF_STATUS) as *mut u8).read_volatile();
-                let st = status;
-                if st == 0 {
-                    // 512B 拷给用户
-                    for k in 0..512usize {
-                        (out as *mut u8).add(k).write_volatile(vq.add(OFF_DATA + k).read_volatile());
-                    }
-                    return 0;
-                }
-                serial::write_str("vblk : req status=0x");
-                syscall::debug_hex(st as u64);
-                serial::write_line("");
-                return -1;
-            }
-            spin += 1;
-            if spin > 100_000_000 {
-                return -2;
-            }
+        0
+    }
+}
+
+/// 0x8A03: 写扇区 (用户缓冲 512B -> LBA)。0 成功 / -1 失败 / -2 超时。
+#[no_mangle]
+pub extern "C" fn fujo_vblk_write(lba: u64, src: u64, cap: u64) -> i64 {
+    if !(0x400000..0xC00000).contains(&src) || cap < 512 {
+        return -14;
+    }
+    unsafe {
+        let vq = VQ_PHYS as *mut u8;
+        for k in 0..512usize {
+            vq.add(OFF_DATA + k).write_volatile((src as *const u8).add(k).read_volatile());
         }
+        submit_req(1, lba)
     }
 }

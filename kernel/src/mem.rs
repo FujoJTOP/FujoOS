@@ -466,6 +466,43 @@ pub fn alloc_frame_kernel() -> Option<u64> {
     frame_alloc_zero()
 }
 
+/// W13c3: 分配 n 个物理连续帧 (QEMU legacy vring 要求 used 独立 4K 页, 4096 对齐)。
+pub fn alloc_frames_kernel(n: usize) -> Option<u64> {
+    if n == 0 || n > FRAME_PAGES {
+        return None;
+    }
+    unsafe {
+        let mut i = 0usize;
+        while i + n <= FRAME_PAGES {
+            let mut ok = true;
+            for j in 0..n {
+                let byte = (i + j) / 8;
+                let bit = (i + j) % 8;
+                let cur = core::ptr::read_volatile(core::ptr::addr_of!(FRAME_BITMAP[byte]));
+                if cur & (1 << bit) != 0 {
+                    ok = false;
+                    break;
+                }
+            }
+            if ok {
+                for j in 0..n {
+                    let byte = (i + j) / 8;
+                    let bit = (i + j) % 8;
+                    let cur = core::ptr::read_volatile(core::ptr::addr_of!(FRAME_BITMAP[byte]));
+                    core::ptr::write_volatile(core::ptr::addr_of_mut!(FRAME_BITMAP[byte]), cur | (1 << bit));
+                }
+                let phys = FRAME_BASE + (i as u64) * 0x1000;
+                for k in 0..(n * 512) {
+                    ((phys as *mut u64).add(k)).write(0);
+                }
+                return Some(phys);
+            }
+            i += 1;
+        }
+    }
+    None
+}
+
 /// 释放帧 (帧分配器位图清位; 仅 16MiB..63MiB 池内)。
 pub fn frame_free(phys: u64) {    unsafe {
         if phys < FRAME_BASE || phys >= FRAME_END {
