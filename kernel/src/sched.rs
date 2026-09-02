@@ -26,10 +26,14 @@ pub struct Task {
     pub sig_active: bool,
     /// M116 (W9): 权限域 id (0=系统域; 任务级绑定, 可撤销)。
     pub domain: u64,
+    /// W11 (M121): 独立地址空间 —— 私有 PML4 物理 (0=系统/隐式任务) + 堆 PT 帧。
+    pub cr3: u64,
+    pub heap0: u64, // 0x800000..0xA00000 PT 物理
+    pub heap1: u64, // 0xA00000..0xC00000 PT 物理
 }
 
 static mut TASKS: [Task; MAX_TASKS] = [
-    Task { saved_rsp: 0, kstack_top: 0, state: 0, sig_handler: 0, sig_pending: false, sig_active: false, domain: 0 };
+    Task { saved_rsp: 0, kstack_top: 0, state: 0, sig_handler: 0, sig_pending: false, sig_active: false, domain: 0, cr3: 0, heap0: 0, heap1: 0 };
     MAX_TASKS
 ];
 static mut TASK_COUNT: usize = 0;
@@ -68,6 +72,7 @@ pub fn terminate_current_and_next() -> bool {
             CUR = next;
             sched_next_rsp = TASKS[next].saved_rsp;
             gdt::set_rsp0(TASKS[next].kstack_top);
+            crate::mem::switch_cr3(TASKS[next].cr3); // W11: 地址空间切换
             pf_must_switch = 1;
             true
         } else {
@@ -139,6 +144,28 @@ pub fn set_current_domain(id: u64) {
             TASKS[CUR].domain = id;
         } else {
             BOUND_DOMAIN = id;
+        }
+    }
+}
+
+/// W11: 当前任务堆 PT 物理 (0,0 = 系统/隐式任务 -> 内核静态 PT)。
+pub fn current_heap_pt() -> (u64, u64) {
+    unsafe {
+        if CUR < MAX_TASKS && TASKS[CUR].state != 0 {
+            (TASKS[CUR].heap0, TASKS[CUR].heap1)
+        } else {
+            (0, 0)
+        }
+    }
+}
+
+/// W11: 当前任务 CR3 (0 = 系统/引导页表)。
+pub fn current_cr3() -> u64 {
+    unsafe {
+        if CUR < MAX_TASKS && TASKS[CUR].state != 0 {
+            TASKS[CUR].cr3
+        } else {
+            0
         }
     }
 }
@@ -292,6 +319,9 @@ pub fn fork_current(rip: u64, rsp: u64, regs: &[u64; 8]) -> Option<usize> {
                 sig_pending: false,
                 sig_active: false,
                 domain: 0,
+                cr3: 0,
+                heap0: 0,
+                heap1: 0,
             };
             TASK_COUNT = 1;
             crate::gdt::set_rsp0(0x380000);
@@ -301,6 +331,14 @@ pub fn fork_current(rip: u64, rsp: u64, regs: &[u64; 8]) -> Option<usize> {
         if idx >= MAX_TASKS {
             return None;
         }
+        // W11: 子任务独立地址空间 (私有堆 PT; 拷贝父已映射堆页 -> 同 VA 同值各享帧)
+        let (c_cr3, c_h0, c_h1) = crate::mem::as_create();
+        if c_cr3 == 0 {
+            serial::write_line("sched: fork as_create failed");
+            return None;
+        }
+        let (p_h0, p_h1) = current_heap_pt();
+        crate::mem::as_copy_heap(c_h0, c_h1, p_h0, p_h1);
         let saved = build_frame!(0x340000, rip, new_rsp, regs, 0);
         TASKS[idx] = Task {
             saved_rsp: saved,
@@ -310,6 +348,9 @@ pub fn fork_current(rip: u64, rsp: u64, regs: &[u64; 8]) -> Option<usize> {
             sig_pending: false,
             sig_active: false,
             domain: 0,
+            cr3: c_cr3,
+            heap0: c_h0,
+            heap1: c_h1,
         };
         TASK_COUNT += 1;
         serial::write_str("sched: fork parent=");
@@ -366,6 +407,7 @@ fn spawn(kstack_top: u64, user_stack: u64, entry: u64) -> usize {
         for k in 0..9usize {
             frame.sub(9 - k).write(0); // 寄存器槽 (r11..rax), 初始零
         }
+        let (c_cr3, c_h0, c_h1) = crate::mem::as_create(); // W11: 私有页表链
         TASKS[idx] = Task {
             saved_rsp: frame as u64 - 72,
             kstack_top,
@@ -374,6 +416,9 @@ fn spawn(kstack_top: u64, user_stack: u64, entry: u64) -> usize {
             sig_pending: false,
             sig_active: false,
             domain: 0,
+            cr3: c_cr3,
+            heap0: c_h0,
+            heap1: c_h1,
         };
         TASK_COUNT += 1;
         idx
@@ -392,6 +437,7 @@ pub fn spawn_tasks(entry: u64) {
         spawn(0x280000, 0x63FFF8, entry);
         CUR = 0; // A 先跑 (enter_user_test iretq 进入)
         gdt::set_rsp0(0x2C0000);
+        crate::mem::switch_cr3(current_cr3()); // W11: A 的首启地址空间
         serial::write_line("sched: 2 tasks (A user=0x600000 / B user=0x640000) - timeslice armed");
     }
 }
@@ -451,6 +497,9 @@ pub fn spawn_proxy(entry: u64) -> usize {
             sig_pending: false,
             sig_active: false,
             domain: 0,
+            cr3: 0,
+            heap0: 0,
+            heap1: 0,
         };
         TASK_COUNT = 1;
         CUR = 0;
@@ -473,6 +522,7 @@ fn spawn_at(idx: usize, kstack_top: u64, user_stack: u64, entry: u64) {
         for k in 0..9usize {
             frame.sub(9 - k).write(0);
         }
+        let (c_cr3, c_h0, c_h1) = crate::mem::as_create(); // W11: 私有页表链
         TASKS[idx] = Task {
             saved_rsp: frame as u64 - 72,
             kstack_top,
@@ -481,6 +531,9 @@ fn spawn_at(idx: usize, kstack_top: u64, user_stack: u64, entry: u64) {
             sig_pending: false,
             sig_active: false,
             domain: 0,
+            cr3: c_cr3,
+            heap0: c_h0,
+            heap1: c_h1,
         };
         if idx >= TASK_COUNT {
             TASK_COUNT = idx + 1;
@@ -557,6 +610,9 @@ pub fn exec_spawn(entry: u64) -> i64 {
                 sig_pending: false,
                 sig_active: false,
                 domain: 0,
+                cr3: 0,
+                heap0: 0,
+                heap1: 0,
             };
             TASK_COUNT = 1;
             crate::gdt::set_rsp0(0x380000);
@@ -614,6 +670,14 @@ pub extern "C" fn fujo_tick_sched(_vec: u64, regs: *const u64) -> i64 {
             CUR = next;
             sched_next_rsp = TASKS[next].saved_rsp;
             gdt::set_rsp0(TASKS[next].kstack_top);
+            crate::mem::switch_cr3(TASKS[next].cr3); // W11: 地址空间切换
+            if SWITCHES < 4 {
+                serial::write_str("w11  : cr3 -> task ");
+                print_dec(next as u64);
+                serial::write_str(" cr3=0x");
+                print_hex(TASKS[next].cr3);
+                serial::write_line("");
+            }
             SWITCHES += 1;
             crate::smp::note_switch(next); // M64: 亲和/均衡记账
             crate::perf::bump(2); // M68: 性能计数器 ctx-switch

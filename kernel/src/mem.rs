@@ -83,6 +83,21 @@ pub fn harden_user_guard() -> u64 {
     }
 }
 
+/// 0x830E: 当前 CR3 探针 (W11 调试/断言; out[0]=CR3, out[1]=BOOT_CR3)。
+#[no_mangle]
+pub extern "C" fn fujo_cr3_probe(out: u64) -> i64 {
+    if !(0x400000..0x800000).contains(&out) {
+        return -14;
+    }
+    unsafe {
+        let o = out as *mut u64;
+        o.write(read_cr3());
+        o.add(1).write(boot_cr3());
+    }
+    0
+}
+
+/// 一字节串行 (桩 debug)。
 fn print_dec(v: u64) {
     let mut buf = [0u8; 24];
     let mut i = 24;
@@ -168,11 +183,7 @@ pub extern "C" fn fujo_mmap(addr: u64, len: u64, prot: u64, flags: u64, fd: u64,
     }
 }
 
-/// 系统调用 munmap(nr11) v0: no-op (回收在帧分配器/调度器后实现)。
-#[no_mangle]
-pub extern "C" fn fujo_munmap(_addr: u64, _len: u64) -> i64 {
-    0
-}
+/// 系统调用 munmap(nr11): W11 (M121) 撤销补全 —— 实现在下方 §M121。
 
 // ---------------------------------------------------------------------------
 // M12 · 缺页处理: 按需零页 (需求段 0x800000..0xC00000 用内核 PT 替换恒等映射)
@@ -240,7 +251,7 @@ pub fn map_high_user() {
 unsafe fn write_cr3_flush() {
     let cr3 = read_cr3();
     core::arch::asm!(
-        "mov {}, cr3",
+        "mov cr3, {}",
         in(reg) cr3,
         options(nomem, nostack, preserves_flags)
     );
@@ -296,19 +307,207 @@ fn frame_alloc_zero() -> Option<u64> {    unsafe {
     None
 }
 
+/// 系统调用 munmap(nr11): W11 (M121) 撤销补全 —— 堆区内清除 PTE + 释放帧。
+/// 堆区外/未页对齐保持 v0 兼容 no-op。shm pin 页 (0xA00000) 保留。
+#[no_mangle]
+pub extern "C" fn fujo_munmap(addr: u64, len: u64) -> i64 {
+    if addr % 0x1000 != 0 || addr < USER_HEAP_BASE
+        || addr + len > USER_HEAP_BASE + USER_HEAP_LEN
+    {
+        return 0; // v0 兼容: 范围外 no-op
+    }
+    unsafe {
+        let mut va = addr;
+        while va < addr + len {
+            let (table, idx) = heap_table(va);
+            let pte = table.add(idx);
+            let e = core::ptr::read_volatile(pte);
+            if e & 1 != 0 {
+                let phys = e & 0x000F_FFFF_FFFF_F000;
+                if phys != 0xA00000 {
+                    frame_free(phys);
+                }
+                core::ptr::write_volatile(pte, 0);
+                core::arch::asm!("invlpg [{0}]", in(reg) va, options(nostack));
+            }
+            va += 0x1000;
+        }
+    }
+    0
+}
+
+// ---------------------------------------------------------------------------
+// W11 (M121) · 独立地址空间: 每任务页表链 (PML4→PDPT→PD→PT0/PT1) + CR3 切换
+//
+// 系统/隐式任务 (cr3=0) 保持静态 PT_HEAP0/1 (兼容, 行为逐字节不变);
+// 派生任务 (fork/spawn/aux/proxy) 持私有帧链: 堆区按需零页各归其主 ——
+// 同 VA 不同物 (进程隔离, 解除"共享地址空间"); PT1[0] 全程钉 0xA00000
+// (shm-link 页全局共享, M112 契约不变)。
+// ---------------------------------------------------------------------------
+
+static mut BOOT_CR3: u64 = 0;
+
+fn boot_cr3() -> u64 {
+    unsafe {
+        if BOOT_CR3 == 0 {
+            BOOT_CR3 = read_cr3();
+        }
+        BOOT_CR3
+    }
+}
+
+/// 切换 CR3 (0 = 系统/引导页表; cr3 写同时刷 TLB)。
+pub fn switch_cr3(cr3: u64) {
+    let c = if cr3 == 0 { boot_cr3() } else { cr3 };
+    unsafe {
+        core::arch::asm!(
+            "mov cr3, {}",
+            in(reg) c,
+            options(nomem, nostack, preserves_flags)
+        );
+    }
+}
+
+fn frame_copy_page(dst_phys: u64, src_phys: u64) {
+    unsafe {
+        let d = dst_phys as *mut u64;
+        let s = src_phys as *const u64;
+        for k in 0..512usize {
+            d.add(k).write(s.add(k).read());
+        }
+    }
+}
+
+/// 创建任务页表链: 拷贝系统 PML4/PDPT/PD (身份映射共享, 内核页 U=0 不动),
+/// PD[4]/PD[5] 换私有堆 PT (P=0 -> 按需零页; PT1[0] 钉 shm)。
+/// 返回 (cr3, heap0_phys, heap1_phys); 帧不足 (0,0,0)。
+pub fn as_create() -> (u64, u64, u64) {
+    unsafe {
+        let pm4 = frame_alloc_zero();
+        let pp = frame_alloc_zero();
+        let pd_ = frame_alloc_zero();
+        let h0 = frame_alloc_zero();
+        let h1 = frame_alloc_zero();
+        match (pm4, pp, pd_, h0, h1) {
+            (Some(pm4), Some(pp), Some(pd_), Some(h0), Some(h1)) => {
+                let boot = boot_cr3() as *const u64;
+                for i in 0..512usize {
+                    (pm4 as *mut u64).add(i).write(boot.add(i).read());
+                }
+                let bpp = (boot.read() & 0x000F_FFFF_FFFF_F000) as *const u64;
+                for i in 0..512usize {
+                    (pp as *mut u64).add(i).write(bpp.add(i).read());
+                }
+                let bpd = (bpp.read() & 0x000F_FFFF_FFFF_F000) as *const u64;
+                for i in 0..512usize {
+                    (pd_ as *mut u64).add(i).write(bpd.add(i).read());
+                }
+                // 接新链: PML4[0]->PDPT[0]->PD, 堆 PD[4/5] 私有 PT
+                (pm4 as *mut u64).write(pp as u64 | 0x7);
+                (pp as *mut u64).write(pd_ as u64 | 0x7);
+                (pd_ as *mut u64).add(4).write(h0 | 0x7);
+                (pd_ as *mut u64).add(5).write(h1 | 0x7);
+                (h0 as *mut u64).write(0);
+                (h1 as *mut u64).write(0xA00000u64 | 0x7); // shm pin (全局共享)
+                serial::write_str("w11  : as_create cr3=0x");
+                print_hex(pm4);
+                serial::write_line("");
+                (pm4, h0, h1)
+            }
+            _ => {
+                serial::write_line("w11  : as_create out of frames");
+                (0, 0, 0)
+            }
+        }
+    }
+}
+
+/// fork: 把父堆区已映射页物理拷贝给子 PT (同 VA 同值, 各享帧; shm pin 共享)。
+pub fn as_copy_heap(dst_h0: u64, dst_h1: u64, src_h0: u64, src_h1: u64) {
+    unsafe {
+        for k in 0..2usize {
+            let dst = if k == 0 { dst_h0 } else { dst_h1 };
+            let src = if k == 0 { src_h0 } else { src_h1 };
+            if dst == 0 {
+                continue;
+            }
+            let d = dst as *mut u64;
+            let s = if src == 0 {
+                if k == 0 {
+                    core::ptr::addr_of_mut!(PT_HEAP0).cast::<u64>()
+                } else {
+                    core::ptr::addr_of_mut!(PT_HEAP1).cast::<u64>()
+                }
+            } else {
+                src as *const u64
+            };
+            for i in 0..512usize {
+                let e = s.add(i).read();
+                if e & 1 == 0 {
+                    continue;
+                }
+                let phys = e & 0x000F_FFFF_FFFF_F000;
+                if phys == 0xA00000 {
+                    d.add(i).write(e); // shm pin: 共享物理
+                    continue;
+                }
+                if let Some(np) = frame_alloc_zero() {
+                    frame_copy_page(np, phys);
+                    d.add(i).write(np | 0x7);
+                }
+            }
+        }
+        serial::write_line("w11  : as_copy_heap done");
+    }
+}
+
+/// 释放帧 (帧分配器位图清位; 仅 16MiB..63MiB 池内)。
+pub fn frame_free(phys: u64) {
+    unsafe {
+        if phys < FRAME_BASE || phys >= FRAME_END {
+            return;
+        }
+        let i = ((phys - FRAME_BASE) / 0x1000) as usize;
+        let byte = i / 8;
+        let bit = i % 8;
+        let cur = core::ptr::read_volatile(core::ptr::addr_of!(FRAME_BITMAP[byte]));
+        core::ptr::write_volatile(
+            core::ptr::addr_of_mut!(FRAME_BITMAP[byte]),
+            cur & !(1 << bit),
+        );
+    }
+}
+
+/// 当前任务堆 PT 定位 (0x800000..0xC00000): 返回 (PT 基址, 索引)。
+/// 系统/隐式任务 (字段 0) -> 静态 PT (兼容); 派生任务 -> 私有帧。
+fn heap_table(cr2: u64) -> (*mut u64, usize) {
+    let (h0, h1) = crate::sched::current_heap_pt();
+    let off = (cr2 - USER_HEAP_BASE) as usize;
+    let pt_idx = off >> 12;
+    if pt_idx < 512 {
+        let t = if h0 == 0 {
+            unsafe { core::ptr::addr_of_mut!(PT_HEAP0).cast::<u64>() }
+        } else {
+            h0 as *mut u64
+        };
+        (t, pt_idx)
+    } else {
+        let t = if h1 == 0 {
+            unsafe { core::ptr::addr_of_mut!(PT_HEAP1).cast::<u64>() }
+        } else {
+            h1 as *mut u64
+        };
+        (t, pt_idx - 512)
+    }
+}
+
 /// 按需零页: 用户堆区首写 -> 分配零帧 -> 置 PTE -> invlpg -> true (iretq 重试)。
 fn demand_zero(cr2: u64) -> bool {    unsafe {
         if cr2 < USER_HEAP_BASE || cr2 >= USER_HEAP_BASE + USER_HEAP_LEN {
             return false;
         }
-        let off = (cr2 - USER_HEAP_BASE) as usize;
-        let pt_idx = off >> 12; // 0..1023
-        let (table, idx) = if pt_idx < 512 {
-            (core::ptr::addr_of_mut!(PT_HEAP0).cast::<u64>(), pt_idx)
-        } else {
-            (core::ptr::addr_of_mut!(PT_HEAP1).cast::<u64>(), pt_idx - 512)
-        };
-        let pte_addr = (table as *mut u64).add(idx);
+        let (table, idx) = heap_table(cr2);
+        let pte_addr = table.add(idx);
         if core::ptr::read_volatile(pte_addr) & 1 != 0 {
             return false; // 已映射 (不应发生)
         }
@@ -319,6 +518,13 @@ fn demand_zero(cr2: u64) -> bool {    unsafe {
                 return false;
             }
         };
+        if PF_COUNT < 3 {
+            serial::write_str("w11  : demand-zero table=");
+            print_hex(table as u64);
+            serial::write_str(" idx=");
+            print_dec(idx as u64);
+            serial::write_line("");
+        }
         core::ptr::write_volatile(pte_addr, phys | 0x7); // P|W|U
         core::arch::asm!(
             "invlpg [{0}]",
@@ -432,13 +638,8 @@ fn wmap_fault(cr2: u64) -> bool {
                 let off = (cr2 - va) as usize;
                 let pt_idx = off >> 12; // 逐页
                 let page_no = ((cr2 & !0xFFF) - va) as usize; // 页序
-                // PTE 表定位 (同 demand_zero: 0x800000..0xC00000=PT_HEAP0/1)
-                let base_idx = (cr2 - USER_HEAP_BASE) as usize >> 12;
-                let (table, idx) = if base_idx < 512 {
-                    (core::ptr::addr_of_mut!(PT_HEAP0).cast::<u64>(), base_idx)
-                } else {
-                    (core::ptr::addr_of_mut!(PT_HEAP1).cast::<u64>(), base_idx - 512)
-                };
+                // PTE 表定位 (当前任务堆 PT: 系统隐式 = 静态, 派生 = 私有帧)
+                let (table, idx) = heap_table(cr2);
                 let pte_addr = (table as *mut u64).add(idx);
                 if core::ptr::read_volatile(pte_addr) & 1 != 0 {
                     return false;
