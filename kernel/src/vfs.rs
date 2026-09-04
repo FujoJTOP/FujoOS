@@ -18,6 +18,7 @@ pub const F_KIND_RAM: u8 = 2; // tmpfs 内存盘读写 (file 保留: data_ptr=en
 pub const F_KIND_DISK: u8 = 3; // fujofs 磁盘文件 (M16)
 pub const F_KIND_PIPE: u8 = 4; // IPC 管道 (M18; data_ptr=Pipe*)
 pub const F_KIND_MODEL: u8 = 5; // W12: 模型设备 /dev/model0 (写=请求, 读=响应)
+pub const F_KIND_DIR: u8 = 6; // W18: 目录 fd (getdents64 枚举游标在 pos)
 
 pub const MAX_OPEN: usize = 16;
 
@@ -241,6 +242,27 @@ fn tmpfs_find_or_create(name: &[u8]) -> i64 {
                 }
                 TMPFS[k].name = nm;
                 TMPFS[k].len = 0;
+                return k as i64;
+            }
+        }
+    }
+    -1
+}
+
+/// W18: tmpfs 只读查找 (stat 路径不得创建!); 返回槽索引或 -1。
+fn tmpfs_lookup(name: &[u8]) -> i64 {
+    unsafe {
+        for k in 0..TMPFS_N {
+            let mut same = true;
+            for i in 0..16 {
+                let a = TMPFS[k].name[i];
+                let b = if i < name.len() { name[i] } else { 0 };
+                if a != b {
+                    same = false;
+                    break;
+                }
+            }
+            if same && TMPFS[k].name[0] != 0 {
                 return k as i64;
             }
         }
@@ -669,12 +691,235 @@ pub fn fujo_open_name(name: &str, _flags: u64) -> i64 {
             print_dec(len as u64);
             serial::write_line(" bytes)");
             return fd as i64;
+        } else if name == "/" || name == "/tmp" || name == "/dev" || name == "/proc" || name == "/boot"
+                  || name == "/lib" || name == "/runres" || name == "/disk"
+        {
+            // W18: 目录 open (busybox opendir; 枚举游标在 pos)
+            let dname: &'static str = match name {
+                "/" => "/",
+                "/tmp" => "/tmp",
+                "/dev" => "/dev",
+                "/proc" => "/proc",
+                "/boot" => "/boot",
+                "/lib" => "/lib",
+                "/runres" => "/runres",
+                _ => "/disk",
+            };
+            f.name = dname;
+            f.kind = F_KIND_DIR;
+            f.data_ptr = core::ptr::null();
+            f.data_len = 0;
+            f.pos = 0;
+            serial::write_str("vfs  : open dir ");
+            serial::write_str(name);
+            serial::write_line("");
+            return fd as i64;
         }
         NEXT_FD -= 1; // 回滚
         serial::write_str("vfs  : open unknown '");
         serial::write_str(name);
         serial::write_line("' -ENOENT");
         -2 // -ENOENT
+    }
+}
+
+/// W18: stat 路径语义 (size 需真实; busybox ls 靠 st_mode 区分文件/目录)。
+/// 返回 (st_mode, st_size); None = -ENOENT。
+pub fn fujo_stat_path(name: &str) -> Option<(u32, u64)> {
+    unsafe {
+        // W18: "."/".." 后缀规范化 (busybox ls 对每条目 stat 相对路径)
+        if let Some(b) = name.strip_suffix("/.").or_else(|| name.strip_suffix("/..")) {
+            let base = if b.is_empty() { "/" } else { b };
+            return fujo_stat_path(base);
+        }
+        match name {
+            "/" | "/tmp" | "/dev" | "/proc" | "/boot" | "/lib" | "/runres" | "/disk" => {
+                Some((0o040755, 0)) // S_IFDIR|0755
+            }
+            "/boot/module" => Some((0o100644, MODULE_COPY_LEN as u64)),
+            "/proc/meminfo" => Some((0o100644, MEMINFO_LEN as u64)),
+            "/dev/tty" | "/dev/model0" | "/dev/null" => Some((0o020666, 0)), // chr
+            _ => {
+                if let Some(tname) = name.strip_prefix("/tmp/") {
+                    let idx = tmpfs_lookup(tname.as_bytes());
+                    if idx >= 0 {
+                        let t = core::ptr::addr_of!(TMPFS[idx as usize]);
+                        Some((0o100644, (*t).len as u64))
+                    } else {
+                        None
+                    }
+                } else if let Some(lname) = name.strip_prefix("/lib/") {
+                    if fujo_lib_find(lname.as_bytes()).is_some() {
+                        Some((0o100644, 0))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
+/// W18: fstat 模式 (目录 fd -> DIR; 其余沿用 REG)。
+pub fn fujo_fstat_mode(fd: u64) -> Option<u32> {
+    unsafe {
+        if fd >= 3 && fd < MAX_OPEN as u64 {
+            let f = &*core::ptr::addr_of!(FILES[fd as usize]);
+            if f.kind == F_KIND_DIR {
+                return Some(0o040755);
+            }
+        }
+    }
+    None
+}
+
+/// W18: getdents64 (nr 217) —— 目录枚举 → linux_dirent64 流。
+/// 条目: "." / ".." / 目录内容; f.pos 为游标 (下一次 2 时索引)。
+/// dirent64: d_ino u64 | d_off i64 | d_reclen u16 | d_type u8 | d_name[]\0,
+/// reclen = align8(19 + name_len + 1)。
+#[no_mangle]
+pub extern "C" fn fujo_getdents(fd: u64, buf: u64, len: u64) -> i64 {
+    if !(0x400000..0xC00000).contains(&buf) {
+        return -14; // -EFAULT
+    }
+    unsafe {
+        if fd < 3 || fd >= MAX_OPEN as u64 {
+            return -9; // -EBADF
+        }
+        let f = &mut *core::ptr::addr_of_mut!(FILES[fd as usize]);
+        if f.kind != F_KIND_DIR {
+            return -20; // -ENOTDIR
+        }
+        let dir = f.name;
+        let mut idx = f.pos as usize;
+        let base = buf as *mut u8;
+        let mut written = 0usize;
+        loop {
+            // 生成第 idx 项: (name_len, d_type, size); name 写入 nmbuf
+            let mut nmbuf = [0u8; 32];
+            let item = next_entry(dir, idx, &mut nmbuf);
+            let (nlen, ty, _size): (usize, u8, u64) = match item {
+                Some(x) => x,
+                None => break,
+            };
+            let reclen = ((19 + nlen + 1 + 7) / 8) * 8;
+            if written + reclen > len as usize {
+                break;
+            }
+            let p = base.add(written);
+            (p as *mut u64).write((idx + 1) as u64); // d_ino (非零)
+            ((p.add(8)) as *mut i64).write((idx + 1) as i64); // d_off
+            ((p.add(16)) as *mut u16).write(reclen as u16); // d_reclen
+            ((p.add(18)) as *mut u8).write(ty); // d_type
+            let dp = p.add(19);
+            for i in 0..nlen {
+                dp.add(i).write(nmbuf[i]);
+            }
+            dp.add(nlen).write(0u8);
+            written += reclen;
+            idx += 1;
+        }
+        f.pos = idx as u64;
+        written as i64
+    }
+}
+
+/// W18: 第 n 项 (0="." 1="..") 内容枚举; name 写入 out, 返回 (len, d_type, size)。
+fn next_entry(dir: &str, n: usize, out: &mut [u8; 32]) -> Option<(usize, u8, u64)> {
+    if n == 0 {
+        out[0] = b'.';
+        return Some((1, 4, 0)); // DT_DIR
+    }
+    if n == 1 {
+        out[0] = b'.';
+        out[1] = b'.';
+        return Some((2, 4, 0));
+    }
+    let k = n - 2;
+    unsafe {
+        if dir == "/" {
+            let roots: [(&[u8], u8); 7] = [
+                (b"tmp", 4),
+                (b"dev", 4),
+                (b"proc", 4),
+                (b"boot", 4),
+                (b"lib", 4),
+                (b"runres", 4),
+                (b"disk", 4),
+            ];
+            if k < roots.len() {
+                copy_into(out, roots[k].0);
+                return Some((roots[k].0.len(), roots[k].1, 0));
+            }
+            return None;
+        }
+        if dir == "/tmp" {
+            if k >= TMPFS_N {
+                return None;
+            }
+            let t = &*core::ptr::addr_of!(TMPFS[k]);
+            if t.name[0] == 0 || t.len == 0 {
+                return None;
+            }
+            let mut end = 0usize;
+            while end < 16 && t.name[end] != 0 {
+                end += 1;
+            }
+            for i in 0..end {
+                out[i] = t.name[i];
+            }
+            return Some((end, 8, t.len as u64)); // DT_REG
+        }
+        if dir == "/dev" {
+            match k {
+                0 => {
+                    copy_into(out, b"tty");
+                    Some((3, 2, 0)) // DT_CHR
+                }
+                1 => {
+                    copy_into(out, b"model0");
+                    Some((6, 2, 0))
+                }
+                2 => {
+                    copy_into(out, b"null");
+                    Some((4, 2, 0))
+                }
+                _ => None,
+            }
+        } else if dir == "/proc" {
+            if k == 0 {
+                copy_into(out, b"meminfo");
+                return Some((7, 8, MEMINFO_LEN as u64));
+            }
+            None
+        } else if dir == "/boot" {
+            if k == 0 {
+                copy_into(out, b"module");
+                return Some((6, 8, MODULE_COPY_LEN as u64));
+            }
+            None
+        } else if dir == "/lib" {
+            if k < lib_count() {
+                let nm = lib_name_at(k);
+                let by = nm.as_bytes();
+                let n = by.len().min(31);
+                for i in 0..n {
+                    out[i] = by[i];
+                }
+                return Some((n, 8, 0)); // DT_REG, size 未记 (lib 条目少用)
+            }
+            None
+        } else {
+            None // /runres /disk 枚举留空
+        }
+    }
+}
+
+fn copy_into(out: &mut [u8; 32], s: &[u8]) {
+    for i in 0..s.len().min(31) {
+        out[i] = s[i];
     }
 }
 
@@ -692,6 +937,9 @@ pub extern "C" fn fujo_read(fd: u64, buf: u64, len: u64) -> i64 {
             return -9; // -EBADF
         }
         let f = &mut *core::ptr::addr_of_mut!(FILES[fd as usize]);
+        if f.kind == F_KIND_DIR {
+            return -21; // -EISDIR (W18: 目录读)
+        }
         if f.kind == F_KIND_PIPE {
             // M18: 管道读 (data_ptr = Pipe*)
             return crate::ipc::pipe_read(f.data_ptr as *const crate::ipc::Pipe, buf, len);

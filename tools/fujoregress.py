@@ -58,6 +58,9 @@ CASES = [
      {"tcp_client": [18080, b"fujo-tcp-echo-payload-64x!", 12.0]}),
     ("m126-abi", "ELF64 x appmgr", "sdk/build/m126_multi.initrd", "M126 RESULT: PASS", [], {}),
     ("m127-exec", "ELF64 x exec-mem", "sdk/linux/m127_exec.elf", "exec-child-ok", [], {}),
+    # W17b: SMP AP 唤醒 —— 必须 -smp 2 (INIT+SIPI 序列, QEMU LAPIC 投递实测)
+    ("m129-smp", "ELF64 x smp-ap", "sdk/linux/m129_smp.elf", "M129 RESULT: PASS",
+     ["-smp", "2", "-accel", "tcg,thread=multi"], {}),
     # W16b: 自托管编译链 —— 注入: 写源码 -> tcc 编译 -> runfile 运行
     ("m128-tcc", "ELF64 x tcc-chain", "sdk/build/m128_tcc.initrd",
      "tcc-compiled hello from fujo",
@@ -66,6 +69,8 @@ CASES = [
       "keys": ["m", "b", "u", "i", "l", "d", "ret", "wait:5",
                "r", "u", "n", "f", "i", "l", "e", "spc", "slash", "t", "m", "p", "slash", "h", "e", "l", "l", "o", "ret"]}),
     ("m130-audit", "ELF64 x unified-audit", "sdk/linux/m130_aud.elf", "M130 RESULT: PASS", [], {}),
+    # W18: VFS 目录语义 (stat 类型 / open dir / getdents64; busybox ls 依据)
+    ("m132-dirs", "ELF64 x dirs", "sdk/linux/m132_dirs.elf", "M132 RESULT: PASS", [], {}),
     # W18: 标准软件移植 —— 静态 busybox (musl) 原生命令在 FujoOS 内执行
     ("m131-bbx", "ELF64 x busybox-cmd", "sdk/busybox-musl", "m131-busybox-ok", [],
      {"keys": ["o", "s", "spc", "r", "u", "n", "spc", "b", "u", "s", "y", "b", "o", "x", "spc",

@@ -22,7 +22,7 @@ pub const LINUX_X64_SUBSET: &[(u16, &str)] = &[
     (22, "pipe"), (23, "select"), (24, "sched_yield"), (35, "nanosleep"), (41, "socket"),
     (42, "connect"), (43, "accept"), (57, "fork"), (59, "execve"), (60, "exit"), (61, "wait4"),
     (63, "uname"), (72, "fcntl"), (78, "gettimeofday"), (79, "getcwd"), (157, "prctl"),
-    (158, "arch_prctl"), (231, "exit_group"), (257, "openat"), (317, "getrandom"),
+    (158, "arch_prctl"), (217, "getdents64"), (231, "exit_group"), (257, "openat"), (317, "getrandom"),
     (318, "memfd_create"),
 ];
 
@@ -510,6 +510,8 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         202 => 0,
         // openat(dirfd, path, flags, mode) — 转发 open (忽略 dirfd=AT_FDCWD)
         257 => crate::vfs::fujo_open(a1, a2, a3),
+        // getdents64(fd, buf, len) — W18: 目录枚举 (busybox ls 目录命令)
+        217 => crate::vfs::fujo_getdents(a0, a1, a2),
         // getrandom(buf, len, flags) — PIT 混哈希假熵
         317 => sys_getrandom(a0, a1),
         // W16: 静态 glibc 运行面 (tcc 0.9.27):
@@ -1908,39 +1910,70 @@ fn user_ok(ptr: u64, len: u64) -> bool {
     in_low || in_darwin
 }
 
-/// stat(path, buf): 简化填充 — mode=REG|0644(size=路径长度), dev/ino 固定。
+/// stat(path, buf): 真实语义 —— vfs 路径解析 (目录/文件/设备);
+/// 未知路径 -ENOENT (W18: busybox ls 靠 st_mode 区分文件或目录)。
 fn sys_stat(ptr: u64, buf: u64) -> i64 {
     if !user_ok(buf, 128) {
         return -14; // -EFAULT
     }
-    let mut len = 0u64;
-    unsafe {
-        if user_ok(ptr, 1) {
-            while len < 255 {
-                let b = (ptr as *const u8).add(len as usize).read();
-                if b == 0 {
-                    break;
-                }
-                len += 1;
-            }
+    let mut name = [0u8; 256];
+    let n = unsafe {
+        if !user_ok(ptr, 1) {
+            return -14;
         }
+        let mut c = 0usize;
+        while c < 255 {
+            let b = (ptr as *const u8).add(c).read();
+            if b == 0 {
+                break;
+            }
+            name[c] = b;
+            c += 1;
+        }
+        c
+    };
+    let path = match core::str::from_utf8(&name[..n]) {
+        Ok(s) => s,
+        Err(_) => return -2, // -ENOENT
+    };
+    let (mode, size) = match crate::vfs::fujo_stat_path(path) {
+        Some(m) => m,
+        None => return -2, // -ENOENT
+    };
+    unsafe {
         let s = buf as *mut u64;
         // struct stat (x86_64): st_dev(0) st_ino(8) st_nlink(16) st_mode(24=u32)
         s.add(0).write(1u64); // st_dev
         s.add(1).write(1u64); // st_ino
         s.add(2).write(1u64); // st_nlink
-        (s.add(3) as *mut u32).write(0o100644); // S_IFREG|0644
+        (s.add(3) as *mut u32).write(mode);
         (s.add(4) as *mut u32).write(1000u32); // uid
         ((s.add(4) as *mut u32).add(1)).write(1000u32); // gid
-        s.add(6).write(len); // st_size
+        s.add(6).write(size); // st_size
     }
     0
 }
 
-/// fstat(fd, buf): 与 stat 相同简化。
+/// fstat(fd, buf): 目录 fd -> S_IFDIR; 其余沿用 REG 简化。
 fn sys_fstat(fd: u64, buf: u64) -> i64 {
-    let _ = fd;
-    sys_stat(0, buf)
+    if !user_ok(buf, 128) {
+        return -14; // -EFAULT
+    }
+    let mode = match crate::vfs::fujo_fstat_mode(fd) {
+        Some(m) => m,
+        None => 0o100644,
+    };
+    unsafe {
+        let s = buf as *mut u64;
+        s.add(0).write(1u64);
+        s.add(1).write(1u64);
+        s.add(2).write(1u64);
+        (s.add(3) as *mut u32).write(mode);
+        (s.add(4) as *mut u32).write(1000u32);
+        ((s.add(4) as *mut u32).add(1)).write(1000u32);
+        s.add(6).write(0u64);
+    }
+    0
 }
 
 /// writev(fd, iov, cnt): iovec 数组 [{base,len}..], 逐段写 (串口直通)。
