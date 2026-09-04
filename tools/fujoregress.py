@@ -86,6 +86,9 @@ CASES = [
     # W20 p6: 大内存拓扑 (>1GiB 可用区映射; 需要 -m 4096)
     ("m136-mem", "ELF64 x memtopo", "sdk/linux/m136_mem.elf", "M136 RESULT: PASS",
      ["-m", "4096"], {}),
+    # W20 p7: PCI 枚举完整化 (多功能设备; q35 SATA 31.2)
+    ("m137-pci", "ELF64 x pcienum", "sdk/linux/m137_pci.elf", "M137 RESULT: PASS",
+     ["-machine", "q35"], {}),
     # W18: 标准软件移植 —— 静态 busybox (musl) 原生命令在 FujoOS 内执行
     ("m131-bbx", "ELF64 x busybox-cmd", "sdk/busybox-musl", "m131-busybox-ok", [],
      {"keys": ["o", "s", "spc", "r", "u", "n", "spc", "b", "u", "s", "y", "b", "o", "x", "spc",

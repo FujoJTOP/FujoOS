@@ -214,7 +214,8 @@ pub fn fujo_acpi_dump(ptr: u64, cap: u64) -> i64 {
     (unsafe { core::str::from_utf8_unchecked(core::slice::from_raw_parts(ptr as *const u8, (cap as usize).min(96))) }).len() as i64
 }
 
-/// 0x8503: PCI 枚举 (写入 PCI_MAX×8B 条目: [vid16|did16<<16|bus<<32|slot<<40])。
+/// 0x8503: PCI 枚举 (写入 PCI_MAX×8B 条目:
+/// [vid16|did16<<16|bus<<32|slot<<40|func<<48])。
 pub fn fujo_pci_scan(ptr: u64) -> i64 {
     unsafe {
         let w = ptr as *mut u64;
@@ -231,22 +232,27 @@ pub fn fujo_pci_scan(ptr: u64) -> i64 {
 }
 
 /// 启动时执行一次 PCI 枚举 (boot-M96)。
+/// W20 p7: 多功能遍历 —— 原只扫 func0 (Q35 SATA=31.2 等不可见);
+/// 每条目编码: vid(0-15)|did(16-31)|bus(32-39)|slot(40-47)|**func(48-55)**。
 pub fn scan_all() {
     let mut n = 0usize;
     'outer: for bus in 0..3u8 {
         for slot in 0..32u8 {
-            let v = pci_read_cfg(bus, slot, 0, 0);
-            if v == 0xFFFF_FFFF || v == 0 {
-                continue;
-            }
-            if n < PCI_MAX {
-                let vid = v & 0xFFFF;
-                let did = (v >> 16) & 0xFFFF;
-                unsafe {
-                    PCI_BUF[n] = (vid as u64) | ((did as u64) << 16)
-                        | ((bus as u64) << 32) | ((slot as u64) << 40);
+            for func in 0..8u8 {
+                let v = pci_read_cfg(bus, slot, func, 0);
+                if v == 0xFFFF_FFFF || v == 0 {
+                    continue; // 该 func 无设备; 其它 func 可能有
                 }
-                n += 1;
+                if n < PCI_MAX {
+                    let vid = v & 0xFFFF;
+                    let did = (v >> 16) & 0xFFFF;
+                    unsafe {
+                        PCI_BUF[n] = (vid as u64) | ((did as u64) << 16)
+                            | ((bus as u64) << 32) | ((slot as u64) << 40)
+                            | ((func as u64) << 48);
+                    }
+                    n += 1;
+                }
             }
         }
     }
@@ -255,5 +261,5 @@ pub fn scan_all() {
     }
     serial::write_str("pci  : scanned ");
     crate::syscall::debug_dec(n as u64);
-    serial::write_line(" devices");
+    serial::write_line(" devices (multifunc)");
 }
