@@ -674,6 +674,10 @@ pub fn anom_total() -> u64 {
     unsafe { ANOM_TOTAL }
 }
 
+pub fn anom_pending() -> u64 {
+    unsafe { ANOM_PENDING }
+}
+
 pub fn anom_ack() -> i64 {
     unsafe {
         ANOM_PENDING = 0;
@@ -960,6 +964,25 @@ fn first_digit(text: &[u8]) -> Option<u64> {
     None
 }
 
+// ---------------------------------------------------------------------------
+// W26 · 动作后果验证 (self-supervised): 每个 plan 动作执行后立即查系统状态,
+// 确认"行动确实产生了预期效果" -> verified 计数入审计 result 字段。
+// (anom 验证位 W22 已实现; 这里补齐 plan/nlc 全职责。)
+// ---------------------------------------------------------------------------
+
+pub fn act_verify(act: u64, a0: u64, a1: u64) -> u64 {
+    match act {
+        crate::capability::ACT_KILL => (crate::sched::task_state(a0 as usize) == 3) as u64,
+        crate::capability::ACT_ISOLATE => (crate::sched::task_state(a0 as usize) == 2) as u64,
+        crate::capability::ACT_RESUME => (crate::sched::task_state(a0 as usize) == 1) as u64,
+        crate::capability::ACT_SET_CFG => {
+            (crate::capability::fujo_cfg_get(a0) == a1 as i64) as u64
+        }
+        crate::capability::ACT_ACK => (anom_pending() == 0) as u64,
+        _ => 0,
+    }
+}
+
 /// 解析 "A<act> <a0> <a1>" 形式的动作令牌。
 fn parse_action(tok: &[u8]) -> (u64, u64, u64) {
     let mut act = 0u64;
@@ -1063,6 +1086,7 @@ pub extern "C" fn fujo_plan_run(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 
     };
     let mut n_ok = 0u64;
     let mut n_fail = 0u64;
+    let mut n_verified = 0u64;
     let mut start = 0usize;
     for i in 0..=plen {
         if i == plen || plan[i] == b';' {
@@ -1072,6 +1096,8 @@ pub extern "C" fn fujo_plan_run(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 
                     let rc = crate::capability::fujo_cap_exec(act, a0, a1);
                     if rc == 0 {
                         n_ok += 1;
+                        // W26: 后果验证 —— 动作被执行后状态确证 (self-label)
+                        n_verified += act_verify(act, a0, a1);
                     } else {
                         n_fail += 1;
                     }
@@ -1088,7 +1114,15 @@ pub extern "C" fn fujo_plan_run(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 
         o.add(1).write(n_fail);
         o.add(2).write(if n_fail == 0 { 1 } else { 0 });
     }
-    ai_aud_note(3, eng, n_ok, n_fail, if n_fail == 0 { 1 } else { 0 }, 0, &goal[..len]);
+    ai_aud_note(
+        3,
+        eng,
+        n_ok,
+        n_fail,
+        if n_fail == 0 { 1 } else { 0 },
+        n_verified,
+        &goal[..len],
+    );
     serial::write_str("plan: goal [");
     serial::write_str(core::str::from_utf8(&goal[..len.min(60)]).unwrap_or(""));
     serial::write_str("] -> ");
@@ -1411,6 +1445,7 @@ pub extern "C" fn fujo_nlc_set(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 {
     };
     // 解析 "POL=k:v;POL=k:v"
     let mut n_applied = 0u64;
+    let mut n_verified = 0u64;
     let mut i = 0usize;
     while i + 4 <= plen {
         if pol[i..].starts_with(b"POL=") {
@@ -1430,6 +1465,10 @@ pub extern "C" fn fujo_nlc_set(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 {
             }
             if k >= 1 && k <= 8 && crate::capability::cfg_set(k, v) == 0 {
                 n_applied += 1;
+                // W26: 后果验证 —— 配置读回 == 目标值 (self-label)
+                if crate::capability::fujo_cfg_get(k) == v as i64 {
+                    n_verified += 1;
+                }
             }
         } else {
             i += 1;
@@ -1438,7 +1477,7 @@ pub extern "C" fn fujo_nlc_set(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 {
     unsafe {
         (out as *mut u64).write(n_applied);
     }
-    ai_aud_note(5, eng, n_applied, 0, 0, 0, &text[..len]);
+    ai_aud_note(5, eng, n_applied, n_verified, 0, n_verified, &text[..len]);
     serial::write_str("nlc : policy [");
     serial::write_str(core::str::from_utf8(&pol[..plen.min(60)]).unwrap_or(""));
     serial::write_str("] applied=");

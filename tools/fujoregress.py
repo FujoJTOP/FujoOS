@@ -104,6 +104,8 @@ CASES = [
     ("m143-distill", "ELF64 x distill-feed", "sdk/linux/m143_distill_feed.elf", "M143 RESULT: PASS", [], {}),
     # W25: IO 预测所有权重判 (二阶马尔可夫基线 vs 模型)
     ("m145-io-own", "ELF64 x io-ownership", "sdk/linux/m145_io_own.elf", "M145 RESULT: PASS", [], {}),
+    # W26: 五职责全自监督 (plan/nlc 动作后果验证 -> 审计 verified)
+    ("m146-fullfb", "ELF64 x full-feedback", "sdk/linux/m146_full_fb.elf", "M146 RESULT: PASS", [], {}),
     # W21: 自托管闭环 —— m139 clone 源码 (tmpfs+FJFS) -> mbuild /tmp/hello-clone.c
     #       (tcc-static 编译) -> runfile /tmp/hello (产物运行输出)
     ("m140-selfhost", "ELF64 x selfhost", "sdk/build/m140_self.initrd",
