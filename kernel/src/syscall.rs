@@ -404,6 +404,8 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x8801 => crate::upd::fujo_upd_check(a0, a1),
         0x8802 => crate::upd::fujo_upd_apply(a0, a1, a2),
         0x8803 => crate::upd::fujo_upd_status(a0),
+        // ---- W20: 平台信息 (平台检测原语面) ----
+        0x8D01 => crate::platform::fujo_platform_info(a0),
         // read(fd, buf, len) — M15 VFS
         0 => crate::vfs::fujo_read(a0, a1, a2),
         // write(fd, buf, len)

@@ -250,12 +250,28 @@ fn icr_idle_wait() {
     }
 }
 
-/// W17b: ICR 投递 —— QEMU LAPIC 实测证据: **写 0x300 (低 32 位) 触发投递**
-/// (使用已存的高 32 位 dest)。故先写高 32 (dest存储), 后写低 32 (值+触发)。
-/// 反向 (低先高) 会把 INIT 投给 dest=0 (BSP 自身) -> BSP 被 INIT 复位 (停 "SIPI ->").
+/// W20: ICR 投递语义模式 (0 = QEMU 适配, 1 = Intel SDM 真机)。
+/// 实证 (W17b): QEMU 写 0x300 (低 32) **触发**投递 (用已存高 32 dest);
+/// Intel SDM 10.5.2.2: 写高 32 触发 (低 32 仅存储)。二者相反 ——
+/// QEMU 下 Intel 路径会把 INIT 投给 dest=0 (BSP) 冻结 (负验证: docs/74)。
+pub fn icr_mode() -> u8 {
+    if crate::platform::is_qemu() {
+        0
+    } else {
+        1
+    }
+}
+
 fn icr_send(value: u32, dest: u32) {
-    mmio_wr32(0xFEE00310, dest << 24); // 高 32 先存储 (dest field)
-    mmio_wr32(0xFEE00300, value);      // 低 32 后写 -> 触发投递
+    if crate::platform::is_qemu() {
+        // QEMU LAPIC: 高 32 先存 (dest field), 低 32 后写触发
+        mmio_wr32(0xFEE00310, dest << 24);
+        mmio_wr32(0xFEE00300, value);
+    } else {
+        // Intel SDM (真机): 低 32 先存 (值), 高 32 后写触发
+        mmio_wr32(0xFEE00300, value);
+        mmio_wr32(0xFEE00310, dest << 24);
+    }
     icr_idle_wait();
 }
 

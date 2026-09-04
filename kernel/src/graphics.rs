@@ -146,6 +146,7 @@ pub fn init() -> bool {
         // BPP=0x3 ENABLE=0x4 —— 错用 0x2..0x5 序列会把模式写歪且从未使能
         // LFB, 导致 LFB 访问 #PF (M4 踩坑实录)。
         let id0 = vbe_get(0x0000);   // 0xB0C5
+        crate::platform::note_vbe_id(id0 as u16); // W20: 平台检测 (QEMU std-vga 证据)
         vbe_io(0x0001, W as u16); // XRES
         vbe_io(0x0002, H as u16); // YRES
         vbe_io(0x0003, 32);       // BPP

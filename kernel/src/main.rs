@@ -58,6 +58,7 @@ mod mem;
 mod modelcard;
 mod modelreg;
 mod mouse;
+mod platform;
 mod wmsg;
 mod xinput;
 mod pe_loader;

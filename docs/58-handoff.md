@@ -24,7 +24,11 @@
 
 ## 3. 当前状态(接手时的快照)
 
-- **AI For Next(Wave 7)全部完成**:M112(shm-link+事件环+cap_exec+异常哨兵)、M113(计划执行器+IO 预测)、M114(NLC+环境扫描)、M115(五职责回归 + 基线对比)——四波均 7B PASS、fujoregress 9/9、已推送。
+- **W17b 完成 (m129 PASS)**:SMP AP 唤醒全链路 —— 根因链: ①QEMU LAPIC 写低 32 位触发投递 (与 Intel SDM 相反) ②INIT 必须 assert(0x10500)→deassert(0x500) 电平对 ③tramp.S retf 16 位栈错位→空 IDT 三重故障 (W17a "AP 不醒" 假象); AP 带内核 GDT/TSS1/IDT/sti 在线; docs/72。
+- **W18 二期完成 (m132 PASS)**:VFS 目录语义 (stat 真实类型 + `./..` 规范化 + open O_DIRECTORY + getdents64 nr217); busybox musl `ls -a /tmp` 输出 `. .. hello.txt`, `/` `/proc` `/dev` `/boot` 全通; docs/73。
+- **W20 启动 (新方向: 脱 QEMU 专属; m133 PASS)**:platform.rs 平台检测 (Bochs VBE 0xB0C5 证据链) + LAPIC ICR 双语义运行时切换 (QEMU 写低触发/Intel 写高触发) + 平台差异审计表 **docs/74 (14 项)**; 真机引导 = GRUB2 multiboot 现成路径。
+- **fujoregress 25/25 PASS**:新增 m129-smp (W17b) / m132-dirs (W18) / m133-plat (W20); 既有 22 用例全回归。
+- **方向变更 (用户指示)**:W20/W21 原路线 (网络完整性/自托管闭环) **暂停**; 新主线 = 脱 QEMU 专属/真机可靠性硬化 (docs/74 表逐项消除)。
 - **实测数据**(docs/44-Ext 表格):哨兵 100 分类 10 命中/0 误报;计划 隔离+恢复 2/0、验证 1;IO 预测 10/30(对照 LRU 0/30);NLC 策略应用 3 条、配置 1/0/24;环境 桌面/配置 2/2;M115 五职责 PASS。
 - **延迟实测**:7B 冷推理 4.6s、warm 0.15–0.17s(CPU)。
 - **W8 完成(M118 R3 时延协议 + M119 R1 公理化)**:shm 帧 v2 快照@t0+evw+crit、回包 TTL、wait_rsp 丢弃、0x8309 探针、0x830A 公理化自检(离线入 fujoregress);规格 docs/59。

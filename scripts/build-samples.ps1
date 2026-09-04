@@ -35,7 +35,7 @@ foreach ($n in @('m30_linux','m33_trace','m35_bench','m36_mouse','m37_wm','m38_w
                  'm75_dbg','m76_trace','m77_win','m82_ut','m83_leak','m84_dump','m86_wmap',
                  'm87_mcard','m88_sess','m89_ctx','m90_ctx','m91_cap','m92_route','m93_infer',
                  'm94_fupm','m95_life','m96_acpi','m97_hw','m98_install','m99_upd',
-                 'm112_ai','m113_plan','m114_nlc','m115_five','m118_r3','m119_inv','m116_dom','m120_distill','m121_isol','m122_dev','m123_vblk','m127_exec','m129_smp','m130_aud','m132_dirs')) {
+                 'm112_ai','m113_plan','m114_nlc','m115_five','m118_r3','m119_inv','m116_dom','m120_distill','m121_isol','m122_dev','m123_vblk','m127_exec','m129_smp','m130_aud','m132_dirs','m133_plat')) {
     Build-Elf $n
 }
 Write-Host "samples: elf ok"

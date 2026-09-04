@@ -71,6 +71,8 @@ CASES = [
     ("m130-audit", "ELF64 x unified-audit", "sdk/linux/m130_aud.elf", "M130 RESULT: PASS", [], {}),
     # W18: VFS 目录语义 (stat 类型 / open dir / getdents64; busybox ls 依据)
     ("m132-dirs", "ELF64 x dirs", "sdk/linux/m132_dirs.elf", "M132 RESULT: PASS", [], {}),
+    # W20: 平台检测 (QEMU 证据链一致性; ICR 语义模式随平台)
+    ("m133-plat", "ELF64 x platform", "sdk/linux/m133_plat.elf", "M133 RESULT: PASS", [], {}),
     # W18: 标准软件移植 —— 静态 busybox (musl) 原生命令在 FujoOS 内执行
     ("m131-bbx", "ELF64 x busybox-cmd", "sdk/busybox-musl", "m131-busybox-ok", [],
      {"keys": ["o", "s", "spc", "r", "u", "n", "spc", "b", "u", "s", "y", "b", "o", "x", "spc",
