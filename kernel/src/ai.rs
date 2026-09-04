@@ -1141,6 +1141,61 @@ fn last_num(seq: &[u8]) -> u64 {
     last
 }
 
+// ---------------------------------------------------------------------------
+// W25 · 二阶马尔可夫 I/O 预测基线 (engine=4) —— 自训练访问流:
+// 每次预测调用把序列数字追加进流 (最近 64 项窗口), 反向扫描 (a,b)->c 转换表,
+// 取 (末两位) 最近后继; 无后继 = None (落模型/兜底)。零静态依赖, 确定性。
+// ---------------------------------------------------------------------------
+
+static mut IO_STREAM: [u8; 96] = [0; 96];
+static mut IO_STREAM_N: usize = 0;
+
+fn io_markov(seq: &[u8]) -> Option<u64> {
+    let mut cur = [0u8; 64];
+    let mut cn = 0usize;
+    for &b in seq {
+        if b.is_ascii_digit() {
+            cur[cn] = b - b'0';
+            cn += 1;
+            if cn >= cur.len() {
+                break;
+            }
+        }
+    }
+    if cn < 2 {
+        return None;
+    }
+    unsafe {
+        // 追加 (窗口压缩: 将 >80 压缩为最近 64 项)
+        if IO_STREAM_N + cn > IO_STREAM.len() {
+            let from = IO_STREAM_N.saturating_sub(64);
+            let nkeep = IO_STREAM_N - from;
+            IO_STREAM.copy_within(from..IO_STREAM_N, 0);
+            IO_STREAM_N = nkeep;
+        }
+        for k in 0..cn {
+            IO_STREAM[IO_STREAM_N + k] = cur[k];
+        }
+        IO_STREAM_N += cn;
+        // 反向扫描 (a,b)->c, 最近优先; j 起点 N-3 保证 j+2 < N
+        let a = cur[cn - 2];
+        let b = cur[cn - 1];
+        if IO_STREAM_N >= 3 {
+            let mut j = IO_STREAM_N - 3;
+            loop {
+                if IO_STREAM[j] == a && IO_STREAM[j + 1] == b {
+                    return Some(IO_STREAM[j + 2] as u64);
+                }
+                if j == 0 {
+                    break;
+                }
+                j -= 1;
+            }
+        }
+    }
+    None
+}
+
 /// 0x8306: 块访问序列前缀 → 预测下一块 (写入 out[0])。
 #[no_mangle]
 pub extern "C" fn fujo_io_predict(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 {
@@ -1154,24 +1209,40 @@ pub extern "C" fn fujo_io_predict(ptr: u64, len: u64, out: u64, _cap: u64) -> i6
             seq[i] = (ptr as *const u8).add(i).read();
         }
     }
-    // W22: force=1 跳过规则面; force=2 强制规则 (last-block 基线)。
+    // W22: force=1 跳过规则面; force=2 强制确定性 (二阶马尔可夫+last)。
+    // W25: 新增二阶马尔可夫基线 (io_markov, engine=4) —— 确定性组件,
+    // auto 路径中置模型之前 (基线命中即零模型调用; 职责所有权 = 基线)。
+    let f = eval_force();
     let (next, eng) = {
-        let rb = if eval_force() != 1 {
+        let rb = if f != 1 {
             rules_match(&seq[..len], SHM_KIND_IO as u64)
         } else {
             None
         };
         if let Some((v, _a0, _a1, _c)) = rb {
             (v, 3u64)
-        } else if eval_force() == 2 {
-            serial::write_line("io   : force rules engine");
-            (last_num(&seq[..len]), 2u64)
-        } else {
-            match io_llm(&seq[..len]) {
-                Some(v) => (v, 1u64),
+        } else if f == 2 {
+            match io_markov(&seq[..len]) {
+                Some(v) => {
+                    serial::write_line("io   : markov hit (rules engine)");
+                    (v, 4u64)
+                }
                 None => {
-                    serial::write_line("io   : shm timeout -> rules (last-block)");
+                    serial::write_line("io   : force rules engine");
                     (last_num(&seq[..len]), 2u64)
+                }
+            }
+        } else {
+            let mv = if f != 1 { io_markov(&seq[..len]) } else { None };
+            if let Some(v) = mv {
+                (v, 4u64)
+            } else {
+                match io_llm(&seq[..len]) {
+                    Some(v) => (v, 1u64),
+                    None => {
+                        serial::write_line("io   : shm timeout -> rules (last-block)");
+                        (last_num(&seq[..len]), 2u64)
+                    }
                 }
             }
         }

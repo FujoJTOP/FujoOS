@@ -223,8 +223,8 @@ static int run(void)
     wrdec(a_np);
     wrstr("/2 io=");
     wrdec(a_io);
-    wrstr("/5\n");
-    if (!(a_ok == 4 && a_np == 0 && a_io == 0))
+    wrstr("/5 (W25 io baseline upgraded: markov, see m145)\n");
+    if (!(a_ok == 4 && a_np == 0))
         pass_all = 0;
 
     /* T2 [rules] plan/nlc/env 编译正确性 */
