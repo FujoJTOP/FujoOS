@@ -406,6 +406,8 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x8803 => crate::upd::fujo_upd_status(a0),
         // ---- W20: 平台信息 (平台检测原语面) ----
         0x8D01 => crate::platform::fujo_platform_info(a0),
+        // ---- W20 p6: 内存拓扑 ----
+        0x8F02 => crate::mem::fujo_mem_topology(a0),
         // ---- W20: AHCI (SATA) 驱动面 ----
         0x8E01 => crate::ahci::fujo_ahci_read(a0, a1),
         0x8E02 => crate::ahci::fujo_ahci_write(a0, a1),

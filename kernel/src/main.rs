@@ -264,6 +264,7 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     mem::init();
     mem::harden_user_guard();
     mem::demand_zero_init();
+    let _mapped = mem::map_high_ram(); // W20 p6: >1GiB 可用内存映射 (≤4GiB)
     out_line("mem  : virtual memory v0 - user heap 0x800000..0xC00000 (brk/mmap ready)");
 
     // ---- M16: ATA + FJFS 持久卷 (QEMU: -drive file=...,format=raw,if=ide) ----
@@ -370,8 +371,7 @@ fn banner(magic: u32, mbi: u32) {
                 out_line(" MiB");
             } else {
                 out_line("");
-            }
-            // W20: 引导器交付 framebuffer (GRUB 真机 / QEMU 视频请求)
+            }            // W20: 引导器交付 framebuffer (GRUB 真机 / QEMU 视频请求)
             if m.flags & 0x1000 != 0 {
                 out_raw("fb    : mbi framebuffer addr=0x");
                 out_hex_u64(m.fb_addr);
@@ -557,6 +557,7 @@ unsafe fn sum_mmap(addr: u32, len: u32) -> (u32, u64) {
         let _ = base;
         if typ == 1 {
             total += length;
+            crate::mem::note_mmap(base, length); // W20 p6: 持久化可用区
         }
         count += 1;
         off = off.wrapping_add(size + 4);

@@ -22,6 +22,91 @@ const USER_RANGE_HI: u64 = 0xC00000;
 
 static mut HEAP_BRK: u64 = USER_HEAP_BASE;
 
+// ---- W20 p6: 内存拓扑 (mmap 表持久化 + 高位可用内存映射) ----
+const MMAP_MAX: usize = 64;
+static mut MMAP_TAB: [(u64, u64); MMAP_MAX] = [(0, 0); MMAP_MAX]; // (base, len) usable only
+static mut MMAP_N: usize = 0;
+static mut HIGH_USABLE: u64 = 0; // >1GiB 可用 (虚拟 ≤4GiB 可映射部分)
+
+/// main.rs banner 时调用 (mmap 表已解析; 持久化可用区)。
+pub fn note_mmap(base: u64, len: u64) {
+    unsafe {
+        if MMAP_N < MMAP_MAX {
+            MMAP_TAB[MMAP_N] = (base, len);
+            MMAP_N += 1;
+            if base >= 0x4000_0000 {
+                HIGH_USABLE += len;
+            }
+        }
+    }
+}
+
+/// 总可用内存 (来自 mmap 表)。
+pub fn usable_total() -> u64 {
+    unsafe {
+        MMAP_TAB.iter().take(MMAP_N).map(|&(_, l)| l).sum()
+    }
+}
+
+/// W20 p6: 映射 >1GiB 的可用物理 (恒等, ≤4GiB —— PML4[0] 虚拟上限;
+/// 4G+ 物理需高区窗口, 记录为下一阶段)。
+/// 返回映射页数。boot 已恒等 0..1GiB。
+pub fn map_high_ram() -> u64 {
+    let mut mapped = 0u64;
+    unsafe {
+        for i in 0..MMAP_N {
+            let (base, len) = MMAP_TAB[i];
+            let lo = base.max(0x4000_0000);
+            let hi = (base + len).min(0x1_0000_0000);
+            if hi <= lo {
+                continue;
+            }
+            let pages = ((hi - lo + 0xFFF) / 0x1000) as usize;
+            if map_phys_identity(lo, pages) {
+                mapped += pages as u64;
+            }
+        }
+    }
+    serial::write_str("mem  : high RAM mapped ");
+    let h = mapped * 0x1000 / (1024 * 1024);
+    let mut buf = [0u8; 24];
+    let mut i = 24;
+    let mut x = h;
+    if x == 0 {
+        serial::write_str("0MiB");
+    } else {
+        while x > 0 {
+            i -= 1;
+            buf[i] = b'0' + (x % 10) as u8;
+            x /= 10;
+        }
+        serial::write_str(core::str::from_utf8(&buf[i..]).unwrap());
+        serial::write_str("MiB");
+    }
+    serial::write_line("");
+    unsafe {
+        MAPPED_HIGH = mapped;
+    }
+    mapped
+}
+
+/// 0x8F02: mem_topology(ptr) — u64×3 = (usable_total, high_usable, mapped_pages)。
+#[no_mangle]
+pub extern "C" fn fujo_mem_topology(ptr: u64) -> i64 {
+    if !(0x400000..0xC00000).contains(&ptr) {
+        return -14;
+    }
+    unsafe {
+        let w = ptr as *mut u64;
+        w.write(usable_total());
+        w.add(1).write(HIGH_USABLE);
+        w.add(2).write(MAPPED_HIGH);
+    }
+    0
+}
+
+static mut MAPPED_HIGH: u64 = 0;
+
 pub fn init() {
     unsafe {
         HEAP_BRK = USER_HEAP_BASE;
@@ -194,9 +279,10 @@ pub extern "C" fn fujo_mmap(addr: u64, len: u64, prot: u64, flags: u64, fd: u64,
 // M12 · 缺页处理: 按需零页 (需求段 0x800000..0xC00000 用内核 PT 替换恒等映射)
 // ---------------------------------------------------------------------------
 
-/// 帧分配区域 (恒等映射: 物理=虚拟, 16MiB..63MiB, 全部在 64MiB 恒等内)。
+/// 帧分配区域 (恒等映射: 物理=虚拟; W20 p6: 16MiB..128MiB 帧池,
+/// BITMAP 3.5KB; 0x1000000..0x1080000 保留给窗口程序 (铁律 11) 由 map_high_user 置位)。
 const FRAME_BASE: u64 = 0x1000000;
-const FRAME_END: u64 = 0x3F00000;
+const FRAME_END: u64 = 0x8000000;
 const FRAME_PAGES: usize = ((FRAME_END - FRAME_BASE) / 0x1000) as usize;
 const BITMAP_LEN: usize = (FRAME_PAGES + 7) / 8;
 
