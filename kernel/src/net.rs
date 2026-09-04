@@ -228,7 +228,9 @@ pub extern "C" fn fujo_net_tx(buf: u64, len: u64) -> i64 {
         (d2.add(12) as *mut u16).write(0x0); // 设备读 (host->device)
         (d2.add(14) as *mut u16).write(0);
         let ai = (txq.add(OFF_AVAIL + 2) as *mut u16).read_volatile();
-        (txq.add(OFF_AVAIL + 4) as *mut u16).write_volatile(0);
+        // W21 修复: ring 位置按 avail idx (ai % VQ_SIZE) 定位 —— 硬编码 0 会让
+        // 第二次发送覆盖已消费 ring[0], QEMU 无新 used -> tx 永久超时 (m139 实证)。
+        (txq.add(OFF_AVAIL + 4 + (ai as usize % VQ_SIZE) * 2) as *mut u16).write_volatile(0);
         (txq.add(OFF_AVAIL + 2) as *mut u16).write_volatile(ai.wrapping_add(1));
         outl(IO, VIO_QUEUE_NOTIFY, 1); // tx 队列 kick
         let mut spin: u64 = 0;

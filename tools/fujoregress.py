@@ -91,6 +91,23 @@ CASES = [
     # W20 p7: PCI 枚举完整化 (多功能设备; q35 SATA 31.2)
     ("m137-pci", "ELF64 x pcienum", "sdk/linux/m137_pci.elf", "M137 RESULT: PASS",
      ["-machine", "q35"], {}),
+    # W21: UDP source clone (guest -> slirp 10.0.2.2:8077 -> host UDP server)
+    ("m139-http", "ELF64 x udp-clone", "sdk/linux/m139_http.elf", "M139 RESULT: PASS",
+     ["-netdev", "user,id=net0",
+      "-device", "virtio-net-pci,netdev=net0,mac=52:54:00:12:34:57,disable-modern=on,disable-legacy=off"],
+     {"udp_server": [8077, os.path.join(ROOT, "sdk", "network", "hello-clone.c")]}),
+    # W21: 自托管闭环 —— m139 clone 源码 (tmpfs+FJFS) -> mbuild /tmp/hello-clone.c
+    #       (tcc-static 编译) -> runfile /tmp/hello (产物运行输出)
+    ("m140-selfhost", "ELF64 x selfhost", "sdk/build/m140_self.initrd",
+     "cloned-compiled hello from fujo",
+     ["-netdev", "user,id=net0",
+      "-device", "virtio-net-pci,netdev=net0,mac=52:54:00:12:34:57,disable-modern=on,disable-legacy=off"],
+     {"udp_server": [8077, os.path.join(ROOT, "sdk", "network", "hello-clone.c")],
+      "bootsleep": 10.0,
+      "keys": ["o", "s", "spc", "r", "u", "n", "spc", "h", "e", "r", "m", "e", "s", "ret", "wait:0.5",
+               "m", "b", "u", "i", "l", "d", "spc", "slash", "t", "m", "p", "slash", "h", "e", "l", "l", "o",
+               "minus", "c", "l", "o", "n", "e", "dot", "c", "ret", "wait:3",
+               "r", "u", "n", "f", "i", "l", "e", "spc", "slash", "t", "m", "p", "slash", "h", "e", "l", "l", "o", "ret"]}),
     # W18: 标准软件移植 —— 静态 busybox (musl) 原生命令在 FujoOS 内执行
     ("m131-bbx", "ELF64 x busybox-cmd", "sdk/busybox-musl", "m131-busybox-ok", [],
      {"keys": ["o", "s", "spc", "r", "u", "n", "spc", "b", "u", "s", "y", "b", "o", "x", "spc",
@@ -147,6 +164,28 @@ def run_case(kernel, case, timeout_s):
             except Exception as e:
                 print(f"tcpclient: fail {e}", flush=True)
         threading.Thread(target=cli, daemon=True).start()
+    # W21: host 侧 UDP source server (m139: guest UDP GET-SOURCE -> host 回源码)
+    if opts.get("udp_server"):
+        hport = int(opts["udp_server"][0])
+        hfile = opts["udp_server"][1]
+        hbody = open(hfile, "rb").read()
+        hstop = [False]
+
+        def hsrv():
+            s = sk.socket(sk.AF_INET, sk.SOCK_DGRAM)
+            s.setsockopt(sk.SOL_SOCKET, sk.SO_REUSEADDR, 1)
+            s.bind(("127.0.0.1", hport))
+            s.settimeout(0.5)
+            while not hstop[0]:
+                try:
+                    d, a = s.recvfrom(2048)
+                except sk.timeout:
+                    continue
+                except OSError:
+                    break
+                print(f"udpsrv: req {len(d)}B from {a}", flush=True)
+                s.sendto(hbody, a)
+        threading.Thread(target=hsrv, daemon=True).start()
     initrd = os.path.join(ROOT, rel)
     if not os.path.exists(initrd):
         return ("MISS", f"initrd not found: {initrd}", "")

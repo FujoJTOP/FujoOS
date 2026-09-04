@@ -316,6 +316,8 @@ pub fn shell_loop(mbi: u32) -> ! {
             "mbuild" => {
                 // W16: 自托管编译链一步命令: 写 hello.c (单文件; tcc 无 GOT 需同编译单元)
                 // -> 启动 tcc 编译 (argv 内核构造) -> runfile 运行
+                // W21: mbuild [path] —— 带路径参数时为 W21 HTTP clone 闭环:
+                // 源码已由 m139 拉到 (tmpfs/磁盘), 不覆盖, 直接走 tcc 编译该文件。
                 const SRC: &str = "typedef long i64;\n\
                 static i64 sy4(i64 n, i64 a, i64 b, i64 c) {\n\
                 \x20 i64 r;\n\
@@ -327,25 +329,28 @@ pub fn shell_loop(mbi: u32) -> ! {
                 \x20 sy4(1, 1, (i64)MSG, sizeof(MSG) - 1);\n\
                 \x20 for (;;) {}\n\
                 }\n";
-                let w1 = crate::vfs::write_kernel_file("/tmp/hello.c", SRC.as_bytes());
-                if w1 <= 0 {
-                    out_line("os   : mbuild write fail");
-                } else {
-                    match crate::vfs::lib_find("tcc-static") {
-                        Some((addr, len)) => {
-                            set_argv_mode(true);
-                            set_argv0("tcc-static");
-                            let args: [&str; 5] = [
-                                "-nostdlib", "-static", "-o", "/tmp/hello", "/tmp/hello.c",
-                            ];
-                            set_argv_cmd(&args[..]);
-                            out_line("os   : launching tcc-static (compile hello) ...");
-                            syscall::set_module_override(addr as u32, len as u32, "tcc-static");
-                            syscall::enter_user_test(mbi); // > !: 不再返回
-                        }
-                        None => {
-                            out_line("os   : mbuild: tcc-static not registered");
-                        }
+                let src_path = parts.next().unwrap_or("/tmp/hello.c");
+                if src_path == "/tmp/hello.c" {
+                    let w1 = crate::vfs::write_kernel_file("/tmp/hello.c", SRC.as_bytes());
+                    if w1 <= 0 {
+                        out_line("os   : mbuild write fail");
+                        continue;
+                    }
+                }
+                match crate::vfs::lib_find("tcc-static") {
+                    Some((addr, len)) => {
+                        set_argv_mode(true);
+                        set_argv0("tcc-static");
+                        let args: [&str; 5] = [
+                            "-nostdlib", "-static", "-o", "/tmp/hello", src_path,
+                        ];
+                        set_argv_cmd(&args[..]);
+                        out_line("os   : launching tcc-static (compile hello) ...");
+                        syscall::set_module_override(addr as u32, len as u32, "tcc-static");
+                        syscall::enter_user_test(mbi); // > !: 不再返回
+                    }
+                    None => {
+                        out_line("os   : mbuild: tcc-static not registered");
                     }
                 }
             }
