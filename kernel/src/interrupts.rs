@@ -581,6 +581,16 @@ pub fn init() {
     }
 }
 
+/// W17b: AP 装载内核 IDT (与 BSP 同表 —— 16 位 trampoline 后 IDTR 为空,
+/// AP 上任何异常/中断 -> #GP. 中断桩经 TSS1.rsp0 (0x3A0000) 切换内核栈)。
+pub fn ap_load_idt() {
+    unsafe {
+        core::ptr::write_volatile(core::ptr::addr_of_mut!(IDT_PTR.limit), (IDT_SIZE * 16 - 1) as u16);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!(IDT_PTR.base), &raw mut IDT as u64);
+        asm!("lidt [{}]", in(reg) core::ptr::addr_of_mut!(IDT_PTR), options(nostack));
+    }
+}
+
 pub fn ticks() -> u64 {
     // M10.1 修复: 必须 volatile —— 此前普通读被 LLVM 提升出等待循环,
     // "while ticks-t0 < 250 {}" 编译成 jmp $ (死循环, 实测 RIP 停在 jmp 自身)。

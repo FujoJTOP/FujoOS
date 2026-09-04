@@ -208,7 +208,7 @@ pub fn fujo_irq_stats(ptr: u64) -> i64 {
 // ---------------------------------------------------------------------------
 
 pub static mut AP_ONLINE: bool = false;
-static AP_STACK: u64 = 0x3A0000; // TSS1.rsp0 同栈区 (gdt.rs M65)
+// AP 栈 = TSS1.rsp0 (0x3A0000, gdt.rs M65); ap_entry asm 已设置, 中断经 TSS1 切换。
 
 fn mmio_wr32(addr: u64, v: u32) {
     unsafe {
@@ -238,6 +238,32 @@ fn delay_ticks(n: u64) {
     let t0 = rdtsc();
     while rdtsc().wrapping_sub(t0) < n {
         core::hint::spin_loop();
+    }
+}
+
+/// W17b: 等 ICR 投递完成 (读 0xFEE00300 bit12 = delivery status, 1=发送中)。
+fn icr_idle_wait() {
+    let mut spins = 0u32;
+    while ((mmio_rd32(0xFEE00300) >> 12) & 1) == 1 && spins < 100_000 {
+        core::hint::spin_loop();
+        spins += 1;
+    }
+}
+
+/// W17b: ICR 投递 —— QEMU LAPIC 实测证据: **写 0x300 (低 32 位) 触发投递**
+/// (使用已存的高 32 位 dest)。故先写高 32 (dest存储), 后写低 32 (值+触发)。
+/// 反向 (低先高) 会把 INIT 投给 dest=0 (BSP 自身) -> BSP 被 INIT 复位 (停 "SIPI ->").
+fn icr_send(value: u32, dest: u32) {
+    mmio_wr32(0xFEE00310, dest << 24); // 高 32 先存储 (dest field)
+    mmio_wr32(0xFEE00300, value);      // 低 32 后写 -> 触发投递
+    icr_idle_wait();
+}
+
+/// W17b: 等 PIT tick (ap_bringup 期间 PIT 已活; hlt 节省 TCG 时钟)。
+fn wait_ticks(n: u64) {
+    let t0 = crate::interrupts::ticks();
+    while crate::interrupts::ticks().wrapping_sub(t0) < n {
+        crate::hlt();
     }
 }
 
@@ -285,14 +311,17 @@ fn map_lapic() -> bool {
         serial::write_line("smp  : lapic MMIO mapped (0xFEE00000)");
     }
     let id = mmio_rd32(0xFEE00020);
-    serial::write_str("smp  : lapic id=");
-    serial::write_str(if (id >> 24) == 0 { "0 (BSP)" } else { "?" });
+    serial::write_str("smp  : lapic id=0x");
+    crate::syscall::log_hex(id as u64);
+    serial::write_str(if (id >> 24) == 0 { " (BSP)" } else { " (AP?)" });
     serial::write_line("");
     // LAPIC SVR: APIC software enable (bit 8) — 复位后 ICR 不执行直到启用
-    mmio_wr32(0xFEE003F0, 0x1FF);
-    serial::write_str("smp  : svr=0x");
+    // W17b 取证: 写 0x1F5 回读回显 (铁律 17: 区分 RW/RO; 若读回 0 则 MMIO 路径可疑)
+    mmio_wr32(0xFEE003F0, 0x1F5);
+    serial::write_str("smp  : svr(w0x1f5)=0x");
     crate::syscall::log_hex(mmio_rd32(0xFEE003F0) as u64);
     serial::write_line("");
+    mmio_wr32(0xFEE003F0, 0x1FF);
     true
 }
 
@@ -338,35 +367,41 @@ pub fn ap_bringup() {
         (base.add(0x200) as *mut u32).write(cr3);
         let entry = fujo_ap_entry as *const () as u64 as u32;
         (base.add(0x204) as *mut u32).write(entry);
-        serial::write_line("smp  : SIPI -> AP @0x8000 (trampoline)");
-        // INIT(短延时) + SIPI×2 (TCG AP 冷启动需 INIT 唤醒; 长 delay 会导致 BSP 假死)
-        mmio_wr32(0xFEE00310, 0x01000000);
-        mmio_wr32(0xFEE00300, 0x00000500); // INIT
-        delay_ticks(200_000);
-        for _ in 0..2 {
-            mmio_wr32(0xFEE00310, 0x01000000); // dest APIC ID 1
-            mmio_wr32(0xFEE00300, 0x00000608); // SIPI, vector 0x8 (=> 0x8000)
-        }
-        serial::write_str("smp  : icr_readback=0x");
-        crate::syscall::log_hex(mmio_rd32(0xFEE00300) as u64);
-        serial::write_line("");
-        serial::write_line("smp  : SIPI sent");
-        // 探测: AP 是否执行到 trampoline 末尾 (marker @0x8220)
-        delay_ticks(100_000);
-        let mk = (0x8220u64 as *const u32).read_volatile();
-        serial::write_str("smp  : ap marker=0x");
-        crate::syscall::log_hex(mk as u64);
+        serial::write_line("smp  : INIT+SIPI -> AP (linux-smpboot profile, dest=APIC1)");
+        // W17b: Linux smpboot.c 时序 —— INIT assert(0x10500,bit16=电平) -> deassert(0x500)
+        //        -> 等 ~20ms (AP 完成 INIT 复位) -> SIPI×2 (vector 0x8 => 0x8000)。
+        // 投递: icr_send 高 32 先存 dest, 低 32 写触发 (QEMU LAPIC 实测语义)。
+        icr_send(0x0001_0500, 1); // INIT assert, physical, dest=APIC ID 1
+        icr_send(0x0000_0500, 1); // INIT deassert (电平语义: 必须成对)
+        wait_ticks(2); // 20ms: AP 完成复位
+        icr_send(0x0000_0608, 1); // SIPI, vector 0x8 (=> 0x8000)
+        wait_ticks(1); // 10ms: 二次 SIPI 冗余 (Linux 200us, TCG 放宽)
+        icr_send(0x0000_0608, 1); // SIPI again
+        // 探测: AP 是否执行到 trampoline 末尾 (执行标记 0x8230 / 完成标记 0x8220)
+        wait_ticks(20); // 200ms: 等 AP 走完 trampoline + ap_entry
+        let ex = (0x8230u64 as *const u32).read_volatile();
+        let done = (0x8220u64 as *const u32).read_volatile();
+        serial::write_str("smp  : ap exec_marker=0x");
+        crate::syscall::log_hex(ex as u64);
+        serial::write_str(" done_marker=0x");
+        crate::syscall::log_hex(done as u64);
+        serial::write_str(" ap_online=");
+        serial::write_str(if AP_ONLINE { "1" } else { "0" });
         serial::write_line("");
     }
 }
 
-/// AP 主入口 (trampoline retf 到达; AP 自己的栈/GDT (trampoline 内核段)).
+/// AP 主入口 (trampoline lretw 到达; 装载内核 GDT/TSS1/IDT 后 sti+hlt)。
 #[no_mangle]
 pub extern "C" fn fujo_ap_main() {
+    crate::gdt::ap_load();
+    crate::interrupts::ap_load_idt();
     unsafe {
-        core::arch::asm!("mov rsp, {}", in(reg) AP_STACK, options(nostack));
-        serial::write_line("smp  : AP1 online (id=1, cli+hlt loop)");
         AP_ONLINE = true;
+    }
+    serial::write_line("smp  : AP1 online (id=1, kernel gdt/tss1/idt, sti+hlt)");
+    unsafe {
+        core::arch::asm!("sti", options(nomem, nostack, preserves_flags));
     }
     loop {
         crate::hlt();

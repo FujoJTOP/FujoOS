@@ -38,7 +38,9 @@ pm_stub:
 	movl 0x204(%bp), %eax         # ap_entry
 	pushl %eax
 	movl $0xDEADBEEF, 0x220(%bp)  # 完成标记 (trampoline 已走到)
-	.byte 0xcb                    # retf (far return 16 位)
+	.byte 0x66, 0xcb              # lretw: 32 位操作数 retf -> pop 32-bit EIP + 16-bit CS
+	                              # 进入 GDT[1] (L=1, 64-bit code)。裸 retf=16 位只 pop 4B
+	                              # (push 是 6B) -> 栈错位跳垃圾 -> 空 IDT 三重故障 (W17b 实证)。
 
 	.global tramp_gdtr
 tramp_gdtr:

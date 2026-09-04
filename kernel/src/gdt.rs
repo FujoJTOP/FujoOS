@@ -132,6 +132,18 @@ pub fn init() {
     }
 }
 
+/// W17b: AP 装载内核 GDT (含双 TSS) + 核1 TSS (选择子 0x38, rsp0=0x3A0000)。
+/// trampoline GDT 只有 null/kcode/kdata —— 无 TSS -> AP 上中断 #GP;
+/// 换内核 GDT 后 CS/DS 选择子 (0x08/0x10) 语义一致, 无需重载段寄存器。
+pub fn ap_load() {
+    unsafe {
+        core::ptr::write_volatile(core::ptr::addr_of_mut!(GDT_PTR.limit), 16 * 8 - 1);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!(GDT_PTR.base), &raw mut GDT as u64);
+        asm!("lgdt [{}]", in(reg) core::ptr::addr_of_mut!(GDT_PTR), options(nostack));
+        asm!("ltr ax", in("ax") TSS1_SEL, options(nostack));
+    }
+}
+
 pub fn kernel_rsp0() -> u64 {
     0x300000
 }
