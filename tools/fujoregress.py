@@ -73,6 +73,11 @@ CASES = [
     ("m132-dirs", "ELF64 x dirs", "sdk/linux/m132_dirs.elf", "M132 RESULT: PASS", [], {}),
     # W20: 平台检测 (QEMU 证据链一致性; ICR 语义模式随平台)
     ("m133-plat", "ELF64 x platform", "sdk/linux/m133_plat.elf", "M133 RESULT: PASS", [], {}),
+    # W20: AHCI (SATA) 驱动 —— ich9-ahci 参考盘 (真机 SATA 路径, q35 机器)
+    ("m134-ahci", "ELF64 x ahci", "sdk/linux/m134_ahci.elf", "M134 RESULT: PASS",
+     ["-machine", "q35",
+      "-drive", "if=none,id=hd,file=" + os.path.join(ROOT, "sdk", "ahci.img") + ",format=raw",
+      "-device", "ide-hd,drive=hd,bus=ide.0"], {}),
     # W18: 标准软件移植 —— 静态 busybox (musl) 原生命令在 FujoOS 内执行
     ("m131-bbx", "ELF64 x busybox-cmd", "sdk/busybox-musl", "m131-busybox-ok", [],
      {"keys": ["o", "s", "spc", "r", "u", "n", "spc", "b", "u", "s", "y", "b", "o", "x", "spc",

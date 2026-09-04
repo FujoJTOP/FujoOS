@@ -70,21 +70,20 @@ pub fn pci_write_cfg(bus: u8, slot: u8, func: u8, reg: u8, val: u32) {
     }
 }
 
-/// W13: 按 (vendor, device) 查找 PCI 设备 (func 0 起; 返回 (bus, slot, func, bar0))。
+/// W13: 按 (vendor, device) 查找 PCI 设备; 返回 (bus, slot, func, bar0)。
+/// W20 修复: 原 func 循环在 func0 不匹配时 break 整个 slot —— 多功能
+/// slot (Q35: 31.0=ISA 31.2=SATA AHCI) 永远找不到; 现在独立遍历每个 func。
 pub fn pci_find(vid: u16, did: u16) -> Option<(u8, u8, u8, u32)> {
     for bus in 0..3u8 {
         for slot in 0..32u8 {
             for func in 0..8u8 {
                 let v = pci_read_cfg(bus, slot, func, 0x00);
                 if v == 0xFFFF_FFFF || v == 0 {
-                    break; // 无设备: 更高 func 也无
+                    continue; // 该 func 无设备; 其它 func 可能有
                 }
                 if v & 0xFFFF == vid as u32 && (v >> 16) & 0xFFFF == did as u32 {
                     let bar0 = pci_read_cfg(bus, slot, func, 0x10);
                     return Some((bus, slot, func, bar0));
-                }
-                if func == 0 {
-                    break; // func0 无设备: 本 slot 空
                 }
             }
         }

@@ -13,6 +13,7 @@
 
 mod ai;
 mod a11y;
+mod ahci;
 mod acpi;
 mod virtio;
 mod net;
@@ -267,6 +268,9 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
 
     // ---- M16: ATA + FJFS 持久卷 (QEMU: -drive file=...,format=raw,if=ide) ----
     ata::init();
+    if !crate::ahci::init() && unsafe { !crate::ata::ATA_PRESENT } {
+        serial::write_line("disk : no ATA/AHCI device");
+    }
     fjfs::init();
     if unsafe { crate::ata::ATA_PRESENT } {
         crate::fjfs::list();

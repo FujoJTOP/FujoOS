@@ -75,6 +75,12 @@ pub fn init() {
                 }
                 let words = ((ident[83] & 0x0400) != 0) || ((ident[86] & 0x0400) != 0);
                 LBA48 = words;
+                // W20: 空通道 IDENTIFY 返回全 0/垃圾 —— ident[0]==0 判无盘 (真机
+                // 无盘通道的"假 present"曾把垃圾当磁盘; QEMU ich9-ahci 共存实测)。
+                if ident[0] == 0 {
+                    serial::write_line("ata  : idle (empty channel identify 0x0)");
+                    return;
+                }
                 ATA_PRESENT = true;
                 serial::write_str("ata  : drive present (identify 0x");
                 print_hex(ident[0] as u64);

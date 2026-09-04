@@ -352,7 +352,8 @@ pub extern "C" fn fujo_munmap(addr: u64, len: u64) -> i64 {
 
 static mut BOOT_CR3: u64 = 0;
 
-fn boot_cr3() -> u64 {
+/// W20: 引导 CR3 (系统页表; 首次调用时采样)。pub 供驱动诊断 (ahci 恒等验证)。
+pub fn boot_cr3() -> u64 {
     unsafe {
         if BOOT_CR3 == 0 {
             BOOT_CR3 = read_cr3();
@@ -469,6 +470,40 @@ pub fn as_copy_heap(dst_h0: u64, dst_h1: u64, src_h0: u64, src_h1: u64) {
 /// W13: 内核用帧分配 (virtio vring 等; 恒等映射直写, guest-physical 直用)。
 pub fn alloc_frame_kernel() -> Option<u64> {
     frame_alloc_zero()
+}
+
+/// W20: 虚拟地址 → 物理 (4 级页表行走; M121 任务页表下用户虚拟≠物理,
+/// DMA 驱动 (AHCI PRDT) 必须用 guest-physical)。
+pub fn virt_to_phys(cr3: u64, va: u64) -> Option<u64> {
+    unsafe {
+        let pm4 = (cr3 & 0x000F_FFFF_FFFF_F000) as *mut u64;
+        let e4 = pm4.add(((va >> 39) & 0x1FF) as usize).read();
+        if e4 & 1 == 0 {
+            return None;
+        }
+        let pdpt = (e4 & 0x000F_FFFF_FFFF_F000) as *mut u64;
+        let e3 = pdpt.add(((va >> 30) & 0x1FF) as usize).read();
+        if e3 & 1 == 0 {
+            return None;
+        }
+        if e3 & 0x80 != 0 {
+            return Some((e3 & 0x000F_FFFF_FFFF_F000) | (va & 0x3FFF_FFFF));
+        }
+        let pd = (e3 & 0x000F_FFFF_FFFF_F000) as *mut u64;
+        let e2 = pd.add(((va >> 21) & 0x1FF) as usize).read();
+        if e2 & 1 == 0 {
+            return None;
+        }
+        if e2 & 0x80 != 0 {
+            return Some((e2 & 0x000F_FFFF_FFFF_F000) | (va & 0x1F_FFFF));
+        }
+        let pt = (e2 & 0x000F_FFFF_FFFF_F000) as *mut u64;
+        let e1 = pt.add(((va >> 12) & 0x1FF) as usize).read();
+        if e1 & 1 == 0 {
+            return None;
+        }
+        Some((e1 & 0x000F_FFFF_FFFF_F000) | (va & 0xFFF))
+    }
 }
 
 /// W20: 恒等映射任意物理地址 (LFB/设备 MMIO, >1GiB 区) —— 复用 PML4[0] 链,
