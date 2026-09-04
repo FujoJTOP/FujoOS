@@ -17,7 +17,8 @@
 | 工作目录 | `D:\Dev\FujoOS`(2026-09 从 `C:\Users\hooya\Documents\FujoOS` 迁移;旧目录保留为备份,勿再使用) |
 | 分支 | `fujoos-ai-dev`(工作分支,所有里程碑提交在此) |
 | 远端 | `https://github.com/FujoJTOP/FujoOS.git` |
-| HEAD | `8a760f0`(W16a exec-from-mem;W13c3 起每波即推) |
+| HEAD | `2716610`(官网 v3;W13c3 起每波即推) |
+| 最新 | **W29 完成**(第二执行模式对照,TCG/WHPX;docs/92) — 当前工作区含 W29 改动+docs/90/91/92 未提交, 下个提交 = W29 |
 | 主机 | Windows 11 / PowerShell / Rust 工具链 / QEMU 9.2 / LLVM clang / Python 3 / Ollama(qwen2.5:7b) |
 
 **push 技巧**:代理 `127.0.0.1:20085` 时断时续 —— 先 `git push origin fujoos-ai-dev`(走代理),失败再 `git -c http.proxy= push origin fujoos-ai-dev`(直连);反之亦然,交替重试即可。
@@ -35,6 +36,10 @@
 - **W25 完成 (m145 PASS)**: AI 垂直 IV —— **IO 预测所有权重判**: 内核新增二阶马尔可夫基线 (io_markov, engine=4, 自训练访问流 96B); 引擎顺序 rulebook→markov→模型→last; **周期流 [auto] 5/5 零模型调用 (last-num 0/5, 7b 模型 1/5)** → io 职责所有权 = 确定性基线, 模型仅基线 miss 时辅助; ownership 矩阵 (anom/cls=蒸馏+模型, io=基线, plan/nlc/env=蒸馏优先) 定稿; docs/86。
 - **W26 完成 (m146 PASS)**: AI 垂直 V —— **五职责全自监督**: 内核 `act_verify` (KILL→state3 / ISOLATE→state2 / RESUME→state1 / SET_CFG→cfg 读回 / ACK→pending 清) + nlc 策略 cfg 读回验证 → 审计 result 字段 = 五职责 self-labeled verified 计数 (anom W22 + plan/nlc W26); m146: plan isolate+resume verified=2, nlc verified=2, kill verified=1, 正常事件 0; docs/87。
 - **W27 完成 (m147 PASS)**: AI 垂直 VI —— **哨兵接管真实事件流**: 内核 0x8312 `ev_digest` (事件环 100-tick 速率 + 最近 pid/kind) + ctx `ev_stats_recent`; m147 事件风暴任务 (0x8004 注入) → digest rate=99 → 哨兵 anom=1 conf=80 → **自动隔离 → rate=0 → 恢复判定**; eyes→sentinel→hands 实链路 (此前 eyes 只服务模型上下文); docs/88; 坑: 风暴源用 0x8004 而非 write 循环 (日志污染 + sys_note 1000:1 采样稀释)。
+- **W28 完成 (AI 垂直六波总结)**: 所有权矩阵锁定 (anom/cls=蒸馏+模型新颖度, io=确定性基线 [auto] 5/5 零调用, plan/nlc/env=蒸馏优先); 系统级结论 (模型在规则外样本边际价值 2/2+2/2, 0.5b 不可用, blast-radius 可复现, 蒸馏闭环 ~38→≤1 调用, 哨兵真实事件流 99→0); **fujoregress 37/37**; docs/89 + docs/81 §8 更新 (M112–M147, 37-case)。
+- **Ask1/Ask2 自评**: docs/82 (六波前基线审计) + docs/90 (六波后自评: #1 AI e2e 测量 CLOSED via m141/m143/m144/m145/m147; #2/#3 保持, #4/#5 无进展; 7 个诚实缺口 — 样本量/2 模型家族/半自动蒸馏/合成信号/engine=4 语义漂移/环境自监督缺口/io 流非持久); ask3 候选 = KVM 对照波。
+- **官网 v3**: docs/index.html 单文件官方站点 (GitHub Pages /docs) — hero 终端 + 13 特性卡 + 架构 + 快速开始 + 证据 + FAQ 限制 + CTA, js-gated reveal + GitHub live stars; assets/archify 运行时架构图 (明暗双版视觉检查件)。
+- **W29 完成 (第二执行模式对照)**: `fujoregress.py --accel whpx` / `verify_ai.py --accel` / `qemu-kvm.ps1` 双模式参数化 (**WHPX 自动注入 `-machine kernel-irqchip=off`**); **WHPX 全量 36/37** (仅 m129 = WHPX 拒绝 INIT/SIPI 注入, 真机/KVM 不受影响); **AI 波 m141–m147 × {TCG, WHPX} 行为一致** (在线 m141/m144 亦过, shm 模型通道正常); 实质发现 **#15** WHPX 默认 `kernel-irqchip=on` 只走 APIC 注入 → legacy 8259 直连失效 (m1 PIT 死锁), `off` 恢复设备模型 PIC/PIT; **m123 修复**: submit_req 超时 = `spin>600M || rdtsc>900M` 双条件 (WHPX 快 CPU 下裸计数墙钟不足); docs/92 + docs/74 #15/#16; **followup = 内核中断架构 APIC 化**。
 - **实测数据**(docs/44-Ext 表格):哨兵 100 分类 10 命中/0 误报;计划 隔离+恢复 2/0、验证 1;IO 预测 10/30(对照 LRU 0/30);NLC 策略应用 3 条、配置 1/0/24;环境 桌面/配置 2/2;M115 五职责 PASS。
 - **延迟实测**:7B 冷推理 4.6s、warm 0.15–0.17s(CPU)。
 - **W8 完成(M118 R3 时延协议 + M119 R1 公理化)**:shm 帧 v2 快照@t0+evw+crit、回包 TTL、wait_rsp 丢弃、0x8309 探针、0x830A 公理化自检(离线入 fujoregress);规格 docs/59。
@@ -77,15 +82,17 @@ cd kernel; cargo build --release
 # 2) 检查新符号已入镜像(llvm-nm)
 llvm-nm kernel/target/x86_64-unknown-none/release/fujo-kernel | Select-String <SYM>
 
-# 3) 展平 + 检查 BSS 尾 < 0x2A2000(pad 0x1A2000)
-python tools/flatten_elf.py kernel/target/x86_64-unknown-none/release/fujo-kernel kernel/fujo-kernel.bin --pad 0x1A2000
-llvm-readobj --sections kernel/fujo-kernel.bin | Select-String -Context 0,2 ".bss"   # 尾 < 0x2A2000
+# 3) 展平 + 检查 BSS 尾 < 0x2C0000 (pad 0x1C0000)
+python tools/flatten_elf.py kernel/target/x86_64-unknown-none/release/fujo-kernel kernel/fujo-kernel.bin --pad 0x1C0000
+llvm-readobj --sections kernel/fujo-kernel.bin | Select-String -Context 0,2 ".bss"   # 尾 < 0x2C0000
 
 # 4) AI 职责验证(模型在线,服务器自管 monitor + 注入启动键)
-python tools/verify_ai.py --demo m115_five --needle "M115 RESULT: PASS" --model qwen2.5:7b --timeout 300
+python tools/verify_ai.py --demo m141 --needle "M141 RESULT: PASS" --model qwen2.5:7b --timeout 420
+#    --evil 对抗波 (m144); --accel whpx 第二执行模式
 
 # 5) 全回归
-python tools/fujoregress.py      # 9/9
+python tools/fujoregress.py                # 37/37 (TCG)
+python tools/fujoregress.py --accel whpx   # 36/37 (W29 对照; m129=WHPX 平台限制)
 ```
 
 - **样例**:`sdk/linux/m11x_*.c`(entry `_start`,clang → `.elf`,`scripts/build-samples.ps1` 注册;demo 输出 `M1xx RESULT: PASS`)。
@@ -116,7 +123,7 @@ python tools/fujoregress.py      # 9/9
 ## 6. 十要铁律(W5 教训浓缩,详见技能 fujoos-pitfalls)
 
 1. 构建只从 `kernel/` 进入,必须见 "Compiling fujo-kernel",新符号用 `llvm-nm` 确认。
-2. 每加 static/数组查 BSS 尾 < 0x2A0000(现尾 0x29CE10,余 ~12.7KB);超界同步改 `flatten --pad`。
+2. 每加 static/数组查 BSS 尾 < load_end 0x2C0000(现 pad 0x1C0000);超界同步改 `main.rs MB_HEADER` + `flatten --pad`。
 3. 系统内计时:syscall 内 PIT 被 SFMASK 屏蔽,用 `timer::sleep_us`(rdtsc)忙等;0x6101 校准跨 tick,校准前别采样 t0。
 4. QEMU 一律后台 job;monitor sendkey 逐键注入(每键 120ms,`sendkey os` 是非法多字符键)。
 5. 端口冲突(4568/4001/4002)→ `netstat -ano | findstr` 找到 PID taskkill;残留进程会互杀 QEMU(陷阱:verify 返回全零,查僵尸进程)。
@@ -130,17 +137,22 @@ python tools/fujoregress.py      # 9/9
 
 - `docs/52` · AI For Next 蓝图(模型=器官,五职责,边界)——新对话必读
 - `docs/53/54/55/56` · M112–M115 各波实现与踩坑
-- `docs/57` · 长期路线图(短期 W8–W10 = 阶段一;长期 = 类 Linux 三阶段)——W8 执行依据
+- `docs/57` · 长期路线图(阶段一/二/三;W13–W21 已完成,阶段三 W22 起 AI 垂直波)
+- `docs/74/75/76/77-79` · W13–W20 机制/真机化(含 W20 平台差异审计表 14+2 项)
+- `docs/80` · W21 网络闭环 · `docs/82` · W22 AI 波+Ask1 · `docs/84-88` · W23–W27 AI 垂直波
+- `docs/89` · W28 六波总结 · `docs/90` · Ask2 自评 · `docs/91` · W29–W32 对照计划 · `docs/92` · W29 双模式实测
+- `docs/index.html` · 单文件官网 (GitHub Pages /docs)
 - `docs/44`(+44-Ext)· AI OS 验收与五职责基线表
-- `docs/08` · M1–M100 总路线图(C 盘镜像;M101–115 在 docs/50/51/52+)
-- `docs/51` · 项目状态总览
+- `docs/08` · M1–M100 总路线图 · `docs/51` · 项目状态总览(本文件刷新后的权威快照)
 - 技能:`fujoos-pitfalls`(踩坑速查表,开发前过一遍)、`ponytail`(最小实现原则)
 
-## 8. 下一步执行清单(W8 起步)
+## 8. 下一步执行清单(W29 起步)
 
-1. 通读 `docs/57` 阶段一 + 本文件第 5 节源码地图。
-2. **R3 时延一致性协议**(改动小、先做):在 `kernel/src/ctx.rs`/`ai.rs` 给 shm 请求加 `快照@t0`,帧头/上下文带事件增量区间与过期标记;模型回包声明有效期;内核 `wait_rsp` 检查事件环增量,关键事件到达即丢弃建议走规则。配套 `tools/qwen_model_server.py` 回包格式扩展 + `sdk/linux/m118*` 或新 demo(带断言)。
-3. **R1 公理化**:四条不变式各写一个可断言测试(模型离线时也跑),加入 `fujoregress` 或独立 `verify_invariants`。
-4. 每波:改码 → kernel 构建(Compiling 确认)→ 新符号 nm 确认 → flatten(查 BSS 尾)→ verify_ai.py PASS → 特定文件 `git add` → commit → push(`fujoos-ai-dev`)。
+1. 通读 `docs/92`(W29 实测)+ `docs/91`(W29–W32 计划)+ 本文件第 5 节源码地图。
+2. **W29-followup**(独立波): 内核中断架构 **APIC 化**(WHPX 默认路径 + 现代平台;docs/74 #15/#16 依据)。改动小、先做: 中断重定向/抬 pin 语义与 legacy 8259 并存, 或按 docs/92 结论改造。
+3. **W30**: 真机就绪包 —— WSL2 `grub-mkrescue` → 引导 ISO(无 -kernel 无 -initrd 纯 ISO 启动验证)+ 内核 **autostart**(mbi cmdline `fujo.run=<demo>`, 真机无 sendkey)+ COM1 捕获模板 + 真机 checklist 文档。
+4. **W31**: 第二列 —— WSL2 嵌套 KVM 或物理机五件套(m142/143/145/146/147 + m144 离线); 先探测 `/dev/kvm` 可用性, 不可用降级为 ISO 引导验收 + 物理机波标注"待设备接入"。
+5. **W32**: docs/81 §7/§8.1 增"执行模式与平台对照"小节 + Threats to validity 正文化(TCG/WHPX/硬件三列)。
+6. 每波:改码 → kernel 构建(Compiling 确认)→ 新符号 nm 确认 → flatten(查 BSS 尾)→ verify_ai.py PASS → 特定文件 `git add` → commit → push(`fujoos-ai-dev`)。
 
 > 工作约定:每次改动后自验再提交;只提交目标任务文件;完成一个里程碑即推送一次;文档随状态同步刷新本文件第 3 节。

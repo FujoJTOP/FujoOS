@@ -218,7 +218,10 @@ fn submit_req(ty: u32, lba: u64) -> i64 {
         // notify (queue 0)
         outl(IO_BASE, VIO_QUEUE_NOTIFY, 0);
         // 轮询 used.idx (设备写 V+0x1002; 独立页)
+        // W29: 超时判据执行模式健壮化 —— 裸 spin 计数在快 CPU (WHPX) 下墙钟不足;
+        // 计数 600M + rdtsc 墙钟 900M 双条件 (TCG: 计数先达同旧行为; WHPX: 墙钟兜底)。
         let mut spin: u64 = 0;
+        let t0 = crate::timer::rdtsc();
         loop {
             spin += 1;
             let used_idx = (vq.add(OFF_USED_IDX) as *mut u16).read_volatile();
@@ -230,7 +233,9 @@ fn submit_req(ty: u32, lba: u64) -> i64 {
                 }
                 return -1;
             }
-            if spin > 60_000_000 {
+            if spin > 600_000_000
+                || crate::timer::rdtsc().wrapping_sub(t0) > 900_000_000
+            {
                 return -2;
             }
         }

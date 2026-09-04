@@ -45,6 +45,7 @@ def main():
     ap.add_argument("--boot-wait", type=float, default=9.0)
     ap.add_argument("--boot-keys", default="o s spc r u n spc h e r m e s ret")
     ap.add_argument("--evil", action="store_true", help="W24: adversarial model replies (FUJO_EVIL=1)")
+    ap.add_argument("--accel", default="tcg", help="QEMU accel (W29 contrast: tcg | whpx)")
     a = ap.parse_args()
 
     kill_peers()
@@ -54,8 +55,12 @@ def main():
     initrd = os.path.join(ROOT, "sdk", "linux", f"{a.demo}.elf")
 
     qemu = shutil.which("qemu-system-x86_64")
+    machine = []
+    if a.accel == "whpx":
+        # W29: WHPX 对照 —— legacy 8259 直连需 kernel-irqchip=off (详见 docs/92)
+        machine = ["-machine", "kernel-irqchip=off"]
     p = subprocess.Popen([
-        qemu, "-m", "256M", "-kernel", KERNEL, "-initrd", initrd,
+        qemu, "-m", "256M", "-accel", a.accel, *machine, "-kernel", KERNEL, "-initrd", initrd,
         "-serial", f"file:{log}",
         "-serial", f"tcp:127.0.0.1:{LINK_PORT},server=on,wait=off",
         "-monitor", f"telnet:127.0.0.1:{MON_PORT},server,nowait",

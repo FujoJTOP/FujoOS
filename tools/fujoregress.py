@@ -135,10 +135,19 @@ def qemu():
     return shutil.which("qemu-system-x86_64")
 
 
-def run_case(kernel, case, timeout_s):
+def run_case(kernel, case, timeout_s, accel="tcg"):
     name, label, rel, needle = case[:4]
     extra = list(case[4]) if len(case) > 4 else []
     opts = case[5] if len(case) > 5 else {}
+    # W29: WHPX 对照 —— 关闭内核中断芯片 (QEMU WHPX 默认 kernel-irqchip=on 只走
+    # APIC 注入, legacy 8259 直连路径失效 -> m1 等 PIT tick 死锁; off 后设备模型
+    # 模拟 PIC/PIT, 与 TCG/真机同构)
+    if accel == "whpx":
+        if "-machine" in extra:
+            idx = extra.index("-machine")
+            extra[idx + 1] = extra[idx + 1] + ",kernel-irqchip=off"
+        else:
+            extra = ["-machine", "kernel-irqchip=off"] + extra
     # host 侧 UDP echo (m124: QEMU slirp 10.0.2.2:port -> 127.0.0.1:port)
     import socket as sk
     import threading
@@ -209,7 +218,7 @@ def run_case(kernel, case, timeout_s):
     log = os.path.join(tmpd, "qemu.log")
     # 独占端口: 用例间释放
     p = subprocess.Popen([
-        qemu(), "-m", "256M", "-kernel", kernel, "-initrd", initrd,
+        qemu(), "-m", "256M", "-accel", accel, "-kernel", kernel, "-initrd", initrd,
         "-serial", f"file:{log}",
         "-serial", f"tcp:127.0.0.1:{SER_PORT},server=on,wait=off",
         "-monitor", f"telnet:127.0.0.1:{MON_PORT},server,nowait",
@@ -277,6 +286,7 @@ def main():
     ap.add_argument("--only", type=int, default=None)
     ap.add_argument("--timeout", type=float, default=14.0)
     ap.add_argument("--json", default=None)
+    ap.add_argument("--accel", default="tcg", help="QEMU accel: tcg (default) | whpx (W29 second-execution-mode contrast)")
     a = ap.parse_args()
     if not os.path.exists(a.kernel):
         print(f"kernel not found: {a.kernel}", file=sys.stderr)
@@ -287,7 +297,7 @@ def main():
             continue
         label = f"[{i}] {case[0]:16s} {case[1]:28s}"
         print(f":: {label} ...", flush=True)
-        st, err, logtxt = run_case(a.kernel, case, a.timeout)
+        st, err, logtxt = run_case(a.kernel, case, a.timeout, a.accel)
         print(f":: {label} {st} {err}")
         if st != "PASS":
             print(logtxt)

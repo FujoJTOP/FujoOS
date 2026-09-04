@@ -14,7 +14,7 @@ static mut CYCLES_PER_US: u64 = 800; // TCG 标称初值 (校准后才可靠)
 static mut START_TICKS: u64 = 0;
 static mut START_RDTS: u64 = 0;
 
-fn rdtsc() -> u64 {
+pub fn rdtsc() -> u64 {
     let lo: u32;
     let hi: u32;
     unsafe { core::arch::asm!("rdtsc", out("eax") lo, out("edx") hi, options(nomem, nostack)); }
