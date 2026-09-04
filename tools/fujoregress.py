@@ -124,6 +124,10 @@ CASES = [
     ("m131-bbx", "ELF64 x busybox-cmd", "sdk/busybox-musl", "m131-busybox-ok", [],
      {"keys": ["o", "s", "spc", "r", "u", "n", "spc", "b", "u", "s", "y", "b", "o", "x", "spc",
                "e", "c", "h", "o", "spc", "m", "1", "3", "1", "minus", "b", "u", "s", "y", "b", "o", "x", "minus", "o", "k", "ret"]}),
+    # W30: autostart cmdline (mbi cmdline fujo.run=<demo> -> direct launch, 无 sendkey;
+    #      GRUB/真机等效路径: mbi cmdline 由引导器交付)
+    ("m148-autostart", "ELF64 x autostart", "sdk/linux/m142_feedback.elf", "M142 RESULT: PASS",
+     [], {"append": "fujo.run=m142_feedback", "keys": []}),
 ]
 
 MON_PORT = 4568
@@ -223,7 +227,7 @@ def run_case(kernel, case, timeout_s, accel="tcg"):
         "-serial", f"tcp:127.0.0.1:{SER_PORT},server=on,wait=off",
         "-monitor", f"telnet:127.0.0.1:{MON_PORT},server,nowait",
         "-display", "none", "-no-reboot",
-    ] + extra)
+    ] + (["-append", opts.get("append")] if opts.get("append") else []) + extra)
     time.sleep(float(opts.get("bootsleep", 9.0)))
     try:
         s = socket.create_connection(("127.0.0.1", MON_PORT), timeout=3)

@@ -2519,6 +2519,66 @@ pub fn boot_module_present() -> bool {
     unsafe { MOD_SNAP.0 != 0 && MOD_SNAP.1 != 0 }
 }
 
+/// W30: autostart —— mbi cmdline (flags bit2) 解析 `fujo.run=<name>`;
+/// 与 boot 模块名匹配 (contains) 则直启 (真机/虚拟 ISO 无 monitor sendkey)。
+pub fn boot_autostart(mbi: u32) -> bool {
+    unsafe {
+        let m = mbi as *const u32;
+        if m.read() & 4 == 0 {
+            return false; // 无 cmdline
+        }
+        let cmd = (m.add(4) as *const u32).read() as *const u8;
+        let mut val = [0u8; 48];
+        let mut vn = 0usize;
+        let mut i = 0usize;
+        loop {
+            if cmd.add(i).read() == 0 || vn >= val.len() {
+                break;
+            }
+            // 前缀匹配 "fujo.run=" 后取值 (token 至空格/0)
+            if i + 9 < 1024
+                && cmd.add(i).read() == b'f'
+                && cmd.add(i + 1).read() == b'u'
+                && cmd.add(i + 2).read() == b'j'
+                && cmd.add(i + 3).read() == b'o'
+                && cmd.add(i + 4).read() == b'.'
+                && cmd.add(i + 5).read() == b'r'
+                && cmd.add(i + 6).read() == b'u'
+                && cmd.add(i + 7).read() == b'n'
+                && cmd.add(i + 8).read() == b'='
+            {
+                let mut j = i + 9;
+                while cmd.add(j).read() != 0
+                    && cmd.add(j).read() != b' '
+                    && vn < val.len()
+                {
+                    val[vn] = cmd.add(j).read();
+                    vn += 1;
+                    j += 1;
+                }
+                break;
+            }
+            i += 1;
+        }
+        if vn == 0 || MOD_SNAP.2 == 0 {
+            return false;
+        }
+        let mut nb = [0u8; 64];
+        let mut n = 0usize;
+        while n < 63 {
+            let b = (MOD_SNAP.2 as *const u8).add(n).read();
+            if b == 0 {
+                break;
+            }
+            nb[n] = b;
+            n += 1;
+        }
+        let s = core::str::from_utf8(&nb[..n]).unwrap_or("");
+        let v = core::str::from_utf8(&val[..vn]).unwrap_or("");
+        s.contains(v)
+    }
+}
+
 // 模块快照: 引导期记录一次 (enter 阶段二次解析 mbi 偶发不可靠 —— 快照绕过)
 static mut MOD_SNAP: (u32, u32, u32) = (0, 0, 0);
 

@@ -217,6 +217,11 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 #[no_mangle]
 #[link_section = ".text.entry"]
 pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
+    // W30: 加载器 IF 状态无关化 —— GRUB/ISO 交付时 IF 可能为开; 中断管理由
+    // interrupts::init+sti 全权负责 (启动早期提前 IRQ 会以错码/时序崩溃)。
+    unsafe {
+        core::arch::asm!("cli", options(nomem, nostack, preserves_flags));
+    }
     vga::init();
     serial::init();
     banner(magic, mbi);
@@ -320,6 +325,12 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     // M108: boot 模块 = m108_desk.elf -> 用户态桌面代理 (自驱动; 无命令注入)
     if syscall::boot_module_is_desk_proxy() {
         crate::sched::set_proxy_mode();
+        syscall::enter_user_test(mbi); // > !: 不再返回
+    }
+    // W30: autostart (GRUB/ISO cmdline `fujo.run=<demo>`, 模块名匹配则直启;
+    // 真机无 monitor sendkey —— 与 m108 同直启路径)
+    if syscall::boot_autostart(mbi) {
+        serial::write_line("boot: autostart (cmdline fujo.run) -> direct launch");
         syscall::enter_user_test(mbi); // > !: 不再返回
     }
     // 其他模块: os shell (经典注入路径; fujoci/fujoregress 兼容)
