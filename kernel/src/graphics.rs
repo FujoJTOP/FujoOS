@@ -23,6 +23,27 @@ pub struct Fb {
 static mut FB: Option<Fb> = None;
 static mut SAVE_LFB_OK: bool = false;
 
+// ---- W20: 引导器交付帧缓冲 (mbi bit12; GRUB 真机路径) ----
+static mut MBI_FB: (u64, u32, u32, u32, u8, u8) = (0, 0, 0, 0, 0, 0); // addr,pitch,w,h,bpp,type
+
+/// main.rs banner 时调用 (mbi 解析后)。
+pub fn note_mbi_fb(addr: u64, pitch: u32, w: u32, h: u32, bpp: u8, ftype: u8) {
+    unsafe {
+        MBI_FB = (addr, pitch, w, h, bpp, ftype);
+    }
+}
+
+fn mbi_fb() -> Option<(u64, u32, u32, u32, u8, u8)> {
+    unsafe {
+        let (a, p, w, h, b, t) = MBI_FB;
+        if a != 0 && b == 32 {
+            Some((a, p, w, h, b, t))
+        } else {
+            None
+        }
+    }
+}
+
 const W: u32 = 1024;
 const H: u32 = 768;
 
@@ -139,8 +160,38 @@ pub fn fujo_vbe_actual(ptr: u64) -> i64 {
     0
 }
 
-/// 初始化 Bochs VBE 1024x768x32 LFB; 返回是否成功。
+/// 初始化图形面: 引导器交付帧缓冲 (mbi, GRUB 真机) 优先; Bochs VBE 端口
+/// 探测 (QEMU) 回退。返回是否成功。
 pub fn init() -> bool {
+    // ---- W20: mbi framebuffer (引导器交付; 真机 GRUB 路径) ----
+    if let Some((addr, pitch, w, h, bpp, _t)) = mbi_fb() {
+        if w == W && h == H && bpp == 32 && pitch >= W * 4 {
+            let bytes = (pitch as u64) * (h as u64);
+            let pages = ((bytes + 0xFFF) / 0x1000) as usize;
+            if crate::mem::map_phys_identity(addr, pages) {
+                // mbi 模式 vbe_id 无意义: note 0 (非 b0c5 -> 真机路径)
+                crate::platform::note_vbe_id(0);
+                unsafe {
+                    FB = Some(Fb {
+                        addr: addr as *mut u32,
+                        width: W,
+                        height: H,
+                        pitch: pitch,
+                        back: 0xC00000 as *mut u32,
+                    });
+                    SAVE_LFB_OK = true;
+                    fill_rect(0, 0, W, H, 0x000000);
+                }
+                serial::write_str("gfx  : mbi framebuffer adopted (addr=0x");
+                print_hex(addr);
+                serial::write_str(" pitch=0x");
+                print_hex(pitch as u64);
+                serial::write_line(") - GRUB/real-hw path");
+                return true;
+            }
+        }
+        serial::write_line("gfx  : mbi fb rejected (expect 1024x768x32) - VBE fallback");
+    }
     unsafe {
         // Bochs VBE (QEMU std VGA): 寄存器索引 ID=0x0 XRES=0x1 YRES=0x2
         // BPP=0x3 ENABLE=0x4 —— 错用 0x2..0x5 序列会把模式写歪且从未使能

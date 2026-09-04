@@ -93,7 +93,11 @@ pub fn hlt() {
 
 // ---------------------------------------------------------------------------
 // 多引导 v1 头：必须位于镜像文件前 8 KiB。
-// flags = 0x10003: 显式地址(meminfo + 模块对齐)，不请求视频 -> QEMU 保持 VGA 文本模式。
+// flags = 0x10003: 显式地址(meminfo + 模块对齐)，**不请求视频** (W20 A/B 实测:
+// QEMU 9.2 TCG -kernel 拒绝视频请求 -> 内核 0 输出, 参考机主路径必须无 bit2;
+// GRUB 真机路径的 mbi framebuffer 接收代码保留 (mbi bit12 一旦出现即接管)。
+// 视频请求双变体: scripts/ 记录 (docs/74 §4b) —— 真机镜像以 --video 标志
+// 生成 flags=0x10007 变体 (GRUB 会提供 framebuffer)。
 // 加载范围 0x100000..0x207000 (0x107000 字节)，入口 0x101000 (引导桩)。
 // ---------------------------------------------------------------------------
 #[repr(C, align(4))]
@@ -106,6 +110,11 @@ struct MultibootHeader {
     load_end_addr: u32,
     bss_end_addr: u32,
     entry_addr: u32,
+    // flags bit2 置位时以下 4 字段生效 (视频请求); 默认不动 (保持 8 字段头)
+    mode_type: u32,
+    width: u32,
+    height: u32,
+    depth: u32,
 }
 
 #[used]
@@ -126,6 +135,10 @@ static MB_HEADER: MultibootHeader = MultibootHeader {
     load_end_addr: 0x002C_0000,
     bss_end_addr: 0x002C_0000,
     entry_addr: 0x0010_1000,
+    mode_type: 0,
+    width: 1024,
+    height: 768,
+    depth: 32,
 };
 
 // ---------------------------------------------------------------------------
@@ -354,6 +367,25 @@ fn banner(magic: u32, mbi: u32) {
             } else {
                 out_line("");
             }
+            // W20: 引导器交付 framebuffer (GRUB 真机 / QEMU 视频请求)
+            if m.flags & 0x1000 != 0 {
+                out_raw("fb    : mbi framebuffer addr=0x");
+                out_hex_u64(m.fb_addr);
+                out_raw(" pitch=");
+                out_dec_u32(m.fb_pitch);
+                out_raw(" ");
+                out_dec_u32(m.fb_width);
+                out_raw("x");
+                out_dec_u32(m.fb_height);
+                out_raw(" bpp=");
+                out_dec_u32(m.fb_bpp as u32);
+                out_raw(" type=");
+                out_dec_u32(m.fb_type as u32);
+                out_line("");
+                crate::graphics::note_mbi_fb(m.fb_addr, m.fb_pitch, m.fb_width, m.fb_height, m.fb_bpp, m.fb_type);
+            } else {
+                out_line("fb    : no mbi framebuffer (VGA text fallback)");
+            }
         }
         None => out_line("mem   : mbi not present"),
     }
@@ -390,6 +422,16 @@ fn out_hex_u32(v: u32) {
     for i in 0..8 {
         let d = ((v >> (4 * i)) & 0xF) as u8;
         buf[7 - i] = if d < 10 { b'0' + d } else { b'a' + d - 10 };
+    }
+    out_raw(core::str::from_utf8(&buf).unwrap());
+}
+
+fn out_hex_u64(v: u64) {
+    out_raw("0x");
+    let mut buf = [0u8; 16];
+    for i in 0..16 {
+        let d = ((v >> (4 * i)) & 0xF) as u8;
+        buf[15 - i] = if d < 10 { b'0' + d } else { b'a' + d - 10 };
     }
     out_raw(core::str::from_utf8(&buf).unwrap());
 }
@@ -444,6 +486,13 @@ struct MbInfo {
     mem_upper_kb: u32,
     mmap_len: u32,
     mmap_addr: u32,
+    /// W20: framebuffer (mbi flags bit12; 引导器交付的 LFB 描述)
+    fb_addr: u64,
+    fb_pitch: u32,
+    fb_width: u32,
+    fb_height: u32,
+    fb_bpp: u8,
+    fb_type: u8,
 }
 
 /// 解析 multiboot v1 info 结构（偏移规范见 GRUB 文档）。
@@ -459,6 +508,12 @@ unsafe fn parse_mbi(ptr: u32) -> Option<MbInfo> {
         mem_upper_kb: 0,
         mmap_len: 0,
         mmap_addr: 0,
+        fb_addr: 0,
+        fb_pitch: 0,
+        fb_width: 0,
+        fb_height: 0,
+        fb_bpp: 0,
+        fb_type: 0,
     };
     if flags & 1 != 0 {
         m.mem_lower_kb = p.add(1).read();
@@ -467,6 +522,15 @@ unsafe fn parse_mbi(ptr: u32) -> Option<MbInfo> {
     if flags & 0x40 != 0 {
         m.mmap_len = p.add(11).read();
         m.mmap_addr = p.add(12).read();
+    }
+    if flags & 0x1000 != 0 {
+        // framebuffer: +23 u64 addr, +25 pitch, +26 w, +27 h, +28 bpp u8, +29 type u8
+        m.fb_addr = (p.add(23).read() as u64) | ((p.add(24).read() as u64) << 32);
+        m.fb_pitch = p.add(25).read();
+        m.fb_width = p.add(26).read();
+        m.fb_height = p.add(27).read();
+        m.fb_bpp = (p.add(28) as *const u8).read();
+        m.fb_type = (p.add(29) as *const u8).read();
     }
     Some(m)
 }

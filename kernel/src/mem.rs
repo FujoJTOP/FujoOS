@@ -471,6 +471,62 @@ pub fn alloc_frame_kernel() -> Option<u64> {
     frame_alloc_zero()
 }
 
+/// W20: 恒等映射任意物理地址 (LFB/设备 MMIO, >1GiB 区) —— 复用 PML4[0] 链,
+/// 未覆盖的 PDPT/PD/PT 按需分配; <0x40000000 (boot 桩恒等区) 直接视为已映射。
+/// 页属性: P|RW|PCD (设备内存, 不可缓存; 映射后直接以物理=虚拟使用)。
+pub fn map_phys_identity(phys: u64, n_pages: usize) -> bool {
+    if n_pages == 0 {
+        return true;
+    }
+    if phys >= 0x1000_0000_0000 {
+        return false; // v0: <4TiB (PML4[0] 恒等范围内)
+    }
+    unsafe {
+        let pm4 = read_cr3() as *mut u64;
+        let pdpt_raw = pm4.read();
+        if pdpt_raw & 1 == 0 {
+            return false;
+        }
+        let pdpt = (pdpt_raw & 0x000F_FFFF_FFFF_F000) as *mut u64;
+        let mut base = phys;
+        let mut left = n_pages;
+        while left > 0 {
+            let pdpti = ((base >> 30) & 0x3) as usize;
+            let pdi = ((base >> 21) & 0x1FF) as usize;
+            let pti = ((base >> 12) & 0x1FF) as usize;
+            // PDPT 槽
+            let mut pdpt_raw = pdpt.add(pdpti).read();
+            if pdpt_raw & 1 == 0 {
+                let new_pd = match alloc_frames_kernel(2) {
+                    Some(p) => p,
+                    None => return false,
+                };
+                pdpt.add(pdpti).write(new_pd | 0x3);
+                pdpt_raw = new_pd | 0x3;
+            }
+            let pd = (pdpt_raw & 0x000F_FFFF_FFFF_F000) as *mut u64;
+            // PD 槽
+            let mut pd_entry = pd.add(pdi).read();
+            if pd_entry & 1 == 0 {
+                let new_pt = match alloc_frame_kernel() {
+                    Some(p) => p,
+                    None => return false,
+                };
+                pd.add(pdi).write(new_pt | 0x3);
+                pd_entry = new_pt | 0x3;
+            }
+            let pt = (pd_entry & 0x000F_FFFF_FFFF_F000) as *mut u64;
+            let n = (512 - pti).min(left);
+            for k in 0..n {
+                pt.add(pti + k).write(base + (k as u64) * 0x1000 | 0x83); // P|RW|PCD
+            }
+            base += (n as u64) * 0x1000;
+            left -= n;
+        }
+    }
+    true
+}
+
 /// W13c3: 分配 n 个物理连续帧 (QEMU legacy vring 要求 used 独立 4K 页, 4096 对齐)。
 pub fn alloc_frames_kernel(n: usize) -> Option<u64> {
     if n == 0 || n > FRAME_PAGES {
