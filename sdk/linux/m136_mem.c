@@ -71,8 +71,10 @@ static void run(void)
     wrstr("m136: T2 usable>=2GiB\n");
     if (usable < (2UL << 30)) pass = 0;
 
-    wrstr("m136: T3 high>0\n");
-    if (high == 0) pass = 0;
+    wrstr("m136: T3 high mapping active\n");
+    /* high 字段统计 base>=4G 区 (-m 3072 无此区 = 0 属正常);
+       判定用 mapped_pages (>1GiB 映射已生效) */
+    if (mapped == 0) pass = 0;
 
     wrstr("m136: T4 mapped>0\n");
     if (mapped == 0) pass = 0;

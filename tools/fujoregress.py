@@ -83,9 +83,11 @@ CASES = [
      ["-machine", "q35",
       "-drive", "if=none,id=hd,file=" + os.path.join(ROOT, "sdk", "ahci.img") + ",format=raw",
       "-device", "ide-hd,drive=hd,bus=ide.0"], {}),
-    # W20 p6: 大内存拓扑 (>1GiB 可用区映射; 需要 -m 4096)
+    # W20 p6: 大内存拓扑 (>1GiB 可用区映射; -m 3072: QEMU 9.2 ≥4G 不提供
+    # multiboot module (A/B 实证), 3072 是"高位映射 + module"窗口最大值;
+    # PML4[1] (>4GiB) 验证记录 docs/79 (手动 -m 8192: 7167MiB mapped)
     ("m136-mem", "ELF64 x memtopo", "sdk/linux/m136_mem.elf", "M136 RESULT: PASS",
-     ["-m", "4096"], {}),
+     ["-m", "3072"], {"bootsleep": 13.0}),
     # W20 p7: PCI 枚举完整化 (多功能设备; q35 SATA 31.2)
     ("m137-pci", "ELF64 x pcienum", "sdk/linux/m137_pci.elf", "M137 RESULT: PASS",
      ["-machine", "q35"], {}),

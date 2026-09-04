@@ -48,8 +48,7 @@ pub fn usable_total() -> u64 {
     }
 }
 
-/// W20 p6: 映射 >1GiB 的可用物理 (恒等, ≤4GiB —— PML4[0] 虚拟上限;
-/// 4G+ 物理需高区窗口, 记录为下一阶段)。
+/// W20 p6/p8: 映射 >1GiB 的可用物理 (恒等, ≤4TiB; PML4[1..] 高区窗口)。
 /// 返回映射页数。boot 已恒等 0..1GiB。
 pub fn map_high_ram() -> u64 {
     let mut mapped = 0u64;
@@ -57,7 +56,7 @@ pub fn map_high_ram() -> u64 {
         for i in 0..MMAP_N {
             let (base, len) = MMAP_TAB[i];
             let lo = base.max(0x4000_0000);
-            let hi = (base + len).min(0x1_0000_0000);
+            let hi = (base + len).min(0x1000_0000_0000);
             if hi <= lo {
                 continue;
             }
@@ -600,18 +599,26 @@ pub fn map_phys_identity(phys: u64, n_pages: usize) -> bool {
         return true;
     }
     if phys >= 0x1000_0000_0000 {
-        return false; // v0: <4TiB (PML4[0] 恒等范围内)
+        return false; // v0: <4TiB
     }
     unsafe {
         let pm4 = read_cr3() as *mut u64;
-        let pdpt_raw = pm4.read();
-        if pdpt_raw & 1 == 0 {
-            return false;
-        }
-        let pdpt = (pdpt_raw & 0x000F_FFFF_FFFF_F000) as *mut u64;
         let mut base = phys;
         let mut left = n_pages;
         while left > 0 {
+            // W20 p8: PML4 级通用化 —— >4GiB 物理走 PML4[1..] (虚拟=物理恒等),
+            // 每级按需分配 (多级表帧自举于低区帧池)。
+            let pml4i = ((base >> 39) & 0x1FF) as usize;
+            let mut pml4_raw = pm4.add(pml4i).read();
+            if pml4_raw & 1 == 0 {
+                let new_pdpt = match alloc_frames_kernel(2) {
+                    Some(p) => p,
+                    None => return false,
+                };
+                pm4.add(pml4i).write(new_pdpt | 0x3);
+                pml4_raw = new_pdpt | 0x3;
+            }
+            let pdpt = (pml4_raw & 0x000F_FFFF_FFFF_F000) as *mut u64;
             let pdpti = ((base >> 30) & 0x3) as usize;
             let pdi = ((base >> 21) & 0x1FF) as usize;
             let pti = ((base >> 12) & 0x1FF) as usize;
