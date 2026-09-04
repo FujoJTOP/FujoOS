@@ -3,188 +3,340 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FujoOS — 零依赖 x86_64 原生操作系统内核</title>
-<meta name="description" content="FujoOS: 零第三方依赖的 x86_64 原生操作系统内核。内核、驱动、窗口系统、游戏层、开发工具链、AI OS 独有层全栈自研。">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0f14'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='16' fill='%234ec9b0' text-anchor='middle'%3EF%3C/text%3E%3C/svg%3E">
+<title>FujoOS · 零依赖 x86_64 原生操作系统内核</title>
+<meta name="description" content="FujoOS: 零第三方依赖的 x86_64 原生操作系统内核。内核、驱动、窗口系统、游戏层、开发工具链、AI OS 独有层全栈自研，M1-M137 全部 PASS。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230a0e13'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='16' fill='%2334d399' text-anchor='middle'%3EF%3C/text%3E%3C/svg%3E">
+<meta property="og:title" content="FujoOS · 零依赖 x86_64 原生操作系统内核">
+<meta property="og:description" content="内核、驱动、窗口系统、游戏层、开发工具链、AI OS 独有层全栈自研。M1-M137 全部 PASS，参考机回归 29/29。">
+<meta property="og:type" content="website">
 <style>
-  :root {
-    --bg: #0b0f14;
-    --panel: #111820;
-    --panel-2: #16202b;
-    --border: #22303d;
-    --text: #d5dde5;
-    --muted: #8a97a5;
-    --accent: #4ec9b0;
-    --accent-2: #7ee787;
-    --warn: #e3b341;
-    --mono: "JetBrains Mono", "Cascadia Code", Consolas, "Courier New", monospace;
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  body {
-    background: var(--bg); color: var(--text);
-    font-family: "Inter", "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-    line-height: 1.65;
-  }
-  ::selection { background: #2b4a43; }
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+/* ============================================================
+   FujoOS 官网 v2
+   Aesthetic: dark-tech / hacker (honest native CSS, no build step)
+   Design system: none imported. Single accent, dark theme lock.
+   Stack note: static GitHub Pages -> system fonts, no CDN deps.
+   ============================================================ */
+:root {
+  --bg: #0a0e13;
+  --bg-2: #0d131a;
+  --panel: #101821;
+  --panel-2: #131c26;
+  --line: #1d2a36;
+  --line-2: #26394a;
+  --text: #d6dee6;
+  --muted: #8b98a5;
+  --accent: #34d399;
+  --accent-dim: #1f4d3d;
+  --accent-ink: #05130d;
+  --mono: "Cascadia Code", "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --sans: "Segoe UI", system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --r: 14px;            /* shape lock: all-soft 14px */
+  --r-pill: 999px;      /* documented exception: CTAs are full-pill */
+}
+@media (prefers-color-scheme: light) {
+  :root { color-scheme: dark; } /* theme lock: page is dark-only */
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: var(--sans); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: #1d4a3c; color: #eafff5; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+.mono { font-family: var(--mono); }
 
-  header {
-    position: sticky; top: 0; z-index: 10;
-    background: rgba(11,15,20,.85); backdrop-filter: blur(8px);
-    border-bottom: 1px solid var(--border);
-  }
-  nav { display: flex; align-items: center; justify-content: space-between; height: 56px; }
-  .brand { font-family: var(--mono); font-weight: 700; color: var(--accent); letter-spacing: .5px; }
-  .brand span { color: var(--muted); font-weight: 400; }
-  .nav-links { display: flex; gap: 22px; font-size: 14px; }
-  .nav-links a { color: var(--text); }
-  .nav-links a:hover { color: var(--accent); }
-  @media (max-width: 640px) { .nav-links { display: none; } }
+/* ---------- nav ---------- */
+header {
+  position: sticky; top: 0; z-index: 50;
+  background: rgba(10, 14, 19, .78);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+nav { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+.brand { font-family: var(--mono); font-weight: 700; font-size: 17px; letter-spacing: .4px; color: var(--text); }
+.brand em { font-style: normal; color: var(--accent); }
+.nav-links { display: flex; align-items: center; gap: 20px; font-size: 14px; }
+.nav-links a { color: var(--muted); }
+.nav-links a:hover { color: var(--accent); text-decoration: none; }
+.nav-github {
+  font-family: var(--mono); font-size: 13px; font-weight: 600;
+  border: 1px solid var(--line-2); border-radius: var(--r-pill);
+  padding: 7px 16px; color: var(--text) !important;
+}
+.nav-github:hover { border-color: var(--accent-dim); background: rgba(52,211,153,.07); }
+@media (max-width: 680px) { .nav-links { gap: 12px; } .nav-links a:not(.nav-github) { display: none; } }
 
-  .hero { padding: 88px 0 64px; text-align: center; border-bottom: 1px solid var(--border);
-    background:
-      radial-gradient(900px 300px at 50% -60px, rgba(78,201,176,.12), transparent),
-      radial-gradient(600px 240px at 85% 10%, rgba(126,231,135,.06), transparent);
-  }
-  .hero .kicker {
-    font-family: var(--mono); font-size: 13px; color: var(--accent-2);
-    border: 1px solid #1e3a33; background: #0e1a17; border-radius: 999px;
-    padding: 4px 14px; display: inline-block; margin-bottom: 22px;
-  }
-  .hero h1 {
-    font-size: clamp(40px, 7vw, 68px); font-weight: 800; letter-spacing: -1px; line-height: 1.1;
-  }
-  .hero h1 .cursor { color: var(--accent-2); animation: blink 1.1s steps(1) infinite; }
-  @keyframes blink { 50% { opacity: 0; } }
-  .hero p.lead { max-width: 720px; margin: 22px auto 0; color: var(--muted); font-size: 17px; }
-  .hero .stats {
-    display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-top: 34px;
-    font-family: var(--mono); font-size: 13px;
-  }
-  .hero .stat {
-    border: 1px solid var(--border); background: var(--panel); border-radius: 10px;
-    padding: 10px 18px; min-width: 128px;
-  }
-  .hero .stat b { display: block; color: var(--accent); font-size: 18px; }
-  .hero .stat span { color: var(--muted); }
-  .cta { margin-top: 40px; display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
-  .btn {
-    display: inline-block; padding: 12px 26px; border-radius: 10px; font-weight: 600; font-size: 15px;
-    border: 1px solid var(--accent); color: var(--accent); transition: .15s;
-  }
-  .btn:hover { background: rgba(78,201,176,.1); text-decoration: none; }
-  .btn.primary { background: var(--accent); color: #08120f; }
-  .btn.primary:hover { background: #5fd8c0; }
+/* ---------- hero (asymmetric split: copy left, terminal right) ---------- */
+.hero {
+  border-bottom: 1px solid var(--line);
+  background:
+    linear-gradient(rgba(52,211,153,.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(52,211,153,.035) 1px, transparent 1px),
+    radial-gradient(720px 340px at 78% 8%, rgba(52,211,153,.10), transparent 62%),
+    var(--bg-2);
+  background-size: 44px 44px, 44px 44px, auto, auto;
+}
+.hero-inner {
+  display: grid; grid-template-columns: 1.05fr .95fr; gap: 48px;
+  align-items: center; padding: 72px 0 84px;
+}
+@media (max-width: 900px) { .hero-inner { grid-template-columns: 1fr; padding: 52px 0 60px; } }
+.hero-copy .eyebrow {
+  font-family: var(--mono); font-size: 12.5px; letter-spacing: .12em;
+  color: var(--accent); margin-bottom: 18px;
+}
+.hero-copy .eyebrow::before { content: "$ "; color: var(--muted); }
+.hero-copy h1 { font-size: clamp(34px, 5.4vw, 56px); line-height: 1.12; font-weight: 800; letter-spacing: -.02em; }
+.hero-copy h1 .accent { color: var(--accent); }
+.hero-copy .lead { margin-top: 18px; color: var(--muted); font-size: 16px; max-width: 44ch; }
+.hero-cta { margin-top: 32px; display: flex; gap: 14px; flex-wrap: wrap; }
+.btn {
+  display: inline-block; font-weight: 600; font-size: 15px;
+  border-radius: var(--r-pill); padding: 12px 26px;
+  transition: transform .12s ease, background .15s ease, border-color .15s ease;
+  white-space: nowrap;
+}
+.btn:active { transform: translateY(1px) scale(.985); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover { background: #4fe0ab; text-decoration: none; }
+.btn.ghost { border: 1px solid var(--line-2); color: var(--text); }
+.btn.ghost:hover { border-color: var(--accent-dim); color: var(--accent); background: rgba(52,211,153,.06); text-decoration: none; }
 
-  section { padding: 64px 0; border-bottom: 1px solid var(--border); }
-  section h2 {
-    font-size: 28px; font-weight: 800; margin-bottom: 8px;
-    display: flex; align-items: center; gap: 12px;
-  }
-  section h2::before {
-    content: ""; width: 10px; height: 26px; border-radius: 3px;
-    background: linear-gradient(var(--accent), var(--accent-2));
-  }
-  section .sub { color: var(--muted); margin-bottom: 36px; }
+/* terminal window */
+.term {
+  border: 1px solid var(--line-2); border-radius: var(--r);
+  background: #070c11; overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0,0,0,.45), 0 0 0 1px rgba(52,211,153,.05);
+}
+.term-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; border-bottom: 1px solid var(--line);
+  background: var(--panel); font-family: var(--mono); font-size: 12px; color: var(--muted);
+}
+.term-body { padding: 16px 18px; font-family: var(--mono); font-size: 12.8px; line-height: 1.75; min-height: 250px; color: #b9c6d2; }
+.term-body .t { color: var(--muted); }
+.term-body .ok { color: var(--accent); }
+.term-body .prompt-line { color: var(--accent); white-space: pre-wrap; }
+.term-body .cursor { display: inline-block; width: 8px; height: 15px; background: var(--accent); vertical-align: -2px; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+@media (max-width: 900px) { .term-body { min-height: 0; } }
 
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 16px; }
-  .card {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 20px 22px;
-    transition: .15s;
-  }
-  .card:hover { border-color: #2d4a44; background: var(--panel-2); }
-  .card h3 { font-size: 15px; margin-bottom: 8px; font-family: var(--mono); color: var(--accent); }
-  .card p { font-size: 13.5px; color: var(--muted); }
+/* ---------- metrics strip ---------- */
+.metrics { border-bottom: 1px solid var(--line); background: var(--bg); }
+.metrics-inner { display: grid; grid-template-columns: repeat(5, 1fr); }
+.metrics-inner > div { padding: 26px 12px; text-align: center; border-left: 1px solid var(--line); }
+.metrics-inner > div:first-child { border-left: none; }
+.metrics b { display: block; font-family: var(--mono); font-size: 26px; font-weight: 700; color: var(--accent); }
+.metrics span { font-size: 12.5px; color: var(--muted); }
+@media (max-width: 700px) { .metrics-inner { grid-template-columns: repeat(2, 1fr); } .metrics-inner > div { border-top: 1px solid var(--line); } }
 
-  pre {
-    background: #0d1319; border: 1px solid var(--border); border-radius: 12px;
-    padding: 20px 22px; overflow-x: auto; font-family: var(--mono);
-    font-size: 13px; color: #c9d4dd; line-height: 1.6;
-  }
-  pre .c { color: #5d6d7d; }
-  pre .g { color: var(--accent-2); }
-  pre .k { color: #79b8ff; }
+/* ---------- sections ---------- */
+section { padding: 76px 0; border-bottom: 1px solid var(--line); }
+section h2 { font-size: 28px; font-weight: 800; letter-spacing: -.01em; }
+section .sub { color: var(--muted); margin-top: 8px; }
 
-  .arch { white-space: pre; font-family: var(--mono); font-size: 13px; line-height: 1.55; color: #c9d4dd; overflow-x: auto; }
-  .arch em { color: var(--accent); font-style: normal; }
+/* ---------- bento features ---------- */
+.bento { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 36px; }
+@media (max-width: 900px) { .bento { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .bento { grid-template-columns: 1fr; } }
+.cell {
+  border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--panel); padding: 20px 22px;
+  transition: border-color .15s ease, background .15s ease, transform .15s ease;
+}
+.cell:hover { border-color: var(--accent-dim); background: var(--panel-2); transform: translateY(-2px); }
+.cell h3 { font-family: var(--mono); font-size: 13.5px; color: var(--accent); margin-bottom: 8px; }
+.cell p { font-size: 13px; color: var(--muted); line-height: 1.65; }
+.cell.big { grid-column: span 2; }
+@media (max-width: 900px) { .cell.big { grid-column: span 2; } }
+@media (max-width: 560px) { .cell.big { grid-column: span 1; } }
+/* visual variation: big kernel cell gets tinted mesh + monospace stat */
+.cell.big {
+  background:
+    radial-gradient(340px 180px at 85% 0%, rgba(52,211,153,.12), transparent 65%),
+    linear-gradient(180deg, rgba(52,211,153,.05), transparent 60%),
+    var(--panel);
+}
+.cell.big .big-stats { display: flex; gap: 18px; margin-top: 16px; font-family: var(--mono); font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.cell.big .big-stats b { color: var(--accent); font-weight: 600; }
+/* visual variation: ABI cell paints a code line */
+.cell.code p.code { font-family: var(--mono); font-size: 12px; color: #9fb4c4; background: #0a0f15; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-top: 10px; }
+.cell.code p.code .hl { color: var(--accent); }
+/* visual variation: AI OS cell tinted */
+.cell.ai { background: linear-gradient(160deg, rgba(52,211,153,.09), rgba(52,211,153,.02) 55%), var(--panel); }
 
-  ul.plain { list-style: none; }
-  ul.plain li { padding: 10px 0; border-bottom: 1px dashed var(--border); font-size: 14.5px; }
-  ul.plain li:last-child { border-bottom: none; }
-  ul.plain li::before { content: "▸ "; color: var(--accent); }
+/* ---------- arch diagram (terminal block, gradient edge) ---------- */
+.arch-frame { position: relative; border-radius: var(--r); padding: 1px; margin-top: 36px; background: linear-gradient(120deg, rgba(52,211,153,.35), var(--line-2) 40%, rgba(52,211,153,.12)); }
+.arch { background: #070c11; border-radius: calc(var(--r) - 1px); padding: 26px 30px; overflow-x: auto; }
+.arch pre { font-family: var(--mono); font-size: 13px; line-height: 1.7; color: #a9bccb; }
+.arch pre .k { color: var(--accent); }
+.arch pre .c { color: #5b6a78; }
 
-  .docs-links { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
-  .docs-links a {
-    display: block; padding: 12px 16px; border: 1px solid var(--border); border-radius: 10px;
-    background: var(--panel); color: var(--text); font-size: 14px;
-  }
-  .docs-links a:hover { border-color: var(--accent); text-decoration: none; }
-  .docs-links a small { display: block; color: var(--muted); font-size: 12px; }
+/* ---------- quickstart ---------- */
+.start-grid { display: grid; grid-template-columns: .9fr 1.1fr; gap: 40px; margin-top: 36px; align-items: start; }
+@media (max-width: 900px) { .start-grid { grid-template-columns: 1fr; } }
+.steps { list-style: none; }
+.steps li { display: flex; gap: 16px; padding: 18px 0; border-bottom: 1px dashed var(--line); font-size: 14.5px; }
+.steps li:last-child { border-bottom: none; }
+.steps .n {
+  flex: 0 0 30px; height: 30px; border-radius: 50%;
+  background: rgba(52,211,153,.10); border: 1px solid var(--accent-dim);
+  color: var(--accent); font-family: var(--mono); font-size: 13px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; margin-top: 3px;
+}
+.steps .s b { display: block; font-size: 14.5px; }
+.steps .s span { color: var(--muted); font-size: 13px; }
+.term .term-body pre { font-family: var(--mono); font-size: 12.6px; line-height: 1.8; color: #b9c6d2; white-space: pre-wrap; word-break: break-all; }
+.term .term-body pre .c { color: #5b6a78; }
+.term .term-body pre .g { color: var(--accent); }
+.term .term-body pre .k { color: #79b8ff; }
 
-  footer { padding: 40px 0 56px; text-align: center; color: var(--muted); font-size: 13px; }
-  footer .mono { font-family: var(--mono); }
+/* ---------- evidence (border-left list, not cards) ---------- */
+.ev-list { margin-top: 36px; border-left: 2px solid var(--accent-dim); padding-left: 28px; display: flex; flex-direction: column; gap: 22px; max-width: 760px; }
+.ev-item .ev-head { font-family: var(--mono); font-size: 13.5px; font-weight: 600; color: var(--text); }
+.ev-item .ev-head .tick { color: var(--accent); }
+.ev-item p { font-size: 13.5px; color: var(--muted); margin-top: 3px; }
+.ev-item p code { font-family: var(--mono); font-size: 12.5px; background: #0a0f15; border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; color: #9fd8bd; }
+
+/* ---------- docs links ---------- */
+.doc-row { margin-top: 36px; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.doc-row a {
+  display: flex; align-items: baseline; gap: 10px; padding: 14px 16px;
+  border: 1px solid var(--line); border-radius: var(--r); background: var(--panel);
+  transition: border-color .15s ease, background .15s ease;
+}
+.doc-row a:hover { border-color: var(--accent-dim); background: var(--panel-2); text-decoration: none; }
+.doc-row a .fn { font-family: var(--mono); font-size: 12.5px; color: var(--accent); white-space: nowrap; }
+.doc-row a .desc { font-size: 13px; color: var(--muted); }
+.doc-row a .arr { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 13px; }
+
+/* ---------- footer ---------- */
+footer { padding: 44px 0 56px; }
+.foot-inner { display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; }
+.foot-inner .brand { font-size: 15px; }
+.foot-inner p { color: var(--muted); font-size: 13px; font-family: var(--mono); }
+@media (max-width: 700px) { .foot-inner { flex-direction: column; align-items: flex-start; } }
+
+/* ---------- reveal-on-scroll (IntersectionObserver, reduced-motion aware) ---------- */
+.reveal { opacity: 0; transform: translateY(14px); transition: opacity .5s ease, transform .5s ease; }
+.reveal.in { opacity: 1; transform: none; }
+.reveal[data-delay] { transition-delay: var(--d); }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .reveal, .reveal.in { opacity: 1; transform: none; transition: none; }
+  .term-body .cursor { animation: none; }
+  * { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
 </style>
 </head>
 <body>
 
 <header>
   <nav class="wrap">
-    <div class="brand">Fujo<span>OS</span></div>
+    <div class="brand"><a href="#" style="color:inherit">Fujo<em>OS</em></a></div>
     <div class="nav-links">
       <a href="#features">特性</a>
       <a href="#arch">架构</a>
       <a href="#start">快速开始</a>
       <a href="#evidence">证据</a>
       <a href="#docs">文档</a>
-      <a href="https://github.com/FujoJTOP/FujoOS" target="_blank" rel="noopener">GitHub ↗</a>
+      <a class="nav-github" href="https://github.com/FujoJTOP/FujoOS" target="_blank" rel="noopener">GitHub ↗</a>
     </div>
   </nav>
 </header>
 
 <div class="hero">
-  <div class="wrap">
-    <div class="kicker">x86_64 · Rust no_std · 零第三方依赖 · AI OS 独有层</div>
-    <h1>FujoOS<span class="cursor">_</span></h1>
-    <p class="lead">
-      一个零第三方依赖的 x86_64 原生操作系统内核 —— 内核、驱动、窗口系统、游戏层、
-      开发工具链、AI OS 独有层全栈自研。三平台二进制加载器子集
-      (Linux ELF / macOS Mach-O / Windows PE32+) 可原地运行，统一打包为自包含 <code>.run</code> (FUJR v1)。
-    </p>
-    <div class="stats">
-      <div class="stat"><b id="stat-stars">…</b><span>GitHub stars</span></div>
-      <div class="stat"><b id="stat-commits">…</b><span>提交 (主分支)</span></div>
-      <div class="stat"><b>137</b><span>里程碑 M1–M137 PASS</span></div>
-      <div class="stat"><b>38</b><span>CI 用例 · 回归 29/29</span></div>
+  <div class="wrap hero-inner">
+    <div class="hero-copy">
+      <p class="eyebrow">rust no_std · x86_64 · zero-dependency</p>
+      <h1>从零手写一个<br><span class="accent">x86_64</span> 操作系统内核</h1>
+      <p class="lead">内核、驱动、窗口、游戏层、工具链、AI OS 层全栈自研，零第三方依赖。三平台二进制可原地运行。</p>
+      <div class="hero-cta">
+        <a class="btn primary" href="https://github.com/FujoJTOP/FujoOS" target="_blank" rel="noopener">前往 GitHub</a>
+        <a class="btn ghost" href="#start">看看怎么跑起来</a>
+      </div>
     </div>
-    <div class="cta">
-      <a class="btn primary" href="https://github.com/FujoJTOP/FujoOS" target="_blank" rel="noopener">前往 GitHub 仓库</a>
-      <a class="btn" href="#start">30 秒跑起来</a>
+    <div class="term" aria-hidden="true">
+      <div class="term-bar"><span>fujokernel@qemu: ~</span><span>80 × 25 · mono</span></div>
+      <div class="term-body" id="bootlog"></div>
     </div>
+  </div>
+</div>
+
+<div class="metrics">
+  <div class="wrap metrics-inner">
+    <div><b data-count="137">0</b><span>里程碑 M1-M137 PASS</span></div>
+    <div><b data-count="29">0</b><span>参考机回归 29/29</span></div>
+    <div><b data-count="38">0</b><span>CI 用例</span></div>
+    <div><b data-count="39">0</b><span>Linux syscalls</span></div>
+    <div><b data-count="94">0</b><span>输入延迟 μs (avg)</span></div>
   </div>
 </div>
 
 <section id="features">
   <div class="wrap">
     <h2>特性一览</h2>
-    <p class="sub">从长模式内核到 AI OS 层，全栈自研。</p>
-    <div class="grid">
-      <div class="card"><h3>内核</h3><p>x86_64 长模式 · IDT/GDT/TSS · PIT 100Hz · 抢占式多任务 (PIT round-robin, 亲和/均衡统计) · 用户异常隔离 · 双 TSS + IRQ 路由</p></div>
-      <div class="card"><h3>内存</h3><p>虚拟内存 v0 · 按需零页 · 帧分配器 · U-位硬化 · 权重 mmap 按需页 (0x7Cxx) · &gt;1GiB 高内存恒等映射</p></div>
-      <div class="card"><h3>ABI</h3><p>ELF64 / Mach-O / PE32+ 加载器子集 · Linux x86-64 39 syscalls · darwin/win32 shim 家族 · .run (FUJR v1) 容器</p></div>
-      <div class="card"><h3>存储</h3><p>ATA PIO + FJFS 4MiB 卷 (格式化/持久化, 跨重启 PASS) · AHCI/SATA 真盘 (ICH9 q35) · 页缓存/预读 · 存档沙箱</p></div>
-      <div class="card"><h3>网络</h3><p>virtio-net legacy · IPv4/UDP 往返 (ARP 应答) · 最小 TCP 服务器 SYN/ACK/PSH echo · IPv4/TCP echo</p></div>
-      <div class="card"><h3>图形</h3><p>VBE 1024x768x32 + LFB · 5x7 位图字体 · 软件光栅 rect/tri/line · blit/scale · 着色器字节码 VM</p></div>
-      <div class="card"><h3>输入</h3><p>PS/2 键盘 IRQ1 · 鼠标 IRQ12 (8042 序列/命中测试) · XInput · IME (拼音候选)</p></div>
-      <div class="card"><h3>音频</h3><p>AC97 探测/音量 · 4ch 混音器 + LPF/增益链</p></div>
-      <div class="card"><h3>窗口</h3><p>wmsg 窗口类表/64 消息队/刷新 (0x55xx) · fujokit button/textbox/list</p></div>
-      <div class="card"><h3>游戏</h3><p>游戏模式 (0x66xx) · Pong / Breakout 自研引擎 · 输入延迟基准 avg 94µs (0x6Fxx)</p></div>
-      <div class="card"><h3>AI OS</h3><p>模型权重 mmap · 模型卡 (权限/计费/审计) · 会话检查点 · fujoctx 摘要/上下文压缩 · 能力表+审计 · 意图路由 · 推理执行器 · 注册表+fupm · 异常哨兵</p></div>
-      <div class="card"><h3>工具链</h3><p>系统内汇编器 (0x70xx) → 链接器 (0x71xx) → fujocc 编译壳 C→ELF64 全链 · 编辑器 · 调试器 TF/int3 · trace · 性能窗口 · 单测/泄漏/minidump</p></div>
-      <div class="card"><h3>交付</h3><p>fujopack / fujorun · fujoci 38 用例 · onebuild 3/3 · live 镜像+安装器 (0x87xx) · 签名/更新 (0x88xx)</p></div>
-      <div class="card"><h3>真机化 (W20)</h3><p>平台检测 (Bochs VBE 证据链) · LAPIC ICR 双语义运行时切换 · GRUB2 真机引导 · AHCI 真盘 + FJFS 真机持久化 · PCI 多函数枚举</p></div>
+    <p class="sub">从长模式内核到 AI OS 层，全部自己写。</p>
+    <div class="bento">
+      <div class="cell big reveal" data-delay="0">
+        <h3>内核核心</h3>
+        <p>x86_64 长模式 · IDT/GDT/TSS · PIT 100Hz 抢占式多任务 (PIT round-robin, 亲和/均衡统计) · 虚拟内存 v0 · 按需零页 · 帧分配器 · U-位硬化 · 权重 mmap 按需页 · 用户异常隔离 · 双 TSS + IRQ 路由</p>
+        <div class="big-stats">
+          <span><b>0x00-0x8F</b> syscall 面</span>
+          <span><b>&gt;1GiB</b> 高内存恒等映射</span>
+          <span><b>per-task</b> 页表链</span>
+        </div>
+      </div>
+      <div class="cell reveal" data-delay="60">
+        <h3>存储</h3>
+        <p>ATA PIO + FJFS 4MiB 卷 (格式化/持久化, 跨重启 PASS) · AHCI/SATA 真盘 (ICH9 q35) · 页缓存/预读 · 存档沙箱</p>
+      </div>
+      <div class="cell code reveal" data-delay="120">
+        <h3>ABI · 三平台加载器</h3>
+        <p>ELF64 / Mach-O / PE32+ 原地运行，统一打包 .run (FUJR)。</p>
+        <p class="code">$ os run<span class="hl"> busybox</span> echo m131-ok</p>
+      </div>
+      <div class="cell reveal" data-delay="0">
+        <h3>网络</h3>
+        <p>virtio-net legacy · IPv4/UDP 往返 (ARP 应答) · 最小 TCP 服务器 SYN/ACK/PSH echo</p>
+      </div>
+      <div class="cell reveal" data-delay="60">
+        <h3>图形</h3>
+        <p>VBE 1024x768x32 + LFB · 5x7 位图字体 · 软件光栅 rect/tri/line · blit/scale · 着色器字节码 VM</p>
+      </div>
+      <div class="cell reveal" data-delay="120">
+        <h3>桌面</h3>
+        <p>wmsg 窗口类表/64 消息队/刷新 (0x55xx) · fujokit button/textbox/list · IME 拼音候选</p>
+      </div>
+      <div class="cell reveal" data-delay="0">
+        <h3>游戏</h3>
+        <p>游戏模式 (0x66xx) · Pong / Breakout 自研引擎 · 输入延迟基准 avg 94µs (0x6Fxx)</p>
+      </div>
+      <div class="cell ai reveal" data-delay="60">
+        <h3>AI OS 层</h3>
+        <p>模型权重 mmap · 模型卡 (权限/计费/审计) · 会话检查点 · fujoctx 摘要/上下文压缩 · 意图路由 · 推理执行器 · 异常哨兵</p>
+      </div>
+      <div class="cell reveal" data-delay="120">
+        <h3>工具链</h3>
+        <p>系统内汇编器 (0x70xx) → 链接器 (0x71xx) → fujocc 编译壳 C→ELF64 全链 · 调试器 TF/int3 · trace · 性能窗口 · 泄漏/minidump</p>
+      </div>
+      <div class="cell reveal" data-delay="0">
+        <h3>音频</h3>
+        <p>AC97 探测/音量 · 4ch 混音器 + LPF/增益链</p>
+      </div>
+      <div class="cell reveal" data-delay="60">
+        <h3>真机化 (W20)</h3>
+        <p>平台检测 (Bochs VBE 证据链 → is_qemu) · LAPIC ICR 双语义运行时切换 · GRUB2 真机引导 · PCI 多函数枚举</p>
+      </div>
+      <div class="cell reveal" data-delay="120">
+        <h3>交付</h3>
+        <p>fujopack / fujorun · fujoci 38 用例 · onebuild 3/3 · live 镜像+安装器 (0x87xx) · 签名/更新 (0x88xx)</p>
+      </div>
     </div>
   </div>
 </section>
@@ -193,49 +345,70 @@
   <div class="wrap">
     <h2>架构蓝图</h2>
     <p class="sub">长模式内核 (Rust, no_std, 零依赖)，自底向上全栈。</p>
-    <pre class="arch"><span class="c">长模式内核 (Rust, no_std, 零依赖)</span>
-  ├─ <em>内存 / 调度 / 异常</em>   → 三 ABI 共存 (ELF / Mach-O / PE)
-  ├─ <em>驱动</em>               → VBE / PS2 / ATA / AHCI / AC97 / virtio / PIT
-  ├─ <em>桌面</em>               → wmsg 窗口 / fujokit / IME / 剪贴板 / 主题
-  ├─ <em>游戏层</em>             → 光栅 / blit / 着色器 VM / 混音 / 游戏模式
-  ├─ <em>工具链</em>             → asm / ld / fujocc / 调试 / trace / CI
-  ├─ <em>AI OS</em>              → 权重页 / 模型卡 / 会话 / 审计 / 路由 / 执行器
-  └─ <em>交付</em>               → live / 安装 / 签名更新 / .run 容器 (FUJR v1)</pre>
+    <div class="arch-frame reveal">
+      <div class="arch">
+<pre><span class="c"># fujo - kernel layout</span>
+长模式内核 (Rust, no_std, 零依赖)
+  ├─ <span class="k">内存 / 调度 / 异常</span>  → 三 ABI 共存 (ELF / Mach-O / PE)
+  ├─ <span class="k">驱动</span>              → VBE / PS2 / ATA / AHCI / AC97 / virtio / PIT
+  ├─ <span class="k">桌面</span>              → wmsg 窗口 / fujokit / IME / 剪贴板 / 主题
+  ├─ <span class="k">游戏层</span>            → 光栅 / blit / 着色器 VM / 混音 / 游戏模式
+  ├─ <span class="k">工具链</span>            → asm / ld / fujocc / 调试 / trace / CI
+  ├─ <span class="k">AI OS</span>             → 权重页 / 模型卡 / 会话 / 审计 / 路由 / 执行器
+  └─ <span class="k">交付</span>              → live / 安装 / 签名更新 / .run 容器 (FUJR v1)</pre>
+      </div>
+    </div>
   </div>
 </section>
 
 <section id="start">
   <div class="wrap">
-    <h2>快速开始 (Windows 开发机 + QEMU)</h2>
-    <p class="sub">依赖: <code>rustup target add x86_64-unknown-none</code> 与 <code>winget install LLVM.LLVM qemu</code>。</p>
-    <pre><span class="c"># 1) 构建内核 (改 src 后确认出现 "Compiling" 行)</span>
+    <h2>快速开始</h2>
+    <p class="sub">Windows 开发机 + QEMU，30 秒看到内核启动。</p>
+    <div class="start-grid">
+      <ol class="steps">
+        <li class="reveal"><span class="n">1</span><span class="s"><b>装依赖</b><span>rustup target add x86_64-unknown-none · winget install LLVM.LLVM qemu</span></span></li>
+        <li class="reveal"><span class="n">2</span><span class="s"><b>构建内核</b><span>cd kernel; cargo build --release; 确认出现 "Compiling" 行</span></span></li>
+        <li class="reveal"><span class="n">3</span><span class="s"><b>启动参考机</b><span>QEMU 无头拉起，monitor 注入 "os run hermes"</span></span></li>
+        <li class="reveal"><span class="n">4</span><span class="s"><b>跑回归</b><span>fujoregress.py 29/29 · ci.py 38 用例 · onebuild 3/3</span></span></li>
+      </ol>
+      <div class="term reveal">
+        <div class="term-bar"><span>powershell / developer</span><span>Windows</span></div>
+        <div class="term-body">
+<pre><span class="c"># 1) build kernel</span>
 cd kernel; cargo build --release; cd ..
 
-<span class="c"># 2) 扁平化 (pad 与 MB_HEADER 一致: 0x1A0000)</span>
-python tools/flatten_elf.py kernel/target/x86_64-unknown-none/release/fujo-kernel kernel/fujo-kernel.bin --pad 0x1A0000
+<span class="c"># 2) flatten (pad matches MB_HEADER: 0x1A0000)</span>
+python tools/flatten_elf.py \
+  kernel/target/x86_64-unknown-none/release/fujo-kernel \
+  kernel/fujo-kernel.bin --pad 0x1A0000
 
-<span class="c"># 3) 启动 (任意 demo 作为 initrd; monitor 注入 "os run hermes")</span>
-qemu-system-x86_64 -m 256M -kernel kernel/fujo-kernel.bin -initrd sdk/linux/m30_linux.elf `
-  -monitor telnet:127.0.0.1:4568,server,nowait -display none -no-reboot
-<span class="c"># monitor: sendkey o s spc r u n spc h e r m e s ret</span>
+<span class="c"># 3) boot headless (any demo as initrd)</span>
+qemu-system-x86_64 -m 256M -kernel kernel/fujo-kernel.bin \
+  -initrd sdk/linux/m30_linux.elf -display none -no-reboot
 
-<span class="c"># 4) 回归 / 一键</span>
-python tools/fujoregress.py     <span class="c"># 兼容矩阵 9 用例</span>
-python tools/ci.py              <span class="c"># CI 38 用例</span>
-pwsh scripts/onebuild.ps1       <span class="c"># hello/gui/game 模板构建+运行 3/3</span></pre>
+<span class="c"># monitor: sendkey <span class="g">o s spc r u n spc h e r m e s ret</span></span>
+
+<span class="c"># 4) regression / one-click</span>
+python tools/fujoregress.py   <span class="c"># 29/29</span>
+python tools/ci.py            <span class="c"># 38 cases</span>
+pwsh scripts/onebuild.ps1     <span class="c"># 3/3</span></pre>
+        </div>
+      </div>
+    </div>
   </div>
 </section>
 
 <section id="evidence">
   <div class="wrap">
     <h2>可验证的证据</h2>
-    <p class="sub">结论来自回归闭环，不是口头声明。</p>
-    <ul class="plain">
-      <li><b>回归闭环</b>: <code>python tools/fujoregress.py</code> 全量 29/29 (M133–M137 每波 PASS, m137: PCI 多函数 6 设备)</li>
-      <li><b>真机证据</b>: GRUB2 multiboot v1 真机引导 (docs/74 §4) · AHCI/SATA 真盘持久化回读 (docs/75/76/79) · LAPIC 平台双语义 + CPUID/MSR 探测 (docs/74)</li>
-      <li><b>30 秒复现</b>: 上方快速开始命令 —— QEMU 无头启动 → monitor 注入 <code>os run hermes</code></li>
-      <li><b>CLOSED 里程碑</b>: M1–M137 全部 PASS，v1.0 发布 (docs/49-release-notes.md)</li>
-    </ul>
+    <p class="sub">结论来自回归闭环，不是口头声明。全部命令在仓库内可复现。</p>
+    <div class="ev-list">
+      <div class="ev-item reveal"><p class="ev-head"><span class="tick">✓</span> 回归闭环</p><p><code>python tools/fujoregress.py</code> 全量 29/29，M133-M137 每波 PASS (m137: PCI 多函数 6 设备)</p></div>
+      <div class="ev-item reveal"><p class="ev-head"><span class="tick">✓</span> 30 秒复现</p><p>上方命令直接跑: QEMU 无头启动 → monitor 注入 <code>os run hermes</code></p></div>
+      <div class="ev-item reveal"><p class="ev-head"><span class="tick">✓</span> 真机证据</p><p>GRUB2 multiboot v1 真机引导 (docs/74 §4) · AHCI/SATA 真盘持久化回读 (docs/75/76/79) · LAPIC 平台双语义 + CPUID/MSR 探测 (docs/74)</p></div>
+      <div class="ev-item reveal"><p class="ev-head"><span class="tick">✓</span> 发布基线</p><p>M1-M137 全部 PASS (docs/08-roadmap-100.md 100 项勾选 + W13-W20 机制线) · v1.0 发布 (docs/49-release-notes.md)</p></div>
+    </div>
   </div>
 </section>
 
@@ -243,41 +416,101 @@ pwsh scripts/onebuild.ps1       <span class="c"># hello/gui/game 模板构建+�
   <div class="wrap">
     <h2>文档与路线图</h2>
     <p class="sub">仓库 docs/ 内 90+ 份里程碑文档，每步都是接口 / 实现 / 实测 / 踩坑四段式。</p>
-    <div class="docs-links">
-      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/08-roadmap-100.md" target="_blank" rel="noopener">100 里程碑路线图<small>勾选状态 · 全部完成 (v1.0)</small></a>
-      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/49-release-notes.md" target="_blank" rel="noopener">v1.0 发布公告<small>发布说明与验收数据</small></a>
-      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/29-sdk-close.md" target="_blank" rel="noopener">SDK 教程<small>模板 hello / game / gui 上手</small></a>
-      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/10-2d-engine.md" target="_blank" rel="noopener">2D 引擎分析<small>fujogl 设计与选型</small></a>
-      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/09-dxvk-feasibility.md" target="_blank" rel="noopener">DXVK 可行性<small>图形翻译层评估</small></a>
-      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/01-architecture.md" target="_blank" rel="noopener">总体架构<small>模块划分与数据流</small></a>
+    <div class="doc-row">
+      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/08-roadmap-100.md" target="_blank" rel="noopener"><span class="fn">08-roadmap-100.md</span><span class="desc">100 里程碑路线图, 全部完成</span><span class="arr">↗</span></a>
+      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/49-release-notes.md" target="_blank" rel="noopener"><span class="fn">49-release-notes.md</span><span class="desc">v1.0 发布公告</span><span class="arr">↗</span></a>
+      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/29-sdk-close.md" target="_blank" rel="noopener"><span class="fn">29-sdk-close.md</span><span class="desc">SDK 教程 · hello/game/gui 模板</span><span class="arr">↗</span></a>
+      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/01-architecture.md" target="_blank" rel="noopener"><span class="fn">01-architecture.md</span><span class="desc">总体架构 · 模块划分</span><span class="arr">↗</span></a>
+      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/10-2d-engine.md" target="_blank" rel="noopener"><span class="fn">10-2d-engine.md</span><span class="desc">2D 引擎分析 · fujogl</span><span class="arr">↗</span></a>
+      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/09-dxvk-feasibility.md" target="_blank" rel="noopener"><span class="fn">09-dxvk-feasibility.md</span><span class="desc">DXVK 可行性评估</span><span class="arr">↗</span></a>
     </div>
   </div>
 </section>
 
 <footer>
-  <div class="wrap">
-    <p><span class="mono">FujoOS</span> · 零依赖 x86_64 原生内核 · <a href="https://github.com/FujoJTOP/FujoOS" target="_blank" rel="noopener">github.com/FujoJTOP/FujoOS</a></p>
-    <p style="margin-top:8px">状态: v1.0 发布 → W20 真机化 · 参考机回归 29/29 · CI 38 用例 · onebuild 3/3</p>
+  <div class="wrap foot-inner">
+    <div class="brand">Fujo<em>OS</em></div>
+    <p><span id="foot-stars">☆</span> on GitHub · <a href="https://github.com/FujoJTOP/FujoOS" target="_blank" rel="noopener">github.com/FujoJTOP/FujoOS</a></p>
   </div>
 </footer>
 
 <script>
-  (function () {
-    var q = function (id) { return document.getElementById(id); };
-    fetch("https://api.github.com/repos/FujoJTOP/FujoOS")
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (d.stargazers_count != null) q("stat-stars").textContent = d.stargazers_count;
-      }).catch(function () { q("stat-stars").textContent = "—"; });
-    fetch("https://api.github.com/repos/FujoJTOP/FujoOS/commits?per_page=1")
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (Array.isArray(d) && d[0]) {
-          q("stat-commits").textContent = d[0].sha.slice(0, 7);
-          q("stat-commits").title = d[0].commit.message.split("\n")[0];
-        }
-      }).catch(function () { q("stat-commits").textContent = "—"; });
-  })();
+(function () {
+  "use strict";
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---- hero boot log: line-by-line reveal, final prompt typed ---- */
+  var lines = [
+    { t: "[ 0.000] fujokernel: v1.0 x86_64 long mode, mb_header ok", cls: "" },
+    { t: "[ 0.012] mem: on-demand zero pages, frame pool ready", cls: "" },
+    { t: "[ 0.031] abi: elf64 / mach-o / pe32+ loaders linked", cls: "" },
+    { t: "[ 0.089] wmsg: 64-slot message queue, fujokit up", cls: "" },
+    { t: "[ 0.156] ci: 38/38 pass · regression 29/29", cls: "ok" },
+    { t: "os> os run hermes", cls: "prompt-line" }
+  ];
+  var boot = document.getElementById("bootlog");
+  if (boot) {
+    lines.forEach(function (ln, i) {
+      var div = document.createElement("div");
+      div.className = ln.cls || "t";
+      div.textContent = ln.t;
+      div.style.opacity = "0";
+      boot.appendChild(div);
+      setTimeout(function () {
+        div.style.transition = "opacity .35s ease";
+        div.style.opacity = "1";
+      }, reduced ? 0 : 420 * (i + 1));
+    });
+    if (!reduced) setTimeout(function () {
+      var cur = document.createElement("span");
+      cur.className = "cursor";
+      boot.appendChild(cur);
+    }, 420 * lines.length + 200);
+  }
+
+  /* ---- metrics count-up on view ---- */
+  var counters = document.querySelectorAll("[data-count]");
+  if (counters.length) {
+    var runCounter = function (el) {
+      var target = parseInt(el.getAttribute("data-count"), 10);
+      if (reduced) { el.textContent = target; return; }
+      var t0 = null;
+      var step = function (ts) {
+        if (!t0) t0 = ts;
+        var p = Math.min((ts - t0) / 900, 1);
+        el.textContent = String(Math.round(target * (1 - Math.pow(1 - p, 3))));
+        if (p < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    };
+    var cio = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting) { runCounter(e.target); cio.unobserve(e.target); } });
+    }, { threshold: .4 });
+    counters.forEach(function (c) { cio.observe(c); });
+  }
+
+  /* ---- reveal-on-scroll with stagger ---- */
+  var reveals = document.querySelectorAll(".reveal");
+  if (reveals.length) {
+    reveals.forEach(function (el) {
+      var d = el.getAttribute("data-delay");
+      if (d) el.style.setProperty("--d", d + "ms");
+    });
+    var rio = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add("in"); rio.unobserve(e.target); } });
+    }, { threshold: .12 });
+    reveals.forEach(function (r) { rio.observe(r); });
+  }
+
+  /* ---- live GitHub stats (api.github.com allows CORS for public repos) ---- */
+  function setText(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
+  fetch("https://api.github.com/repos/FujoJTOP/FujoOS")
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d.stargazers_count != null) setText("foot-stars", "★ " + d.stargazers_count + " stars");
+    })
+    .catch(function () { setText("foot-stars", "☆ stars"); });
+})();
 </script>
 
 </body>
