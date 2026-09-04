@@ -3,81 +3,86 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
 <title>FujoOS · 零依赖 x86_64 原生操作系统内核</title>
 <meta name="description" content="FujoOS: 零第三方依赖的 x86_64 原生操作系统内核。内核、驱动、窗口系统、游戏层、开发工具链、AI OS 独有层全栈自研，M1-M137 全部 PASS。">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230a0e13'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='16' fill='%2334d399' text-anchor='middle'%3EF%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230f172a'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='16' fill='%2322c55e' text-anchor='middle'%3EF%3C/text%3E%3C/svg%3E">
 <meta property="og:title" content="FujoOS · 零依赖 x86_64 原生操作系统内核">
 <meta property="og:description" content="内核、驱动、窗口系统、游戏层、开发工具链、AI OS 独有层全栈自研。M1-M137 全部 PASS，参考机回归 29/29。">
 <meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>document.documentElement.classList.add('js');</script>
 <style>
 /* ============================================================
-   FujoOS 官网 v2
-   Aesthetic: dark-tech / hacker (honest native CSS, no build step)
-   Design system: none imported. Single accent, dark theme lock.
-   Stack note: static GitHub Pages -> system fonts, no CDN deps.
+   FujoOS 官网 v3 - 设计系统: ui-ux-pro-max "Dark Mode OLED"
+   palette: code dark (#0F172A base) + run green (#22C55E accent)
+   type: IBM Plex Sans (body) + JetBrains Mono (code/labels)
+   effects: minimal glow 10px, visible focus, reduced-motion safe
    ============================================================ */
 :root {
-  --bg: #0a0e13;
-  --bg-2: #0d131a;
-  --panel: #101821;
-  --panel-2: #131c26;
-  --line: #1d2a36;
-  --line-2: #26394a;
-  --text: #d6dee6;
-  --muted: #8b98a5;
-  --accent: #34d399;
-  --accent-dim: #1f4d3d;
-  --accent-ink: #05130d;
-  --mono: "Cascadia Code", "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  --sans: "Segoe UI", system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
-  --r: 14px;            /* shape lock: all-soft 14px */
-  --r-pill: 999px;      /* documented exception: CTAs are full-pill */
-}
-@media (prefers-color-scheme: light) {
-  :root { color-scheme: dark; } /* theme lock: page is dark-only */
+  --bg: #0F172A;
+  --bg-2: #0B1220;
+  --panel: #1B2336;
+  --panel-2: #202A41;
+  --muted: #272F42;
+  --line: #334155;
+  --line-2: #475569;
+  --text: #F8FAFC;
+  --muted-text: #94A3B8;
+  --accent: #22C55E;
+  --accent-ink: #0F172A;
+  --accent-dim: #14532D;
+  --code-bg: #0B1220;
+  --r: 14px;
+  --r-pill: 999px;
+  --sans: "IBM Plex Sans", "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --mono: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body {
   background: var(--bg); color: var(--text);
-  font-family: var(--sans); line-height: 1.7;
+  font-family: var(--sans); font-weight: 400; line-height: 1.7;
   -webkit-font-smoothing: antialiased;
 }
-::selection { background: #1d4a3c; color: #eafff5; }
-a { color: var(--accent); text-decoration: none; }
+::selection { background: #14532D; color: #ECFDF5; }
+a { color: var(--accent); text-decoration: none; cursor: pointer; }
 a:hover { text-decoration: underline; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
 .mono { font-family: var(--mono); }
+code { font-family: var(--mono); font-size: .92em; }
 
 /* ---------- nav ---------- */
 header {
   position: sticky; top: 0; z-index: 50;
-  background: rgba(10, 14, 19, .78);
+  background: rgba(15, 23, 42, .82);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--muted);
 }
 nav { display: flex; align-items: center; justify-content: space-between; height: 64px; }
 .brand { font-family: var(--mono); font-weight: 700; font-size: 17px; letter-spacing: .4px; color: var(--text); }
-.brand em { font-style: normal; color: var(--accent); }
+.brand em { font-style: normal; color: var(--accent); text-shadow: 0 0 10px rgba(34,197,94,.35); }
 .nav-links { display: flex; align-items: center; gap: 20px; font-size: 14px; }
-.nav-links a { color: var(--muted); }
+.nav-links a { color: var(--muted-text); cursor: pointer; }
 .nav-links a:hover { color: var(--accent); text-decoration: none; }
 .nav-github {
   font-family: var(--mono); font-size: 13px; font-weight: 600;
   border: 1px solid var(--line-2); border-radius: var(--r-pill);
-  padding: 7px 16px; color: var(--text) !important;
+  padding: 7px 16px; color: var(--text) !important; cursor: pointer;
 }
-.nav-github:hover { border-color: var(--accent-dim); background: rgba(52,211,153,.07); }
+.nav-github:hover { border-color: var(--accent); background: rgba(34,197,94,.08); }
 @media (max-width: 680px) { .nav-links { gap: 12px; } .nav-links a:not(.nav-github) { display: none; } }
 
-/* ---------- hero (asymmetric split: copy left, terminal right) ---------- */
+/* ---------- hero: asymmetric split (copy left / terminal right) ---------- */
 .hero {
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--muted);
   background:
-    linear-gradient(rgba(52,211,153,.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(52,211,153,.035) 1px, transparent 1px),
-    radial-gradient(720px 340px at 78% 8%, rgba(52,211,153,.10), transparent 62%),
+    linear-gradient(rgba(34,197,94,.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34,197,94,.04) 1px, transparent 1px),
+    radial-gradient(720px 340px at 78% 8%, rgba(34,197,94,.10), transparent 62%),
     var(--bg-2);
   background-size: 44px 44px, 44px 44px, auto, auto;
 }
@@ -87,148 +92,160 @@ nav { display: flex; align-items: center; justify-content: space-between; height
 }
 @media (max-width: 900px) { .hero-inner { grid-template-columns: 1fr; padding: 52px 0 60px; } }
 .hero-copy .eyebrow {
-  font-family: var(--mono); font-size: 12.5px; letter-spacing: .12em;
+  font-family: var(--mono); font-size: 12px; font-weight: 500; letter-spacing: .12em;
   color: var(--accent); margin-bottom: 18px;
 }
-.hero-copy .eyebrow::before { content: "$ "; color: var(--muted); }
-.hero-copy h1 { font-size: clamp(34px, 5.4vw, 56px); line-height: 1.12; font-weight: 800; letter-spacing: -.02em; }
-.hero-copy h1 .accent { color: var(--accent); }
-.hero-copy .lead { margin-top: 18px; color: var(--muted); font-size: 16px; max-width: 44ch; }
+.hero-copy .eyebrow::before { content: "$ "; color: var(--muted-text); }
+.hero-copy h1 { font-size: clamp(34px, 5.4vw, 56px); line-height: 1.12; font-weight: 700; letter-spacing: -.02em; }
+.hero-copy h1 .accent { color: var(--accent); text-shadow: 0 0 10px rgba(34,197,94,.30); }
+.hero-copy .lead { margin-top: 18px; color: var(--muted-text); font-size: 16px; max-width: 44ch; }
 .hero-cta { margin-top: 32px; display: flex; gap: 14px; flex-wrap: wrap; }
 .btn {
   display: inline-block; font-weight: 600; font-size: 15px;
-  border-radius: var(--r-pill); padding: 12px 26px;
-  transition: transform .12s ease, background .15s ease, border-color .15s ease;
+  border-radius: var(--r-pill); padding: 12px 26px; cursor: pointer;
+  transition: transform .12s ease, background .18s ease, border-color .18s ease, box-shadow .18s ease;
   white-space: nowrap;
 }
 .btn:active { transform: translateY(1px) scale(.985); }
-.btn.primary { background: var(--accent); color: var(--accent-ink); }
-.btn.primary:hover { background: #4fe0ab; text-decoration: none; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); box-shadow: 0 0 18px rgba(34,197,94,.20); }
+.btn.primary:hover { background: #34D373; text-decoration: none; box-shadow: 0 0 24px rgba(34,197,94,.32); }
 .btn.ghost { border: 1px solid var(--line-2); color: var(--text); }
-.btn.ghost:hover { border-color: var(--accent-dim); color: var(--accent); background: rgba(52,211,153,.06); text-decoration: none; }
+.btn.ghost:hover { border-color: var(--accent); color: var(--accent); background: rgba(34,197,94,.06); text-decoration: none; }
 
 /* terminal window */
 .term {
   border: 1px solid var(--line-2); border-radius: var(--r);
-  background: #070c11; overflow: hidden;
-  box-shadow: 0 24px 60px rgba(0,0,0,.45), 0 0 0 1px rgba(52,211,153,.05);
+  background: var(--code-bg); overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0,0,0,.45), 0 0 0 1px rgba(34,197,94,.05);
 }
 .term-bar {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 14px; border-bottom: 1px solid var(--line);
-  background: var(--panel); font-family: var(--mono); font-size: 12px; color: var(--muted);
+  padding: 10px 14px; border-bottom: 1px solid var(--muted);
+  background: var(--panel); font-family: var(--mono); font-size: 12px; color: var(--muted-text);
 }
-.term-body { padding: 16px 18px; font-family: var(--mono); font-size: 12.8px; line-height: 1.75; min-height: 250px; color: #b9c6d2; }
-.term-body .t { color: var(--muted); }
-.term-body .ok { color: var(--accent); }
+.term-body { padding: 16px 18px; font-family: var(--mono); font-size: 12.8px; line-height: 1.75; min-height: 250px; color: #CBD5E1; }
+.term-body .t { color: var(--muted-text); }
+.term-body .ok { color: var(--accent); text-shadow: 0 0 10px rgba(34,197,94,.25); }
 .term-body .prompt-line { color: var(--accent); white-space: pre-wrap; }
 .term-body .cursor { display: inline-block; width: 8px; height: 15px; background: var(--accent); vertical-align: -2px; animation: blink 1s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 @media (max-width: 900px) { .term-body { min-height: 0; } }
 
 /* ---------- metrics strip ---------- */
-.metrics { border-bottom: 1px solid var(--line); background: var(--bg); }
+.metrics { border-bottom: 1px solid var(--muted); background: var(--bg); }
 .metrics-inner { display: grid; grid-template-columns: repeat(5, 1fr); }
-.metrics-inner > div { padding: 26px 12px; text-align: center; border-left: 1px solid var(--line); }
+.metrics-inner > div { padding: 26px 12px; text-align: center; border-left: 1px solid var(--muted); }
 .metrics-inner > div:first-child { border-left: none; }
-.metrics b { display: block; font-family: var(--mono); font-size: 26px; font-weight: 700; color: var(--accent); }
-.metrics span { font-size: 12.5px; color: var(--muted); }
-@media (max-width: 700px) { .metrics-inner { grid-template-columns: repeat(2, 1fr); } .metrics-inner > div { border-top: 1px solid var(--line); } }
+.metrics b { display: block; font-family: var(--mono); font-size: 26px; font-weight: 700; color: var(--accent); text-shadow: 0 0 10px rgba(34,197,94,.25); }
+.metrics span { font-size: 12.5px; color: var(--muted-text); }
+@media (max-width: 700px) { .metrics-inner { grid-template-columns: repeat(2, 1fr); } .metrics-inner > div { border-top: 1px solid var(--muted); } }
 
 /* ---------- sections ---------- */
-section { padding: 76px 0; border-bottom: 1px solid var(--line); }
-section h2 { font-size: 28px; font-weight: 800; letter-spacing: -.01em; }
-section .sub { color: var(--muted); margin-top: 8px; }
+section { padding: 76px 0; border-bottom: 1px solid var(--muted); }
+section h2 { font-size: 28px; font-weight: 700; letter-spacing: -.01em; }
+section .sub { color: var(--muted-text); margin-top: 8px; }
 
 /* ---------- bento features ---------- */
 .bento { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 36px; }
 @media (max-width: 900px) { .bento { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 560px) { .bento { grid-template-columns: 1fr; } }
 .cell {
-  border: 1px solid var(--line); border-radius: var(--r);
+  border: 1px solid var(--muted); border-radius: var(--r);
   background: var(--panel); padding: 20px 22px;
-  transition: border-color .15s ease, background .15s ease, transform .15s ease;
+  transition: border-color .18s ease, background .18s ease, transform .18s ease;
 }
 .cell:hover { border-color: var(--accent-dim); background: var(--panel-2); transform: translateY(-2px); }
-.cell h3 { font-family: var(--mono); font-size: 13.5px; color: var(--accent); margin-bottom: 8px; }
-.cell p { font-size: 13px; color: var(--muted); line-height: 1.65; }
+.cell h3 { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--accent); margin-bottom: 8px; }
+.cell p { font-size: 13px; color: var(--muted-text); line-height: 1.65; }
 .cell.big { grid-column: span 2; }
 @media (max-width: 900px) { .cell.big { grid-column: span 2; } }
 @media (max-width: 560px) { .cell.big { grid-column: span 1; } }
-/* visual variation: big kernel cell gets tinted mesh + monospace stat */
 .cell.big {
   background:
-    radial-gradient(340px 180px at 85% 0%, rgba(52,211,153,.12), transparent 65%),
-    linear-gradient(180deg, rgba(52,211,153,.05), transparent 60%),
+    radial-gradient(340px 180px at 85% 0%, rgba(34,197,94,.12), transparent 65%),
+    linear-gradient(180deg, rgba(34,197,94,.05), transparent 60%),
     var(--panel);
 }
-.cell.big .big-stats { display: flex; gap: 18px; margin-top: 16px; font-family: var(--mono); font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.cell.big .big-stats { display: flex; gap: 18px; margin-top: 16px; font-family: var(--mono); font-size: 12px; color: var(--muted-text); flex-wrap: wrap; }
 .cell.big .big-stats b { color: var(--accent); font-weight: 600; }
-/* visual variation: ABI cell paints a code line */
-.cell.code p.code { font-family: var(--mono); font-size: 12px; color: #9fb4c4; background: #0a0f15; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-top: 10px; }
+.cell.code p.code { font-family: var(--mono); font-size: 12px; color: #A8B7C7; background: var(--code-bg); border: 1px solid var(--muted); border-radius: 8px; padding: 10px 12px; margin-top: 10px; }
 .cell.code p.code .hl { color: var(--accent); }
-/* visual variation: AI OS cell tinted */
-.cell.ai { background: linear-gradient(160deg, rgba(52,211,153,.09), rgba(52,211,153,.02) 55%), var(--panel); }
+.cell.ai { background: linear-gradient(160deg, rgba(34,197,94,.10), rgba(34,197,94,.02) 55%), var(--panel); }
 
-/* ---------- arch diagram (terminal block, gradient edge) ---------- */
-.arch-frame { position: relative; border-radius: var(--r); padding: 1px; margin-top: 36px; background: linear-gradient(120deg, rgba(52,211,153,.35), var(--line-2) 40%, rgba(52,211,153,.12)); }
-.arch { background: #070c11; border-radius: calc(var(--r) - 1px); padding: 26px 30px; overflow-x: auto; }
-.arch pre { font-family: var(--mono); font-size: 13px; line-height: 1.7; color: #a9bccb; }
+/* ---------- arch diagram ---------- */
+.arch-frame { position: relative; border-radius: var(--r); padding: 1px; margin-top: 36px; background: linear-gradient(120deg, rgba(34,197,94,.35), var(--line-2) 40%, rgba(34,197,94,.12)); }
+.arch { background: var(--code-bg); border-radius: calc(var(--r) - 1px); padding: 26px 30px; overflow-x: auto; }
+.arch pre { font-family: var(--mono); font-size: 13px; line-height: 1.7; color: #A8B7C7; }
 .arch pre .k { color: var(--accent); }
-.arch pre .c { color: #5b6a78; }
+.arch pre .c { color: #64748B; }
 
 /* ---------- quickstart ---------- */
 .start-grid { display: grid; grid-template-columns: .9fr 1.1fr; gap: 40px; margin-top: 36px; align-items: start; }
 @media (max-width: 900px) { .start-grid { grid-template-columns: 1fr; } }
 .steps { list-style: none; }
-.steps li { display: flex; gap: 16px; padding: 18px 0; border-bottom: 1px dashed var(--line); font-size: 14.5px; }
+.steps li { display: flex; gap: 16px; padding: 18px 0; border-bottom: 1px dashed var(--line); font-size: 14px; }
 .steps li:last-child { border-bottom: none; }
 .steps .n {
   flex: 0 0 30px; height: 30px; border-radius: 50%;
-  background: rgba(52,211,153,.10); border: 1px solid var(--accent-dim);
+  background: rgba(34,197,94,.10); border: 1px solid var(--accent-dim);
   color: var(--accent); font-family: var(--mono); font-size: 13px; font-weight: 700;
   display: flex; align-items: center; justify-content: center; margin-top: 3px;
 }
-.steps .s b { display: block; font-size: 14.5px; }
-.steps .s span { color: var(--muted); font-size: 13px; }
-.term .term-body pre { font-family: var(--mono); font-size: 12.6px; line-height: 1.8; color: #b9c6d2; white-space: pre-wrap; word-break: break-all; }
-.term .term-body pre .c { color: #5b6a78; }
+.steps .s b { display: block; font-size: 14px; }
+.steps .s span { color: var(--muted-text); font-size: 13px; }
+.term .term-body pre { font-family: var(--mono); font-size: 12.6px; line-height: 1.8; color: #CBD5E1; white-space: pre-wrap; word-break: break-all; }
+.term .term-body pre .c { color: #64748B; }
 .term .term-body pre .g { color: var(--accent); }
-.term .term-body pre .k { color: #79b8ff; }
+.term .term-body pre .k { color: var(--accent); }
 
-/* ---------- evidence (border-left list, not cards) ---------- */
+/* ---------- evidence ---------- */
 .ev-list { margin-top: 36px; border-left: 2px solid var(--accent-dim); padding-left: 28px; display: flex; flex-direction: column; gap: 22px; max-width: 760px; }
 .ev-item .ev-head { font-family: var(--mono); font-size: 13.5px; font-weight: 600; color: var(--text); }
 .ev-item .ev-head .tick { color: var(--accent); }
-.ev-item p { font-size: 13.5px; color: var(--muted); margin-top: 3px; }
-.ev-item p code { font-family: var(--mono); font-size: 12.5px; background: #0a0f15; border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; color: #9fd8bd; }
+.ev-item p { font-size: 13.5px; color: var(--muted-text); margin-top: 3px; }
+.ev-item p code { font-family: var(--mono); font-size: 12.5px; background: var(--code-bg); border: 1px solid var(--muted); border-radius: 6px; padding: 1px 6px; color: #A7E8C4; }
+
+/* ---------- limits (FAQ-style) ---------- */
+.faq { margin-top: 36px; }
+.faq-item { border-bottom: 1px solid var(--muted); padding: 20px 4px; }
+.faq-item:last-child { border-bottom: none; }
+.faq-item h3 { font-size: 15px; font-weight: 600; display: flex; gap: 10px; align-items: baseline; }
+.faq-item h3 .q { font-family: var(--mono); font-size: 13px; color: var(--accent); }
+.faq-item p { margin-top: 6px; color: var(--muted-text); font-size: 13.5px; padding-left: 26px; }
+.faq-item p code { font-family: var(--mono); font-size: 12.5px; background: var(--code-bg); border: 1px solid var(--muted); border-radius: 6px; padding: 1px 6px; color: #A7E8C4; }
+
+/* ---------- final CTA ---------- */
+.final-cta { text-align: center; padding: 84px 0; }
+.final-cta h2 { font-size: clamp(26px, 4vw, 34px); font-weight: 700; }
+.final-cta p { color: var(--muted-text); margin-top: 10px; font-size: 15px; }
+.final-cta .cta-row { margin-top: 30px; display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
 
 /* ---------- docs links ---------- */
 .doc-row { margin-top: 36px; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
 .doc-row a {
-  display: flex; align-items: baseline; gap: 10px; padding: 14px 16px;
-  border: 1px solid var(--line); border-radius: var(--r); background: var(--panel);
-  transition: border-color .15s ease, background .15s ease;
+  display: flex; align-items: baseline; gap: 10px; padding: 14px 16px; cursor: pointer;
+  border: 1px solid var(--muted); border-radius: var(--r); background: var(--panel);
+  transition: border-color .18s ease, background .18s ease;
 }
 .doc-row a:hover { border-color: var(--accent-dim); background: var(--panel-2); text-decoration: none; }
 .doc-row a .fn { font-family: var(--mono); font-size: 12.5px; color: var(--accent); white-space: nowrap; }
-.doc-row a .desc { font-size: 13px; color: var(--muted); }
-.doc-row a .arr { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 13px; }
+.doc-row a .desc { font-size: 13px; color: var(--muted-text); }
+.doc-row a .arr { margin-left: auto; color: var(--muted-text); font-family: var(--mono); font-size: 13px; }
 
 /* ---------- footer ---------- */
 footer { padding: 44px 0 56px; }
 .foot-inner { display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; }
 .foot-inner .brand { font-size: 15px; }
-.foot-inner p { color: var(--muted); font-size: 13px; font-family: var(--mono); }
+.foot-inner p { color: var(--muted-text); font-size: 13px; font-family: var(--mono); }
 @media (max-width: 700px) { .foot-inner { flex-direction: column; align-items: flex-start; } }
 
-/* ---------- reveal-on-scroll (IntersectionObserver, reduced-motion aware) ---------- */
-.reveal { opacity: 0; transform: translateY(14px); transition: opacity .5s ease, transform .5s ease; }
-.reveal.in { opacity: 1; transform: none; }
-.reveal[data-delay] { transition-delay: var(--d); }
+/* ---------- motion: subtle tier (y 12px, 350ms, power1-out) ---------- */
+.js .reveal { opacity: 0; transform: translateY(12px); transition: opacity .35s ease, transform .35s ease; }
+.js .reveal.in { opacity: 1; transform: none; }
+.js .reveal[data-delay] { transition-delay: var(--d); }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .reveal, .reveal.in { opacity: 1; transform: none; transition: none; }
+  .js .reveal, .js .reveal.in { opacity: 1; transform: none; transition: none; }
   .term-body .cursor { animation: none; }
   * { transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
@@ -244,6 +261,7 @@ footer { padding: 44px 0 56px; }
       <a href="#arch">架构</a>
       <a href="#start">快速开始</a>
       <a href="#evidence">证据</a>
+      <a href="#limits">边界</a>
       <a href="#docs">文档</a>
       <a class="nav-github" href="https://github.com/FujoJTOP/FujoOS" target="_blank" rel="noopener">GitHub ↗</a>
     </div>
@@ -292,11 +310,11 @@ footer { padding: 44px 0 56px; }
           <span><b>per-task</b> 页表链</span>
         </div>
       </div>
-      <div class="cell reveal" data-delay="60">
+      <div class="cell reveal" data-delay="40">
         <h3>存储</h3>
         <p>ATA PIO + FJFS 4MiB 卷 (格式化/持久化, 跨重启 PASS) · AHCI/SATA 真盘 (ICH9 q35) · 页缓存/预读 · 存档沙箱</p>
       </div>
-      <div class="cell code reveal" data-delay="120">
+      <div class="cell code reveal" data-delay="80">
         <h3>ABI · 三平台加载器</h3>
         <p>ELF64 / Mach-O / PE32+ 原地运行，统一打包 .run (FUJR)。</p>
         <p class="code">$ os run<span class="hl"> busybox</span> echo m131-ok</p>
@@ -305,11 +323,11 @@ footer { padding: 44px 0 56px; }
         <h3>网络</h3>
         <p>virtio-net legacy · IPv4/UDP 往返 (ARP 应答) · 最小 TCP 服务器 SYN/ACK/PSH echo</p>
       </div>
-      <div class="cell reveal" data-delay="60">
+      <div class="cell reveal" data-delay="40">
         <h3>图形</h3>
         <p>VBE 1024x768x32 + LFB · 5x7 位图字体 · 软件光栅 rect/tri/line · blit/scale · 着色器字节码 VM</p>
       </div>
-      <div class="cell reveal" data-delay="120">
+      <div class="cell reveal" data-delay="80">
         <h3>桌面</h3>
         <p>wmsg 窗口类表/64 消息队/刷新 (0x55xx) · fujokit button/textbox/list · IME 拼音候选</p>
       </div>
@@ -317,11 +335,11 @@ footer { padding: 44px 0 56px; }
         <h3>游戏</h3>
         <p>游戏模式 (0x66xx) · Pong / Breakout 自研引擎 · 输入延迟基准 avg 94µs (0x6Fxx)</p>
       </div>
-      <div class="cell ai reveal" data-delay="60">
+      <div class="cell ai reveal" data-delay="40">
         <h3>AI OS 层</h3>
         <p>模型权重 mmap · 模型卡 (权限/计费/审计) · 会话检查点 · fujoctx 摘要/上下文压缩 · 意图路由 · 推理执行器 · 异常哨兵</p>
       </div>
-      <div class="cell reveal" data-delay="120">
+      <div class="cell reveal" data-delay="80">
         <h3>工具链</h3>
         <p>系统内汇编器 (0x70xx) → 链接器 (0x71xx) → fujocc 编译壳 C→ELF64 全链 · 调试器 TF/int3 · trace · 性能窗口 · 泄漏/minidump</p>
       </div>
@@ -329,11 +347,11 @@ footer { padding: 44px 0 56px; }
         <h3>音频</h3>
         <p>AC97 探测/音量 · 4ch 混音器 + LPF/增益链</p>
       </div>
-      <div class="cell reveal" data-delay="60">
+      <div class="cell reveal" data-delay="40">
         <h3>真机化 (W20)</h3>
         <p>平台检测 (Bochs VBE 证据链 → is_qemu) · LAPIC ICR 双语义运行时切换 · GRUB2 真机引导 · PCI 多函数枚举</p>
       </div>
-      <div class="cell reveal" data-delay="120">
+      <div class="cell reveal" data-delay="80">
         <h3>交付</h3>
         <p>fujopack / fujorun · fujoci 38 用例 · onebuild 3/3 · live 镜像+安装器 (0x87xx) · 签名/更新 (0x88xx)</p>
       </div>
@@ -412,6 +430,19 @@ pwsh scripts/onebuild.ps1     <span class="c"># 3/3</span></pre>
   </div>
 </section>
 
+<section id="limits">
+  <div class="wrap">
+    <h2>边界与已知限制</h2>
+    <p class="sub">能力边界如实列出，避免误读。参考机为 QEMU，真机化 W20 已开启。</p>
+    <div class="faq">
+      <div class="faq-item reveal"><h3><span class="q">Q1</span>AI 推理是端侧的吗？</h3><p>不是。内核 (AI OS 层) 提供权重页/模型卡/审计/执行器编排面，实际推理由宿主链路 (COM2 → 宿主模型服务) 承载，无本地 LLM。</p></div>
+      <div class="faq-item reveal"><h3><span class="q">Q2</span>兼容性指什么？</h3><p>指加载器/垫片面，不是完整用户态兼容。Linux ELF / macOS Mach-O / Windows PE32+ 的最小静态样例可原地运行，三平台二进制统一打包为 .run (FUJR v1)。</p></div>
+      <div class="faq-item reveal"><h3><span class="q">Q3</span>性能如何？</h3><p>默认 TCG 解释执行，真机/KVM 预期 10-100x (M57 对照面已架)。系统内编译器为 C 子集 (单函数)，ACPI 表体 &gt;64MiB 未映射 (M96 guard)。</p></div>
+      <div class="faq-item reveal"><h3><span class="q">Q4</span>还有哪些没做完？</h3><p>真机视频面 (INT 10h VBE) 与 USB 驱动面未完成；FJFS 多簇写往返已修复单簇读回，大文件列后续。</p></div>
+    </div>
+  </div>
+</section>
+
 <section id="docs">
   <div class="wrap">
     <h2>文档与路线图</h2>
@@ -427,10 +458,21 @@ pwsh scripts/onebuild.ps1     <span class="c"># 3/3</span></pre>
   </div>
 </section>
 
+<div class="final-cta">
+  <div class="wrap">
+    <h2>在 GitHub 上关注这个项目</h2>
+    <p>里程碑文档、回归脚本、模板源码都在仓库里，可自由阅读与复现。</p>
+    <div class="cta-row">
+      <a class="btn primary" href="https://github.com/FujoJTOP/FujoOS" target="_blank" rel="noopener">Star on GitHub</a>
+      <a class="btn ghost" href="https://github.com/FujoJTOP/FujoOS/issues" target="_blank" rel="noopener">提 Issue</a>
+    </div>
+  </div>
+</div>
+
 <footer>
   <div class="wrap foot-inner">
     <div class="brand">Fujo<em>OS</em></div>
-    <p><span id="foot-stars">☆</span> on GitHub · <a href="https://github.com/FujoJTOP/FujoOS" target="_blank" rel="noopener">github.com/FujoJTOP/FujoOS</a></p>
+    <p><span id="foot-stars">☆</span> · <a href="https://github.com/FujoJTOP/FujoOS" target="_blank" rel="noopener">github.com/FujoJTOP/FujoOS</a></p>
   </div>
 </footer>
 
@@ -439,7 +481,7 @@ pwsh scripts/onebuild.ps1     <span class="c"># 3/3</span></pre>
   "use strict";
   var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  /* ---- hero boot log: line-by-line reveal, final prompt typed ---- */
+  /* ---- hero boot log: line-by-line reveal (subtle tier) ---- */
   var lines = [
     { t: "[ 0.000] fujokernel: v1.0 x86_64 long mode, mb_header ok", cls: "" },
     { t: "[ 0.012] mem: on-demand zero pages, frame pool ready", cls: "" },
@@ -457,15 +499,15 @@ pwsh scripts/onebuild.ps1     <span class="c"># 3/3</span></pre>
       div.style.opacity = "0";
       boot.appendChild(div);
       setTimeout(function () {
-        div.style.transition = "opacity .35s ease";
+        div.style.transition = "opacity .3s ease";
         div.style.opacity = "1";
-      }, reduced ? 0 : 420 * (i + 1));
+      }, reduced ? 0 : 380 * (i + 1));
     });
     if (!reduced) setTimeout(function () {
       var cur = document.createElement("span");
       cur.className = "cursor";
       boot.appendChild(cur);
-    }, 420 * lines.length + 200);
+    }, 380 * lines.length + 200);
   }
 
   /* ---- metrics count-up on view ---- */
@@ -489,7 +531,7 @@ pwsh scripts/onebuild.ps1     <span class="c"># 3/3</span></pre>
     counters.forEach(function (c) { cio.observe(c); });
   }
 
-  /* ---- reveal-on-scroll with stagger ---- */
+  /* ---- reveal-on-scroll: subtle tier (12px / 350ms / power1-out style) ---- */
   var reveals = document.querySelectorAll(".reveal");
   if (reveals.length) {
     reveals.forEach(function (el) {
@@ -502,7 +544,7 @@ pwsh scripts/onebuild.ps1     <span class="c"># 3/3</span></pre>
     reveals.forEach(function (r) { rio.observe(r); });
   }
 
-  /* ---- live GitHub stats (api.github.com allows CORS for public repos) ---- */
+  /* ---- live GitHub stats ---- */
   function setText(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
   fetch("https://api.github.com/repos/FujoJTOP/FujoOS")
     .then(function (r) { return r.json(); })
