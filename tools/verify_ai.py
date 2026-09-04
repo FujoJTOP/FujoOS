@@ -44,6 +44,7 @@ def main():
     ap.add_argument("--timeout", type=float, default=420.0)
     ap.add_argument("--boot-wait", type=float, default=9.0)
     ap.add_argument("--boot-keys", default="o s spc r u n spc h e r m e s ret")
+    ap.add_argument("--evil", action="store_true", help="W24: adversarial model replies (FUJO_EVIL=1)")
     a = ap.parse_args()
 
     kill_peers()
@@ -63,6 +64,8 @@ def main():
     env = dict(os.environ,
                FUJO_MODEL=a.model, FUJO_MON_PORT=str(MON_PORT), FUJO_LINK_PORT=str(LINK_PORT),
                FUJO_BOOT_KEYS=a.boot_keys, FUJO_BOOT_WAIT=str(a.boot_wait))
+    if a.evil:
+        env["FUJO_EVIL"] = "1"
     srvlog = os.path.join(tmpd, "server.log")
     srv_out = open(srvlog, "w")
     srv = subprocess.Popen([sys.executable, os.path.join(ROOT, "tools", "qwen_model_server.py")], env=env,
