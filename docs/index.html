@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="dark">
 <title>FujoOS · 下个时代的操作系统</title>
-<meta name="description" content="什么是下个时代的操作系统?这是 FujoOS 的答案。零第三方依赖的 x86_64 原生操作系统内核:内核、驱动、窗口、游戏层、工具链、AI OS 层全栈自研,三平台二进制可原地运行。M1-M137 全部 PASS。">
+<meta name="description" content="什么是下个时代的操作系统?这是 FujoOS 的答案。零第三方依赖的 x86_64 原生操作系统内核:内核、驱动、窗口、游戏层、工具链、AI OS 层全栈自研,三平台二进制可原地运行。M1-M147 全部 PASS。">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230f172a'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='16' fill='%2322c55e' text-anchor='middle'%3EF%3C/text%3E%3C/svg%3E">
 <meta property="og:title" content="FujoOS · 下个时代的操作系统">
-<meta property="og:description" content="什么是下个时代的操作系统?这是 FujoOS 的答案。零第三方依赖的 x86_64 原生操作系统内核,M1-M137 全部 PASS,参考机回归 29/29。">
+<meta property="og:description" content="什么是下个时代的操作系统?这是 FujoOS 的答案。零第三方依赖的 x86_64 原生操作系统内核,M1-M147 全部 PASS,参考机回归 37/37,AI 六波 + 双执行模式对照。">
 <meta property="og:type" content="website">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -233,6 +233,10 @@ section .sub { color: var(--muted-text); margin-top: 8px; }
 .doc-row a .desc { font-size: 13px; color: var(--muted-text); }
 .doc-row a .arr { margin-left: auto; color: var(--muted-text); font-family: var(--mono); font-size: 13px; }
 
+/* ---------- thanks ---------- */
+#thanks { border-bottom: none; text-align: center; padding: 64px 0 20px; }
+.thanks-body { max-width: 640px; margin: 16px auto 0; color: var(--muted-text); font-size: 14px; line-height: 2; }
+
 /* ---------- footer ---------- */
 footer { padding: 44px 0 56px; }
 .foot-inner { display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; }
@@ -289,8 +293,8 @@ footer { padding: 44px 0 56px; }
 
 <div class="metrics">
   <div class="wrap metrics-inner">
-    <div><b data-count="137">0</b><span>里程碑 M1-M137 PASS</span></div>
-    <div><b data-count="29">0</b><span>参考机回归 29/29</span></div>
+    <div><b data-count="147">0</b><span>里程碑 M1-M147 PASS</span></div>
+    <div><b data-count="37">0</b><span>参考机回归 37/37</span></div>
     <div><b data-count="38">0</b><span>CI 用例</span></div>
     <div><b data-count="39">0</b><span>Linux syscalls</span></div>
     <div><b data-count="94">0</b><span>输入延迟 μs (avg)</span></div>
@@ -338,7 +342,7 @@ footer { padding: 44px 0 56px; }
       </div>
       <div class="cell ai reveal" data-delay="40">
         <h3>AI OS 层</h3>
-        <p>模型权重 mmap · 模型卡 (权限/计费/审计) · 会话检查点 · fujoctx 摘要/上下文压缩 · 意图路由 · 推理执行器 · 异常哨兵</p>
+        <p>模型权重 mmap · 模型卡 (权限/计费/审计) · 会话检查点 · fujoctx 摘要/上下文压缩 · 意图路由 · 推理执行器 · 异常哨兵 · W22-W28 六波: 三引擎对照 / 蒸馏闭环 / 对抗验证 / IO 基线 / 全自监督 / 事件流哨兵 (m141-m147)</p>
       </div>
       <div class="cell reveal" data-delay="80">
         <h3>工具链</h3>
@@ -349,8 +353,8 @@ footer { padding: 44px 0 56px; }
         <p>AC97 探测/音量 · 4ch 混音器 + LPF/增益链</p>
       </div>
       <div class="cell reveal" data-delay="40">
-        <h3>真机化 (W20)</h3>
-        <p>平台检测 (Bochs VBE 证据链 → is_qemu) · LAPIC ICR 双语义运行时切换 · GRUB2 真机引导 · PCI 多函数枚举</p>
+        <h3>真机化 + 平台对照 (W20/W29)</h3>
+        <p>平台检测 (Bochs VBE 证据链 → is_qemu) · LAPIC ICR 双语义运行时切换 · GRUB2 真机引导 · PCI 多函数枚举 · W29 第二执行模式 (TCG vs WHPX, --accel whpx)</p>
       </div>
       <div class="cell reveal" data-delay="80">
         <h3>交付</h3>
@@ -389,7 +393,7 @@ footer { padding: 44px 0 56px; }
         <li class="reveal"><span class="n">1</span><span class="s"><b>装依赖</b><span>rustup target add x86_64-unknown-none · winget install LLVM.LLVM qemu</span></span></li>
         <li class="reveal"><span class="n">2</span><span class="s"><b>构建内核</b><span>cd kernel; cargo build --release; 确认出现 "Compiling" 行</span></span></li>
         <li class="reveal"><span class="n">3</span><span class="s"><b>启动参考机</b><span>QEMU 无头拉起，monitor 注入 "os run hermes"</span></span></li>
-        <li class="reveal"><span class="n">4</span><span class="s"><b>跑回归</b><span>fujoregress.py 29/29 · ci.py 38 用例 · onebuild 3/3</span></span></li>
+        <li class="reveal"><span class="n">4</span><span class="s"><b>跑回归</b><span>fujoregress.py 37/37 · --accel whpx 双模式 · ci.py 38 用例 · onebuild 3/3</span></span></li>
       </ol>
       <div class="term reveal">
         <div class="term-bar"><span>powershell / developer</span><span>Windows</span></div>
@@ -397,10 +401,10 @@ footer { padding: 44px 0 56px; }
 <pre><span class="c"># 1) build kernel</span>
 cd kernel; cargo build --release; cd ..
 
-<span class="c"># 2) flatten (pad matches MB_HEADER: 0x1A0000)</span>
+<span class="c"># 2) flatten (pad matches MB_HEADER: 0x1C0000)</span>
 python tools/flatten_elf.py \
   kernel/target/x86_64-unknown-none/release/fujo-kernel \
-  kernel/fujo-kernel.bin --pad 0x1A0000
+  kernel/fujo-kernel.bin --pad 0x1C0000
 
 <span class="c"># 3) boot headless (any demo as initrd)</span>
 qemu-system-x86_64 -m 256M -kernel kernel/fujo-kernel.bin \
@@ -409,7 +413,7 @@ qemu-system-x86_64 -m 256M -kernel kernel/fujo-kernel.bin \
 <span class="c"># monitor: sendkey <span class="g">o s spc r u n spc h e r m e s ret</span></span>
 
 <span class="c"># 4) regression / one-click</span>
-python tools/fujoregress.py   <span class="c"># 29/29</span>
+python tools/fujoregress.py   <span class="c"># 37/37 (--accel whpx → 双模式对照)</span>
 python tools/ci.py            <span class="c"># 38 cases</span>
 pwsh scripts/onebuild.ps1     <span class="c"># 3/3</span></pre>
         </div>
@@ -423,10 +427,11 @@ pwsh scripts/onebuild.ps1     <span class="c"># 3/3</span></pre>
     <h2>可验证的证据</h2>
     <p class="sub">结论来自回归闭环，不是口头声明。全部命令在仓库内可复现。</p>
     <div class="ev-list">
-      <div class="ev-item reveal"><p class="ev-head"><span class="tick">✓</span> 回归闭环</p><p><code>python tools/fujoregress.py</code> 全量 29/29，M133-M137 每波 PASS (m137: PCI 多函数 6 设备)</p></div>
+      <div class="ev-item reveal"><p class="ev-head"><span class="tick">✓</span> 回归闭环</p><p><code>python tools/fujoregress.py</code> 全量 37/37 (TCG), AI 波 m141-m147 每波 PASS; <code>--accel whpx</code> 第二执行模式对照 36/37 (m129 = WHPX 平台限制)</p></div>
       <div class="ev-item reveal"><p class="ev-head"><span class="tick">✓</span> 30 秒复现</p><p>上方命令直接跑: QEMU 无头启动 → monitor 注入 <code>os run hermes</code></p></div>
       <div class="ev-item reveal"><p class="ev-head"><span class="tick">✓</span> 真机证据</p><p>GRUB2 multiboot v1 真机引导 (docs/74 §4) · AHCI/SATA 真盘持久化回读 (docs/75/76/79) · LAPIC 平台双语义 + CPUID/MSR 探测 (docs/74)</p></div>
-      <div class="ev-item reveal"><p class="ev-head"><span class="tick">✓</span> 发布基线</p><p>M1-M137 全部 PASS (docs/08-roadmap-100.md 100 项勾选 + W13-W20 机制线) · v1.0 发布 (docs/49-release-notes.md)</p></div>
+      <div class="ev-item reveal"><p class="ev-head"><span class="tick">✓</span> AI 在线波</p><p><code>verify_ai.py --model qwen2.5:7b</code> m141 三引擎对照 8/8·1/5·6/6 (novel 2/2) · <code>--evil</code> w24 对抗拦截: 越权 kill 全拒+审计, blast-radius 可复现 (docs/85)</p></div>
+      <div class="ev-item reveal"><p class="ev-head"><span class="tick">✓</span> 发布基线</p><p>M1-M147 全部 PASS (docs/08-roadmap-100.md 100 项勾选 + W13-W29 机制/平台线) · v1.0 发布 (docs/49-release-notes.md)</p></div>
     </div>
   </div>
 </section>
@@ -438,7 +443,7 @@ pwsh scripts/onebuild.ps1     <span class="c"># 3/3</span></pre>
     <div class="faq">
       <div class="faq-item reveal"><h3><span class="q">Q1</span>AI 推理是端侧的吗？</h3><p>不是。内核 (AI OS 层) 提供权重页/模型卡/审计/执行器编排面，实际推理由宿主链路 (COM2 → 宿主模型服务) 承载，无本地 LLM。</p></div>
       <div class="faq-item reveal"><h3><span class="q">Q2</span>兼容性指什么？</h3><p>指加载器/垫片面，不是完整用户态兼容。Linux ELF / macOS Mach-O / Windows PE32+ 的最小静态样例可原地运行，三平台二进制统一打包为 .run (FUJR v1)。</p></div>
-      <div class="faq-item reveal"><h3><span class="q">Q3</span>性能如何？</h3><p>默认 TCG 解释执行，真机/KVM 预期 10-100x (M57 对照面已架)。系统内编译器为 C 子集 (单函数)，ACPI 表体 &gt;64MiB 未映射 (M96 guard)。</p></div>
+      <div class="faq-item reveal"><h3><span class="q">Q3</span>性能如何？</h3><p>默认 TCG 解释执行，真机/KVM 预期 10-100x (M57 对照面已架)。W29 已加第二执行模式对照 (--accel whpx)。系统内编译器为 C 子集 (单函数)，ACPI 表体 &gt;64MiB 未映射 (M96 guard)。</p></div>
       <div class="faq-item reveal"><h3><span class="q">Q4</span>还有哪些没做完？</h3><p>真机视频面 (INT 10h VBE) 与 USB 驱动面未完成；FJFS 多簇写往返已修复单簇读回，大文件列后续。</p></div>
     </div>
   </div>
@@ -470,6 +475,16 @@ pwsh scripts/onebuild.ps1     <span class="c"># 3/3</span></pre>
   </div>
 </div>
 
+<section id="thanks">
+  <div class="wrap thanks-inner">
+    <h2>致谢</h2>
+    <p class="sub">感谢每一位参与 FujoOS 开发与同行的人。</p>
+    <p class="thanks-body reveal">从第一行内核代码到第 137 个里程碑，从每一条 QEMU 日志到每一次真机验证：
+      感谢贡献代码与驱动的开发者、跑回归与验证的协作者、写文档和做评审的人，
+      也感谢所有提 Issue、Star、阅读与分享的朋友。这个项目因你们而存在，也因你们继续向前。</p>
+  </div>
+</section>
+
 <footer>
   <div class="wrap foot-inner">
     <div class="brand">Fujo<em>OS</em></div>
@@ -488,7 +503,7 @@ pwsh scripts/onebuild.ps1     <span class="c"># 3/3</span></pre>
     { t: "[ 0.012] mem: on-demand zero pages, frame pool ready", cls: "" },
     { t: "[ 0.031] abi: elf64 / mach-o / pe32+ loaders linked", cls: "" },
     { t: "[ 0.089] wmsg: 64-slot message queue, fujokit up", cls: "" },
-    { t: "[ 0.156] ci: 38/38 pass · regression 29/29", cls: "ok" },
+    { t: "[ 0.156] ci: 38/38 pass · regression 37/37", cls: "ok" },
     { t: "os> os run hermes", cls: "prompt-line" }
   ];
   var boot = document.getElementById("bootlog");
