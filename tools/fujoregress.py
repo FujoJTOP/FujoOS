@@ -96,6 +96,10 @@ CASES = [
      ["-netdev", "user,id=net0",
       "-device", "virtio-net-pci,netdev=net0,mac=52:54:00:12:34:57,disable-modern=on,disable-legacy=off"],
      {"udp_server": [8077, os.path.join(ROOT, "sdk", "network", "hello-clone.c")]}),
+    # W22: 三引擎质量对照 (无模型 = 确定性 rules/auto 降级语义; 模型在线由 verify_ai 全量)
+    ("m141-eval", "ELF64 x 3-engine-eval", "sdk/linux/m141_eval.elf", "M141 RESULT: PASS", [], {}),
+    # W22: 自监督反馈闭环 (anom 建议 -> 自动隔离 -> 内核验证位 -> 审计标签)
+    ("m142-feedback", "ELF64 x ai-feedback", "sdk/linux/m142_feedback.elf", "M142 RESULT: PASS", [], {}),
     # W21: 自托管闭环 —— m139 clone 源码 (tmpfs+FJFS) -> mbuild /tmp/hello-clone.c
     #       (tcc-static 编译) -> runfile /tmp/hello (产物运行输出)
     ("m140-selfhost", "ELF64 x selfhost", "sdk/build/m140_self.initrd",

@@ -505,28 +505,32 @@ pub extern "C" fn fujo_ai_classify(ptr: u64, len: u64) -> i64 {
     serial::write_str("') -> ");
 
     // W10 R5: 蒸馏规则字节码优先 (命中 = 零模型调用; 陌生情况才走模型)。
-    if let Some((v, _a0, _a1, _c)) = rules_match(lower.as_bytes(), SHM_KIND_CLASSIFY as u64) {
-        serial::write_str(intent_name(v as i64));
-        serial::write_line("  [engine=rulebook]");
-        ai_aud_note(1, 3, v, 0, 0, 0, &text[..len]);
-        return v as i64;
+    // W22: force=1 跳过规则面 (强制模型); force=2 跳过规则+模型 (强制规则)。
+    if eval_force() != 1 {
+        if let Some((v, _a0, _a1, _c)) = rules_match(lower.as_bytes(), SHM_KIND_CLASSIFY as u64) {
+            serial::write_str(intent_name(v as i64));
+            serial::write_line("  [engine=rulebook]");
+            ai_aud_note(1, 3, v, 0, 0, 0, &text[..len]);
+            return v as i64;
+        }
     }
-    if let Some((intent, tag, el)) = qwen_classify(lower.as_bytes()) {
-        ai_aud_note(1, 1, intent as u64, 0, 0, 0, &text[..len]);
-        serial::write_str(intent_name(intent));
-        serial::write_str("  [engine=qwen; model=");
-        serial::write_str(core::str::from_utf8(&tag[..tag.iter().position(|&b| b == 0).unwrap_or(0)]).unwrap_or("?"));
-        serial::write_str("; t=");
-        syscall::log_hex(el * 10);
-        serial::write_line("ms]");
-        intent
-    } else {
-        let intent = rules_classify(lower);
-        ai_aud_note(1, 2, intent as u64, 0, 0, 0, &text[..len]);
-        serial::write_str(intent_name(intent));
-        serial::write_line("  [engine=rules-fallback; link timeout]");
-        intent
+    if eval_force() != 2 {
+        if let Some((intent, tag, el)) = qwen_classify(lower.as_bytes()) {
+            ai_aud_note(1, 1, intent as u64, 0, 0, 0, &text[..len]);
+            serial::write_str(intent_name(intent));
+            serial::write_str("  [engine=qwen; model=");
+            serial::write_str(core::str::from_utf8(&tag[..tag.iter().position(|&b| b == 0).unwrap_or(0)]).unwrap_or("?"));
+            serial::write_str("; t=");
+            syscall::log_hex(el * 10);
+            serial::write_line("ms]");
+            return intent;
+        }
     }
+    let intent = rules_classify(lower);
+    ai_aud_note(1, 2, intent as u64, 0, 0, 0, &text[..len]);
+    serial::write_str(intent_name(intent));
+    serial::write_line("  [engine=rules-fallback; link timeout]");
+    intent
 }
 
 /// 系统调用 fujo_ai_fetch (0x5102) —— fujoctx 上下文注入。
@@ -566,6 +570,29 @@ pub extern "C" fn fujo_ai_info(ptr: u64, len: u64) -> i64 {
     }
     serial::write_line("ai   : info -> engine=qwen;model=qwen2.5:0.5b;link=com2");
     n as i64
+}
+
+// ---------------------------------------------------------------------------
+// W22 · 评测引擎强制 (三引擎对照: auto=rulebook→model→rules / model / rules)
+// 垂直开发第一步: 让同一份样本集可在 3 种引擎下运行, 量化模型边际价值。
+// ---------------------------------------------------------------------------
+
+static mut EVAL_FORCE: u64 = 0; // 0=auto 1=force-model 2=force-rules
+
+pub fn eval_force() -> u64 {
+    unsafe { EVAL_FORCE }
+}
+
+/// 0x830F: 设置评测引擎模式 (demo 三引擎对照; 0 恢复自动)。
+#[no_mangle]
+pub extern "C" fn fujo_evl_mode(mode: u64) -> i64 {
+    unsafe {
+        EVAL_FORCE = mode.min(2);
+        serial::write_str("evl : engine mode=");
+        crate::syscall::debug_dec(EVAL_FORCE);
+        serial::write_line("");
+    }
+    0
 }
 
 // ---------------------------------------------------------------------------
@@ -760,11 +787,23 @@ pub extern "C" fn fujo_anom_run(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 
     let s = &text[..len];
 
     // W10 R5: 蒸馏字节码优先; 陌生 → 模型; 超时 → 规则。
-    let (anom, conf, tag, engine) =
-        if let Some((v, a0, _a1, _c)) = rules_match(s, SHM_KIND_ANOMALY as u64) {
+    // W22: force=1 跳过规则面; force=2 强制规则 (确定性引擎对照)。
+    let (anom, conf, tag, engine) = {
+        let rb = if eval_force() != 1 {
+            rules_match(s, SHM_KIND_ANOMALY as u64)
+        } else {
+            None
+        };
+        if let Some((v, a0, _a1, _c)) = rb {
             let mut t = [0u8; 24];
             t[..8].copy_from_slice(b"rulebook");
             (v, a0, t, 3u64)
+        } else if eval_force() == 2 {
+            serial::write_line("anom : force rules engine");
+            let (a, c) = rules_anom(s);
+            let mut t = [0u8; 24];
+            t[..7].copy_from_slice(b"fjrules");
+            (a, c, t, 2u64)
         } else {
             match anom_llm(s) {
                 Some((a, c, tag)) => (a, c, tag, 1u64),
@@ -776,9 +815,12 @@ pub extern "C" fn fujo_anom_run(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 
                     (a, c, t, 2u64)
                 }
             }
-        };
+        }
+    };
 
     let mut iso_rc: i64 = 0;
+    // W22: 自监督验证位 —— 自动隔离被执行且任务确实进入隔离态 (2) => 建议被证实。
+    let mut fb_verified: u64 = 0;
     if anom == 1 {
         unsafe {
             ANOM_TOTAL += 1;
@@ -792,10 +834,13 @@ pub extern "C" fn fujo_anom_run(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 
         {
             if let Some(pid) = parse_pid(s) {
                 iso_rc = crate::capability::fujo_cap_exec(crate::capability::ACT_ISOLATE, pid, 0);
+                if iso_rc == 0 && crate::sched::task_state(pid as usize) == 2 {
+                    fb_verified = 1;
+                }
             }
         }
     }
-    ai_aud_note(2, engine, anom, conf, 0, iso_rc as u64, &text[..len]);
+    ai_aud_note(2, engine, anom, conf, iso_rc as u64, fb_verified, &text[..len]);
 
     let o = out as *mut u64;
     unsafe {
@@ -961,13 +1006,25 @@ pub extern "C" fn fujo_plan_run(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 
     }
     let mut plan = [0u8; 96];
     let mut eng: u64 = 0;
-    let (_, plen) = if let Some((v, a0, a1, _c)) = rules_match(&goal[..len], SHM_KIND_PLAN as u64) {
-        // 蒸馏字节码: "A<act> <a0> <a1>;" (a1=0 时同 push_action 省略)
-        let n = push_action(&mut plan, 0, v, a0, a1);
-        eng = 3;
-        ((), n)
-    } else {
-        match plan_llm(&goal[..len]) {
+    // W22: force=1 跳过规则面; force=2 强制规则。
+    let (_, plen) = {
+        let rb = if eval_force() != 1 {
+            rules_match(&goal[..len], SHM_KIND_PLAN as u64)
+        } else {
+            None
+        };
+        if let Some((v, a0, a1, _c)) = rb {
+            // 蒸馏字节码: "A<act> <a0> <a1>;" (a1=0 时同 push_action 省略)
+            let n = push_action(&mut plan, 0, v, a0, a1);
+            eng = 3;
+            ((), n)
+        } else if eval_force() == 2 {
+            serial::write_line("plan: force rules engine");
+            eng = 2;
+            let n = rules_plan(&goal[..len], &mut plan);
+            ((), n)
+        } else {
+            match plan_llm(&goal[..len]) {
             Some((l, ln)) => {
                 eng = 1;
                 // 提取 PLAN= 字段 (内容含空格, 以 " TAG" 或行尾终止)
@@ -1001,6 +1058,7 @@ pub extern "C" fn fujo_plan_run(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 
                 let n = rules_plan(&goal[..len], &mut plan);
                 ((), n)
             }
+        }
         }
     };
     let mut n_ok = 0u64;
@@ -1096,14 +1154,25 @@ pub extern "C" fn fujo_io_predict(ptr: u64, len: u64, out: u64, _cap: u64) -> i6
             seq[i] = (ptr as *const u8).add(i).read();
         }
     }
-    let (next, eng) = if let Some((v, _a0, _a1, _c)) = rules_match(&seq[..len], SHM_KIND_IO as u64) {
-        (v, 3u64)
-    } else {
-        match io_llm(&seq[..len]) {
-            Some(v) => (v, 1u64),
-            None => {
-                serial::write_line("io   : shm timeout -> rules (last-block)");
-                (last_num(&seq[..len]), 2u64)
+    // W22: force=1 跳过规则面; force=2 强制规则 (last-block 基线)。
+    let (next, eng) = {
+        let rb = if eval_force() != 1 {
+            rules_match(&seq[..len], SHM_KIND_IO as u64)
+        } else {
+            None
+        };
+        if let Some((v, _a0, _a1, _c)) = rb {
+            (v, 3u64)
+        } else if eval_force() == 2 {
+            serial::write_line("io   : force rules engine");
+            (last_num(&seq[..len]), 2u64)
+        } else {
+            match io_llm(&seq[..len]) {
+                Some(v) => (v, 1u64),
+                None => {
+                    serial::write_line("io   : shm timeout -> rules (last-block)");
+                    (last_num(&seq[..len]), 2u64)
+                }
             }
         }
     };
@@ -1221,13 +1290,24 @@ pub extern "C" fn fujo_nlc_set(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 {
     }
     let mut pol = [0u8; 96];
     let mut eng: u64 = 0;
-    let plen = if let Some((v, a0, _a1, _c)) = rules_match(&text[..len], SHM_KIND_NLC as u64) {
-        // 蒸馏字节码: "POL=<key>:<val>;"
-        let n = push_pol(&mut pol, 0, v, a0);
-        eng = 3;
-        n
-    } else {
-        match nlc_llm(&text[..len]) {
+    // W22: force=1 跳过规则面; force=2 强制规则。
+    let plen = {
+        let rb = if eval_force() != 1 {
+            rules_match(&text[..len], SHM_KIND_NLC as u64)
+        } else {
+            None
+        };
+        if let Some((v, a0, _a1, _c)) = rb {
+            // 蒸馏字节码: "POL=<key>:<val>;"
+            let n = push_pol(&mut pol, 0, v, a0);
+            eng = 3;
+            n
+        } else if eval_force() == 2 {
+            serial::write_line("nlc : force rules engine");
+            eng = 2;
+            rules_nlc(&text[..len], &mut pol)
+        } else {
+            match nlc_llm(&text[..len]) {
             Some((l, ln)) => {
                 eng = 1;
                 let mut i = 0usize;
@@ -1255,6 +1335,7 @@ pub extern "C" fn fujo_nlc_set(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 {
                 eng = 2;
                 rules_nlc(&text[..len], &mut pol)
             }
+        }
         }
     };
     // 解析 "POL=k:v;POL=k:v"
@@ -1368,7 +1449,14 @@ pub extern "C" fn fujo_env_scan(out: u64, _cap: u64) -> i64 {
 
     let mut scene_buf = [0u8; 12];
     let mut eng: u64 = 0;
-    let (scene_len, profile) = match env_llm(&digest[..d]) {
+    // W22: force=2 强制规则 (确定性场景); force=1 与 auto 均走模型路径。
+    let (scene_len, profile) = if eval_force() == 2 {
+        serial::write_line("env : force rules engine");
+        eng = 2;
+        scene_buf[..7].copy_from_slice(b"desktop");
+        (7usize, 2u64)
+    } else {
+        match env_llm(&digest[..d]) {
         Some((l, ln)) => {
             eng = 1;
             let mut sn = 0usize;
@@ -1401,6 +1489,7 @@ pub extern "C" fn fujo_env_scan(out: u64, _cap: u64) -> i64 {
             eng = 2;
             scene_buf[..7].copy_from_slice(b"desktop");
             (7usize, 2u64)
+        }
         }
     };
     let scene = &scene_buf[..scene_len];
@@ -1715,7 +1804,9 @@ fn ai_aud_note(duty: u64, engine: u64, out: u64, a: u64, b: u64, result: u64, te
         for i in 0..tlen {
             e[48 + i] = text[i];
         }
-        e[48 + tlen] = 0;
+        if tlen < 40 {
+            e[48 + tlen] = 0;
+        }
         AIAUD_POS += 1;
     }
 }

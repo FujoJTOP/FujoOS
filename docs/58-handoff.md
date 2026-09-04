@@ -29,6 +29,7 @@
 - **W20 启动 (新方向: 脱 QEMU 专属; m133 PASS)**:platform.rs 平台检测 (Bochs VBE 0xB0C5 证据链) + LAPIC ICR 双语义运行时切换 (QEMU 写低触发/Intel 写高触发) + 平台差异审计表 **docs/74 (14 项)**; 真机引导 = GRUB2 multiboot 现成路径。
 - **W20 p2-p8 (逐波完整)**: LAPIC base MSR 0x1B 探测 · mbi framebuffer 接收 (GRUB 真机) · AHCI SATA 驱动 (m134) · FJFS 卷经 AHCI 背板 (m135) · 内存拓扑 ≤4TiB (m136; 手动 8G 7167MiB) · PCI 多功能枚举 (m137) —— docs/72-79, 回归 29/29。
 - **W21 完成 (m139/m140 PASS)**: 网络栈完整性 + **自托管闭环** —— UDP GET-SOURCE (virtio-net/slirp) → tmpfs+FJFS 落盘 → `mbuild /tmp/hello-clone.c` (tcc-static) → `runfile /tmp/hello` 运行 ("cloned-compiled hello from fujo!"); **fujoregress 30/30**; docs/80; 论文评估节 docs/81 (文献核对/选刊 = zcode)。**关键取证**: QEMU 9.2 slirp 丢弃 guest→host TCP 数据段 (SYN 通/数据不通, cksum 已验证) → clone 用 UDP; TCP 客户端数据面 = followup。
+- **W22 完成 (m141/m142 PASS)**: AI 垂直开发 I —— **三引擎质量对照**: 0x830F 引擎强制门 (auto/model/rules), 同 19 样本金标准集 × 3 引擎 (m141); **自监督反馈闭环**: anom 建议 → 自动隔离 → 内核查 task_state==2 证实 → 审计 result=1 (m142)。**实测 (qwen2.5:7b)**: [rules] anom 6/8 io 0/5 cls 4/6; [model] **8/8 1/5 6/6**; 规则边界外增量 anom novel-pos **2/2 vs 0/2**、cls **2/2 vs 0/2**; io 1/5 双引擎均差 (开放问题); 0.5b 全答 RUN (不可用)。**fujoregress 33/33**; docs/82; 存量 bug: ai_aud_note 88B 越界 (tlen=40) 修复。后续 (文档化): io 预测器重设计、验证标签→蒸馏候选自动回路、对抗回复注入测试。
 - **实测数据**(docs/44-Ext 表格):哨兵 100 分类 10 命中/0 误报;计划 隔离+恢复 2/0、验证 1;IO 预测 10/30(对照 LRU 0/30);NLC 策略应用 3 条、配置 1/0/24;环境 桌面/配置 2/2;M115 五职责 PASS。
 - **延迟实测**:7B 冷推理 4.6s、warm 0.15–0.17s(CPU)。
 - **W8 完成(M118 R3 时延协议 + M119 R1 公理化)**:shm 帧 v2 快照@t0+evw+crit、回包 TTL、wait_rsp 丢弃、0x8309 探针、0x830A 公理化自检(离线入 fujoregress);规格 docs/59。
