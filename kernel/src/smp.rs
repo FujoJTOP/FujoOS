@@ -241,10 +241,45 @@ fn delay_ticks(n: u64) {
     }
 }
 
-/// W17b: 等 ICR 投递完成 (读 0xFEE00300 bit12 = delivery status, 1=发送中)。
+/// W20: LAPIC 基址探测 —— CPUID leaf1 EDX bit9 (APIC 存在) 门 + MSR 0x1B
+/// (APICBASE) bits 12..35 = 基址; 失败回退 0xFEE00000 (常规默认)。
+pub fn lapic_base() -> u64 {
+    let mut b = [0u32; 4];
+    unsafe { fujo_cpuid_leaf1(b.as_mut_ptr()) };
+    if b[3] & (1 << 9) == 0 {
+        serial::write_line("smp  : APIC absent (cpuid edx.9=0) - fallback 0xFEE00000");
+        return 0xFEE00000;
+    }
+    let lo: u32;
+    let hi: u32;
+    unsafe {
+        core::arch::asm!(
+            "rdmsr",
+            in("ecx") 0x1Bu32,
+            out("eax") lo,
+            out("edx") hi,
+            options(nomem, nostack, preserves_flags)
+        );
+    }
+    let base = (((lo as u64) & 0xFFFFF000) | (((hi as u64) & 0xF) << 32)) & !0xFFF;
+    if base == 0 {
+        0xFEE00000
+    } else {
+        base
+    }
+}
+
+static mut LAPIC_BASE: u64 = 0xFEE00000;
+
+#[inline]
+fn lapic(off: u64) -> u64 {
+    unsafe { LAPIC_BASE + off }
+}
+
+/// W17b: 等 ICR 投递完成 (读 ICR 低 32 bit12 = delivery status, 1=发送中)。
 fn icr_idle_wait() {
     let mut spins = 0u32;
-    while ((mmio_rd32(0xFEE00300) >> 12) & 1) == 1 && spins < 100_000 {
+    while ((mmio_rd32(lapic(0x300)) >> 12) & 1) == 1 && spins < 100_000 {
         core::hint::spin_loop();
         spins += 1;
     }
@@ -265,12 +300,12 @@ pub fn icr_mode() -> u8 {
 fn icr_send(value: u32, dest: u32) {
     if crate::platform::is_qemu() {
         // QEMU LAPIC: 高 32 先存 (dest field), 低 32 后写触发
-        mmio_wr32(0xFEE00310, dest << 24);
-        mmio_wr32(0xFEE00300, value);
+        mmio_wr32(lapic(0x310), dest << 24);
+        mmio_wr32(lapic(0x300), value);
     } else {
         // Intel SDM (真机): 低 32 先存 (值), 高 32 后写触发
-        mmio_wr32(0xFEE00300, value);
-        mmio_wr32(0xFEE00310, dest << 24);
+        mmio_wr32(lapic(0x300), value);
+        mmio_wr32(lapic(0x310), dest << 24);
     }
     icr_idle_wait();
 }
@@ -283,10 +318,13 @@ fn wait_ticks(n: u64) {
     }
 }
 
-/// W17: 映射 LAPIC MMIO (0xFEE00000) 进恒等页表 (PML4[0].PDPT[3].PD[503]→PT[0])。
-/// boot 恒等只到 1GiB; 0xFEE00000 = 3GB+0x2E00000 → PDPT[3], PD 索引 0x7F7 & 0x1FF = 503。
+/// W17/W20: 映射 LAPIC MMIO (MSR 0x1B 探测基址) 进恒等页表。
+/// boot 恒等只到 1GiB; 0xFEE00000 = PDPT[3] . PD[503] → PT[0];
+/// 页表索引按探测基址通用计算 (真机可能重定位)。
 fn map_lapic() -> bool {
+    let base = lapic_base();
     unsafe {
+        LAPIC_BASE = base;
         let cr3 = crate::mem::cr3_phys();
         let pm4 = cr3 as *mut u64;
         let pdpt_raw = pm4.read();
@@ -294,9 +332,12 @@ fn map_lapic() -> bool {
             return false;
         }
         let pdpt = (pdpt_raw & 0x000F_FFFF_FFFF_F000) as *mut u64;
-        // 0xFD000000 (LFB) 与 0xFEE00000 (LAPIC) 同属 PDPT[3] (pdi 488/503);
-        // 不复用整链, 只复用旧 PD, 在 PD[503] 插 LAPIC PT (LFB 链不动)。
-        let old_pd_raw = pdpt.add(3).read();
+        // 0xFD000000 (LFB) 与 LAPIC 同属 PDPT[3] (pdi 488/503);
+        // 不复用整链, 只复用旧 PD, 在 LAPIC PD 索引处插 PT (LFB 链不动)。
+        let pdpti = ((base >> 30) & 0x3) as usize;
+        let pdi = ((base >> 21) & 0x1FF) as usize;
+        let pti = ((base >> 12) & 0x1FF) as usize;
+        let old_pd_raw = pdpt.add(pdpti).read();
         let old_pd = old_pd_raw & 0x000F_FFFF_FFFF_F000;
         let pd: u64;
         if old_pd_raw & 1 != 0 && old_pd != 0 {
@@ -306,7 +347,7 @@ fn map_lapic() -> bool {
                 Some(p) => p,
                 None => return false,
             };
-            pdpt.add(3).write(pd | 0x3);
+            pdpt.add(pdpti).write(pd | 0x3);
         }
         let pdt = pd as *mut u64;
         let la = match crate::mem::alloc_frame_kernel() {
@@ -317,27 +358,32 @@ fn map_lapic() -> bool {
         for k in 0..512 {
             ((la as *mut u64).add(k)).write(0);
         }
-        ((la as *mut u64)).write(0xFEE00000 | 0x0B); // RW|P|PWT|PCD
-        pdt.add(503).write(la | 0x3);
-        serial::write_str("smp  : lapic pd=0x");
+        ((la as *mut u64)).write(base | 0x0B); // RW|P|PWT|PCD
+        pdt.add(pdi).write(la | 0x3);
+        serial::write_str("smp  : lapic base=0x");
+        crate::syscall::log_hex(base);
+        serial::write_str(" pd=0x");
         crate::syscall::log_hex(pd);
         serial::write_str(" pt=0x");
         crate::syscall::log_hex(la);
         serial::write_line("");
-        serial::write_line("smp  : lapic MMIO mapped (0xFEE00000)");
+        serial::write_str("smp  : lapic MMIO mapped (");
+        serial::write_str("pml4[0] pdpt[");
+        serial::write_str(if pdpti == 3 { "3" } else { "?" });
+        serial::write_line("])");
     }
-    let id = mmio_rd32(0xFEE00020);
+    let id = mmio_rd32(lapic(0x20));
     serial::write_str("smp  : lapic id=0x");
     crate::syscall::log_hex(id as u64);
     serial::write_str(if (id >> 24) == 0 { " (BSP)" } else { " (AP?)" });
     serial::write_line("");
     // LAPIC SVR: APIC software enable (bit 8) — 复位后 ICR 不执行直到启用
     // W17b 取证: 写 0x1F5 回读回显 (铁律 17: 区分 RW/RO; 若读回 0 则 MMIO 路径可疑)
-    mmio_wr32(0xFEE003F0, 0x1F5);
+    mmio_wr32(lapic(0x3F0), 0x1F5);
     serial::write_str("smp  : svr(w0x1f5)=0x");
-    crate::syscall::log_hex(mmio_rd32(0xFEE003F0) as u64);
+    crate::syscall::log_hex(mmio_rd32(lapic(0x3F0)) as u64);
     serial::write_line("");
-    mmio_wr32(0xFEE003F0, 0x1FF);
+    mmio_wr32(lapic(0x3F0), 0x1FF);
     true
 }
 

@@ -101,6 +101,24 @@ fn outw(v: u16) {
     unsafe { crate::serial::outw(ATA_DATA, v) }
 }
 
+/// W20: ATA 软复位 (SRST via 0x3F6 控制寄存器; 失败恢复 —— 真机盘状态机
+/// 出错后不软复位会永久卡死: 后续所有命令被旧状态污染)。
+pub fn reset_drive() {
+    unsafe {
+        crate::serial::outb(0x3F6, 0x04); // SRST assert
+        for _ in 0..10_000 {
+            core::hint::spin_loop();
+        }
+        crate::serial::outb(0x3F6, 0x00); // SRST deassert
+        for _ in 0..100_000 {
+            if crate::serial::inb(ATA_STATUS) & ST_BSY == 0 {
+                break;
+            }
+        }
+    }
+    serial::write_line("ata  : soft reset (SRST) applied");
+}
+
 fn print_hex(v: u64) {
     const HX: &[u8; 16] = b"0123456789abcdef";
     let mut buf = [0u8; 18];
@@ -139,10 +157,12 @@ pub fn read_sectors(lba: u32, count: u32, buf: *mut u8) -> bool {
         crate::serial::outb(ATA_LBA_HI, ((lba >> 16) & 0xFF) as u8);
         crate::serial::outb(ATA_COMMAND, 0x20);
         if !wait_not_busy() {
+            reset_drive(); // W20: 真机盘错误恢复 (QEMU 无副作用)
             return false;
         }
         for s in 0..count {
             if !wait_drq() {
+                reset_drive();
                 return false;
             }
             let dst = (buf as *mut u16).add((s * 256) as usize);
@@ -164,10 +184,12 @@ pub fn write_sectors(lba: u32, count: u32, buf: *const u8) -> bool {
         crate::serial::outb(ATA_LBA_HI, ((lba >> 16) & 0xFF) as u8);
         crate::serial::outb(ATA_COMMAND, 0x30);
         if !wait_not_busy() {
+            reset_drive(); // W20: 真机盘错误恢复
             return false;
         }
         for s in 0..count {
             if !wait_drq() {
+                reset_drive();
                 return false;
             }
             let src = (buf as *const u16).add((s * 256) as usize);
