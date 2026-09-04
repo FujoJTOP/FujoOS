@@ -223,6 +223,39 @@ pub fn ev_write_pos() -> u64 {
     unsafe { EV_W as u64 }
 }
 
+/// W27: 事件流摘要统计 —— 最近 `win` ticks 内的事件数 (rate, cap 99),
+/// 最近事件 (pid, kind)。哨兵/模型经 0x8312 digest 感知系统自身。
+pub fn ev_stats_recent(win: u64) -> (u64, u64, u64) {
+    unsafe {
+        let now = crate::interrupts::ticks();
+        let mut rate = 0u64;
+        let mut last_pid = 0u64;
+        let mut last_kind = 0u64;
+        let mut scanned = 0usize;
+        let mut i = EV_W;
+        while i > 0 && scanned < EV_N {
+            i -= 1;
+            let e = EV[i % EV_N];
+            let ts = e[0];
+            if now >= ts {
+                let dt = now - ts;
+                if dt <= win {
+                    rate += 1;
+                }
+            }
+            if last_kind == 0 {
+                last_pid = e[2];
+                last_kind = e[1];
+            }
+            scanned += 1;
+        }
+        if rate > 99 {
+            rate = 99;
+        }
+        (rate, last_pid, last_kind)
+    }
+}
+
 /// M118 (R3): 自位置 from 起打上临界(关键)事件的数量。
 /// crit 为 kind 掩码 (bit=kind-1, 同 EV_SUB); from 过早时只查环内保留的最近 EV_N 条。
 pub fn ev_delta_critical(from: u64, crit: u64) -> u64 {

@@ -596,6 +596,67 @@ pub extern "C" fn fujo_evl_mode(mode: u64) -> i64 {
 }
 
 // ---------------------------------------------------------------------------
+// W27 · 哨兵感知系统自身: 0x8312 ev_digest —— 事件环真实统计摘要
+// (最近 100 ticks 事件速率 + 最近事件 pid/kind), 供哨兵分类与模型读取。
+// ---------------------------------------------------------------------------
+
+#[no_mangle]
+pub extern "C" fn fujo_ev_digest(ptr: u64, cap: u64) -> i64 {
+    if !(0x400000..0xC00000).contains(&ptr) || cap < 48 {
+        return -14;
+    }
+    let (rate, pid, kind) = crate::ctx::ev_stats_recent(100);
+    let name = match kind {
+        1 => "syscall",
+        2 => "file",
+        3 => "win",
+        4 => "exit",
+        5 => "anom",
+        _ => "none",
+    };
+    let mut out = [0u8; 48];
+    let mut n = 0usize;
+    for &c in b"ev pid=".iter() {
+        out[n] = c;
+        n += 1;
+    }
+    let mut num = [0u8; 20];
+    let dn = dec_digits(pid, &mut num);
+    for &c in num[..dn].iter() {
+        out[n] = c;
+        n += 1;
+    }
+    for &c in b" rate=".iter() {
+        out[n] = c;
+        n += 1;
+    }
+    let dn = dec_digits(rate, &mut num);
+    for &c in num[..dn].iter() {
+        out[n] = c;
+        n += 1;
+    }
+    for &c in b" wr=".iter() {
+        out[n] = c;
+        n += 1;
+    }
+    for &c in name.as_bytes().iter() {
+        out[n] = c;
+        n += 1;
+    }
+    out[n] = 0;
+    let dst = ptr as *mut u8;
+    unsafe {
+        for i in 0..=n {
+            dst.add(i).write(out[i]);
+        }
+    }
+    serial::write_str("digest: ");
+    serial::write_str(core::str::from_utf8(&out[..n]).unwrap_or(""));
+    serial::write_line("");
+    n as i64
+}
+
+// ---------------------------------------------------------------------------
 // M92: 意图路由增强 (qwen 蒸馏 / qwen3-0.6b 切换, 对照表)
 // ---------------------------------------------------------------------------
 
