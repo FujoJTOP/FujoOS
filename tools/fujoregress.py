@@ -100,6 +100,8 @@ CASES = [
     ("m141-eval", "ELF64 x 3-engine-eval", "sdk/linux/m141_eval.elf", "M141 RESULT: PASS", [], {}),
     # W22: 自监督反馈闭环 (anom 建议 -> 自动隔离 -> 内核验证位 -> 审计标签)
     ("m142-feedback", "ELF64 x ai-feedback", "sdk/linux/m142_feedback.elf", "M142 RESULT: PASS", [], {}),
+    # W23: 蒸馏闭环自动化 (FJRU v2 19 条 -> novel 全命中 -> 零模型调用)
+    ("m143-distill", "ELF64 x distill-feed", "sdk/linux/m143_distill_feed.elf", "M143 RESULT: PASS", [], {}),
     # W21: 自托管闭环 —— m139 clone 源码 (tmpfs+FJFS) -> mbuild /tmp/hello-clone.c
     #       (tcc-static 编译) -> runfile /tmp/hello (产物运行输出)
     ("m140-selfhost", "ELF64 x selfhost", "sdk/build/m140_self.initrd",

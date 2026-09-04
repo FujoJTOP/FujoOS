@@ -311,16 +311,33 @@ static int run(void)
     if (model_online) {
         run_engine(1);
         print_engine("m141: [model]");
-        /* novel 增量 (记录, 不断言): anom novel-pos 模型判定 */
+        /* novel 增量 (记录, 不断言): anom novel-pos 模型判定 + 蒸馏候选打印 */
         u64 mn = 0;
         for (i = 4; i < 6; i++) {
             got = run_sample(2, S_TXT[i]);
+            wrstr("m141: T3 cand anom-novel '");
+            wrstr(S_TXT[i]);
+            wrstr("' -> ");
+            wrdec(got);
+            wrstr(" gt=");
+            wrdec(S_GT[i]);
+            wrstr(got == S_GT[i] ? " HIT\n" : " miss\n");
             if (got == S_GT[i])
                 mn++;
         }
         wrstr("m141: T3 model novel-pos anom ");
         wrdec(mn);
         wrstr("/2 (rules baseline 0/2)\n");
+        for (i = 17; i < 19; i++) {
+            got = run_sample(1, S_TXT[i]);
+            wrstr("m141: T3 cand cls-novel '");
+            wrstr(S_TXT[i]);
+            wrstr("' -> ");
+            wrdec(got);
+            wrstr(" gt=");
+            wrdec(S_GT[i]);
+            wrstr(got == S_GT[i] ? " HIT\n" : " miss\n");
+        }
         run_engine(0);
         print_engine("m141: [auto ]");
     } else {

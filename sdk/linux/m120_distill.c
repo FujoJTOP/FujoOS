@@ -94,8 +94,8 @@ static void run(void)
     long rn = sy(0x830B, (long)RULEBOOK, RULEBOOK_LEN, 0, 0, 0);
     wrstr("m120: rulebook=");
     wrdec((u64)rn);
-    wrstr(" (expect 14)\n");
-    if (rn != 14)
+    wrstr(" (expect 19)\n");
+    if (rn != 19)
         pass_all = 0;
 
     /* anom (duty2) */

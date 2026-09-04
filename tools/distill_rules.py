@@ -25,10 +25,15 @@ DUTY_NAME = {1: "classify", 2: "anom", 3: "plan", 4: "io", 5: "nlc", 6: "env"}
 
 # ---- 已记录的 7B 归纳结果 (--online 校验后 bake; 保证 CI 确定性) ----
 # 每项: (duty, needle, value, a0, a1, conf, param)
+# W23: +4 条 (m141 novel 命中实测 bake: wr=memleak/zombie, launch/what);
+# 精确 needle 必须置于 (2,"rate=") 通配之前 (rules_match 按序首个命中)。
 BAKED = [
+    (2, "wr=dead", 1, 80, 0, 80, 0),
+    (2, "wr=memleak", 1, 80, 0, 80, 0),
+    (2, "wr=zombie", 1, 80, 0, 80, 0),
+    (2, "wr=diag", 1, 80, 0, 80, 0),
     (2, "rate=99", 1, 80, 0, 80, 0),
     (2, "rate=", 0, 20, 0, 20, 0),
-    (2, "wr=dead", 1, 80, 0, 80, 0),
     (2, "wr=ok", 0, 20, 0, 20, 0),
     (3, "isolate task", 2, 0, 0, 90, 1),
     (3, "kill task", 1, 0, 0, 90, 1),
@@ -40,6 +45,8 @@ BAKED = [
     (1, "open", 3, 0, 0, 90, 0),
     (1, "exit", 4, 0, 0, 90, 0),
     (1, "hello", 2, 0, 0, 90, 0),
+    (1, "launch", 1, 0, 0, 90, 0),
+    (1, "what", 2, 0, 0, 90, 0),
 ]
 
 INDUCE_TPL = (
