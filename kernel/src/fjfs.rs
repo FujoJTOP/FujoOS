@@ -10,8 +10,35 @@
 //! 写入 = 分配连续簇 -> 写数据扇区 -> 更新位图与目录项 (写穿)。
 //! 验收: QEMU 同一磁盘镜像两次启动 —— write 后重启 read 回读。
 
-use crate::ata;
 use crate::serial;
+
+/// W20: 磁盘背板 —— AHCI (SATA, 真机) 优先; ATA PIO (QEMU IDE) 回退。
+/// AHCI v0 单扇区命令 → count>1 循环; 内核侧缓冲恒等 (virt_to_phys 直通)。
+fn rd_seg(lba: u32, count: u32, buf: *mut u8) -> bool {
+    if crate::ahci::ready() {
+        for i in 0..count {
+            if !crate::ahci::disk_read(lba + i, unsafe { buf.add((i as usize) * SECTOR) }) {
+                return false;
+            }
+        }
+        true
+    } else {
+        crate::ata::read_sectors(lba, count, buf)
+    }
+}
+
+fn wr_seg(lba: u32, count: u32, buf: *const u8) -> bool {
+    if crate::ahci::ready() {
+        for i in 0..count {
+            if !crate::ahci::disk_write(lba + i, unsafe { buf.add((i as usize) * SECTOR) }) {
+                return false;
+            }
+        }
+        true
+    } else {
+        crate::ata::write_sectors(lba, count, buf)
+    }
+}
 
 pub const SECTOR: usize = 512;
 pub const CLUSTER_SECTORS: u32 = 4;
@@ -46,13 +73,13 @@ static mut ROOT: [DirEntry; 32] = [DirEntry {
 
 fn rd_sector(lba: u32) {
     unsafe {
-        let _ = ata::read_sectors(lba, 1, SECTOR0.as_mut_ptr());
+        let _ = rd_seg(lba, 1, SECTOR0.as_mut_ptr());
     }
 }
 
 fn wr_sector(lba: u32) {
     unsafe {
-        let _ = ata::write_sectors(lba, 1, SECTOR0.as_ptr());
+        let _ = wr_seg(lba, 1, SECTOR0.as_ptr());
     }
 }
 
@@ -96,12 +123,12 @@ fn fmt_name(n: &[u8]) -> [u8; 16] {
 
 /// 初始化: 探测卷; 无 FJFS 魔数则格式化 (清零+写入 superblock)。
 pub fn init() -> bool {
-    if !unsafe { ata::ATA_PRESENT } {
-        serial::write_line("fjfs : no ATA drive - volume offline");
+    if !unsafe { crate::ata::ATA_PRESENT } && !crate::ahci::ready() {
+        serial::write_line("fjfs : no ATA/AHCI drive - volume offline");
         return false;
     }
     let mut raw = unsafe { core::ptr::read_volatile(core::ptr::addr_of!(SECTOR0)) };
-    let ok = ata::read_sectors(0, 1, raw.as_mut_ptr());
+    let ok = rd_seg(0, 1, raw.as_mut_ptr());
     if !ok {
         serial::write_line("fjfs : superblock read failed");
         return false;
@@ -114,7 +141,7 @@ pub fn init() -> bool {
                 for i in 0..SECTOR {
                     SECTOR0[i] = 0;
                 }
-                let _ = ata::write_sectors(lba, 1, SECTOR0.as_ptr());
+                let _ = wr_seg(lba, 1, SECTOR0.as_ptr());
             }
             for i in 0..SECTOR {
                 SECTOR0[i] = 0;
@@ -130,15 +157,15 @@ pub fn init() -> bool {
             SECTOR0[10] = ((TOTAL_CLUSTERS >> 16) & 0xFF) as u8;
             SECTOR0[12] = 1; // bitmap_lba
             SECTOR0[16] = 2; // root_lba
-            let _ = ata::write_sectors(0, 1, SECTOR0.as_ptr());
+            let _ = wr_seg(0, 1, SECTOR0.as_ptr());
             serial::write_line("fjfs : volume formatted (4MiB, 2048 clusters)");
         } else {
             serial::write_line("fjfs : existing volume mounted");
         }
         VOLUME_OK = true;
         // 载入 bitmap + root
-        let _ = ata::read_sectors(1, 1, BITMAP.as_mut_ptr());
-        let _ = ata::read_sectors(2, 2, core::ptr::addr_of_mut!(ROOT).cast::<u8>());
+        let _ = rd_seg(1, 1, BITMAP.as_mut_ptr());
+        let _ = rd_seg(2, 2, core::ptr::addr_of_mut!(ROOT).cast::<u8>());
         serial::write_str("fjfs : bitmap bits set=");
         let mut set = 0u64;
         for &b in BITMAP.iter() {
@@ -196,13 +223,13 @@ fn alloc_runs(n: u32) -> Option<u32> {
 
 fn flush_bitmap() {
     unsafe {
-        let _ = ata::write_sectors(1, 1, BITMAP.as_ptr());
+        let _ = wr_seg(1, 1, BITMAP.as_ptr());
     }
 }
 
 fn flush_root() {
     unsafe {
-        let _ = ata::write_sectors(2, 2, core::ptr::addr_of!(ROOT).cast::<u8>());
+        let _ = wr_seg(2, 2, core::ptr::addr_of!(ROOT).cast::<u8>());
     }
 }
 
@@ -230,7 +257,7 @@ pub fn write_file(name: &[u8], data: *const u8, len: usize) -> bool {
                 off += 1;
             }
             let lba = DATA_LBA + (first + c) * CLUSTER_SECTORS + s;
-            let _ = ata::write_sectors(lba, 1, buf.as_ptr());
+            let _ = wr_seg(lba, 1, buf.as_ptr());
         }
     }
     // 目录项 (覆盖/新建)
@@ -291,7 +318,7 @@ pub fn read_file(name: &[u8], buf: *mut u8, max: usize) -> usize {
                 let mut sector = [0u8; SECTOR];
                 for s in 0..CLUSTER_SECTORS {
                     let lba = DATA_LBA + (first + c as u32) * CLUSTER_SECTORS + s;
-                    let _ = ata::read_sectors(lba, 1, sector.as_mut_ptr());
+                    let _ = rd_seg(lba, 1, sector.as_mut_ptr());
                     for i in 0..SECTOR {
                         if off < n {
                             unsafe { buf.add(off).write(sector[i]); }

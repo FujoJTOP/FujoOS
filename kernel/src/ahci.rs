@@ -59,6 +59,15 @@ fn mmio_rd(addr: u64) -> u32 {
     v
 }
 
+fn rdtsc_smp() -> u64 {
+    let lo: u32;
+    let hi: u32;
+    unsafe {
+        core::arch::asm!("rdtsc", out("eax") lo, out("edx") hi, options(nomem, nostack));
+    }
+    ((hi as u64) << 32) | lo as u64
+}
+
 /// W20: 探测/初始化 (main.rs 在 ATA 之后调用; 有 HBA 即接管)。
 pub fn init() -> bool {
     unsafe {
@@ -155,6 +164,21 @@ pub fn ready() -> bool {
     unsafe { AHCI_READY }
 }
 
+/// W20 p5: 磁盘背板原语 (内核缓冲; virt_to_phys 恒等 pass)。
+pub fn disk_read(lba: u32, buf: *mut u8) -> bool {
+    if !unsafe { AHCI_READY } {
+        return false;
+    }
+    cmd(unsafe { ACTIVE_PORT }, 0x25, lba, 1, buf)
+}
+
+pub fn disk_write(lba: u32, buf: *const u8) -> bool {
+    if !unsafe { AHCI_READY } {
+        return false;
+    }
+    cmd(unsafe { ACTIVE_PORT }, 0x35, lba, 1, buf)
+}
+
 /// W20: 单命令执行 (槽 0; kind: 0x25=read DMA, 0x35=write DMA)。
 fn cmd(port: u32, kind: u8, lba: u32, count: u16, buf: *const u8) -> bool {
     unsafe {
@@ -221,6 +245,18 @@ fn cmd(port: u32, kind: u8, lba: u32, count: u16, buf: *const u8) -> bool {
             let done = spins < 2_000_000;
             let err = (is & 0x7E00) != 0 || (tfd & 1) != 0; // PxIS 错误位簇 (TFE 等)/TFD.ERR
             if done && !err {
+                // W20 p5: 写后盘需回到空闲 (TFD.DRQ/BSY 清) 才能继续下一命令;
+                // QEMU AIO 完成时序 + 真机盘 TRDY 延迟, 连续写必须等待 (0x44=DRQ|BSY)。
+                let mut w = 0u32;
+                while (mmio_rd(p + P_TFD) & 0x44) != 0 && w < 200_000 {
+                    core::hint::spin_loop();
+                    w += 1;
+                }
+                // 额外 settle (QEMU 写完成回调时序; rdtsc 忙等 1M ≈ ms 级)
+                let t0 = rdtsc_smp();
+                while rdtsc_smp().wrapping_sub(t0) < 1_000_000 {
+                    core::hint::spin_loop();
+                }
                 LBA_CAP = LBA_CAP.max(((lba as u64) + count as u64) * 512);
                 return true;
             }

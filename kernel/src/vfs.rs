@@ -32,11 +32,14 @@ pub struct File {
     /// M20: 登记的内核对象槽 (pipe 端点; 0=none);
     /// W12: tmpfs 条目槽 +1 (0=none)。
     pub kslot: usize,
+    /// W20 p5: 磁盘文件短名 (F_KIND_DISK; close 刷盘按真实文件名,
+    /// 取代 M16 占位 hello.txt)。
+    pub disk_name: [u8; 16],
 }
 
 // 文件表: 0..=2 保留 (0=/dev/null, 1/2=/dev/tty 串口), 3.. 由 open 分配
 static mut FILES: [File; MAX_OPEN] = [
-    File { name: "/dev/null", kind: 0, data_ptr: core::ptr::null(), data_len: 0, pos: 0, kslot: 0 };
+    File { name: "/dev/null", kind: 0, data_ptr: core::ptr::null(), data_len: 0, pos: 0, kslot: 0, disk_name: [0; 16] };
     MAX_OPEN
 ];
 static mut NEXT_FD: usize = 3;
@@ -679,6 +682,10 @@ pub fn fujo_open_name(name: &str, _flags: u64) -> i64 {
             DISK_CACHE_LEN = len;
             DISK_DIRTY = false;
             f.name = "/disk/";
+            // W20 p5: 记录短名 (close 按真实文件名刷盘)
+            for k in 0..16 {
+                f.disk_name[k] = if k < fname_bytes.len() { fname_bytes[k] } else { 0 };
+            }
             // 记录短名: 存到 data_len 无意义 -> 用 name 的静态拷贝
             // (File.name 是 &'static str; 磁盘文件全走缓存与脏标记, 短名从路径再解析)
             f.kind = F_KIND_DISK;
@@ -1005,10 +1012,29 @@ pub extern "C" fn fujo_close(fd: u64) -> i64 {
                 }
                 return 0;
             }
-            // M16: 磁盘文件脏刷盘 (写穿)
+            // M16: 磁盘文件脏刷盘 (写穿; W20 p5: 真实短名, 取代占位 hello.txt)
             if f.kind == F_KIND_DISK && DISK_DIRTY {
-                if crate::fjfs::write_file(b"hello.txt", core::ptr::addr_of!(DISK_CACHE).cast::<u8>(), DISK_CACHE_LEN) {
-                    serial::write_line("vfs  : disk flush ok (/disk/hello.txt)");
+                let mut end = 16usize;
+                while end > 0 && f.disk_name[end - 1] == 0 {
+                    end -= 1;
+                }
+                if end > 0
+                    && crate::fjfs::write_file(
+                        &f.disk_name[..end],
+                        core::ptr::addr_of!(DISK_CACHE).cast::<u8>(),
+                        DISK_CACHE_LEN,
+                    )
+                {
+                    serial::write_str("vfs  : disk flush ok (/disk/");
+                    for &c in f.disk_name.iter().take(end) {
+                        // 短名回显 (仅 ASCII)
+                        serial::write_str(if c < 0x80 {
+                            unsafe { core::str::from_utf8_unchecked(core::slice::from_raw_parts(&c as *const u8, 1)) }
+                        } else {
+                            "?"
+                        });
+                    }
+                    serial::write_line(")");
                 }
                 DISK_DIRTY = false;
             }

@@ -73,8 +73,13 @@ CASES = [
     ("m132-dirs", "ELF64 x dirs", "sdk/linux/m132_dirs.elf", "M132 RESULT: PASS", [], {}),
     # W20: 平台检测 (QEMU 证据链一致性; ICR 语义模式随平台)
     ("m133-plat", "ELF64 x platform", "sdk/linux/m133_plat.elf", "M133 RESULT: PASS", [], {}),
-    # W20: AHCI (SATA) 驱动 —— ich9-ahci 参考盘 (真机 SATA 路径, q35 机器)
+    # W20: AHCI (SATA) 驱动 —— q35 机器 (真机 SATA 路径)
     ("m134-ahci", "ELF64 x ahci", "sdk/linux/m134_ahci.elf", "M134 RESULT: PASS",
+     ["-machine", "q35",
+      "-drive", "if=none,id=hd,file=" + os.path.join(ROOT, "sdk", "ahci-mini.img") + ",format=raw",
+      "-device", "ide-hd,drive=hd,bus=ide.0"], {}),
+    # W20 p5: FJFS 卷经 AHCI 背板 (真机 SATA 持久化)
+    ("m135-fs", "ELF64 x fjfs-ahci", "sdk/linux/m135_fs.elf", "M135 RESULT: PASS",
      ["-machine", "q35",
       "-drive", "if=none,id=hd,file=" + os.path.join(ROOT, "sdk", "ahci.img") + ",format=raw",
       "-device", "ide-hd,drive=hd,bus=ide.0"], {}),
