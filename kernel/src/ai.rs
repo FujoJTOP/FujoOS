@@ -1056,6 +1056,9 @@ pub fn act_verify(act: u64, a0: u64, a1: u64) -> u64 {
 const QUAL_DUTY: usize = 6;
 static mut QUAL_HIT: [u64; QUAL_DUTY] = [0; QUAL_DUTY];
 static mut QUAL_TOTAL: [u64; QUAL_DUTY] = [0; QUAL_DUTY];
+/// A7-② 防污染: 加宽需连续高 (WIDEN_CONFIRM=2), 收缩即时 —— 域宽滞后于涨、跟随于跌。
+static mut QUAL_UP_RUN: [u64; QUAL_DUTY] = [0; QUAL_DUTY];
+const WIDEN_CONFIRM: u64 = 2;
 
 /// 0x8314: 质量提交 (生产自动点 + 测试显式)。
 #[no_mangle]
@@ -1106,7 +1109,17 @@ pub extern "C" fn fujo_dom_admit(duty: u64, out: u64) -> i64 {
     let cur = crate::sched::current_domain_id();
     let mut code = 0i64;
     let mut perm = 0u64;
-    if q >= t_high {
+    // A7-② 防污染 (域宽滞后于涨/跟随于跌): 质量≥τ_high 只累计上行计数,
+    // 连续 WIDEN_CONFIRM 次才加宽 (防"只答有把握的刷高"单峰加宽); 收缩即时。
+    unsafe {
+        if q >= t_high {
+            QUAL_UP_RUN[d] += 1;
+        } else {
+            QUAL_UP_RUN[d] = 0;
+        }
+    }
+    let up = unsafe { QUAL_UP_RUN[d] };
+    if up >= WIDEN_CONFIRM {
         // 加宽: 域 (非 0) 授全权 (域 0 为系统域, 不改)
         if cur >= 1 && cur < crate::capability::DOM_MAX as u64 {
             crate::capability::dom_adjust(cur, crate::capability::ALL_ACTS);
@@ -1125,6 +1138,8 @@ pub extern "C" fn fujo_dom_admit(duty: u64, out: u64) -> i64 {
     crate::syscall::debug_dec(duty);
     serial::write_str(" rate=");
     crate::syscall::debug_dec(q);
+    serial::write_str(" up=");
+    crate::syscall::debug_dec(up);
     serial::write_str(" cur=");
     crate::syscall::debug_dec(cur);
     serial::write_str(" th=");

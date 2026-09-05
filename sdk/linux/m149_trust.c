@@ -87,21 +87,34 @@ static int run(void)
     if (d1 < 1 || info[d1 * 5 + 1] != 0)
         pass_all = 0;
 
-    /* T2 高质量: io duty=4 命中 12 次 (率=100 → ≥τ_high=70 → 加宽) */
+    /* T2 高质量: io duty=4 命中 12 次 (率=100) —— A7-② 滞后对齐:
+     * 第 1 次 admit 应"维持"(连续高 < WIDEN_CONFIRM=2), 第 2 次才"加宽"。 */
     if (d1 >= 1) {
         for (i = 0; i < 12; i++)
             sy(0x8314, 4, 1, 0, 0, 0);
         u64 o[3] = { 0, 0, 0 };
-        long rc = sy(0x8313, 4, (long)o, 0, 0, 0);
+        long rc1 = sy(0x8313, 4, (long)o, 0, 0, 0);
         sy(0x810A, (long)info, 0, 0, 0, 0);
-        wrstr("m149: T2 admit rc=");
-        wrdec((u64)rc);
+        wrstr("m149: T2a admit#1 rc=");
+        wrdec((u64)rc1);
         wrstr(" rate=");
         wrdec(o[0]);
         wrstr(" perm=");
         wrdec(info[d1 * 5 + 1]);
-        wrstr(" (expect 1/100/0x3F)\n");
-        if (!(rc == 1 && o[0] >= 70 && info[d1 * 5 + 1] == 0x3F))
+        wrstr(" (expect 0/>=70/0: widened LAGGED)\n");
+        if (!(rc1 == 0 && o[0] >= 70 && info[d1 * 5 + 1] == 0))
+            pass_all = 0;
+        o[0] = 0;
+        long rc2 = sy(0x8313, 4, (long)o, 0, 0, 0);
+        sy(0x810A, (long)info, 0, 0, 0, 0);
+        wrstr("m149: T2b admit#2 rc=");
+        wrdec((u64)rc2);
+        wrstr(" rate=");
+        wrdec(o[0]);
+        wrstr(" perm=");
+        wrdec(info[d1 * 5 + 1]);
+        wrstr(" (expect 1/>=70/0x3F: widened after confirm)\n");
+        if (!(rc2 == 1 && o[0] >= 70 && info[d1 * 5 + 1] == 0x3F))
             pass_all = 0;
     }
 
