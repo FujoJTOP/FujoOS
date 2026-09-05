@@ -35,11 +35,53 @@ pub const ACT_ACK: u64 = 6;
 pub const ALL_ACTS: u64 = 0x3F;
 
 /// M112: 配置槽 (key 1..=8): 1=anom 置信阈值 (默认 50), 2=自动隔离 (默认 0)。
+/// B24: 政策值域表 (key -> (min, max)); 越界拒绝 (由 G3/m151 暴露: 无门 -> 污染接受)。
 static mut CFG: [(u64, u64); 8] = [(0, 0); 8];
+const CFG_DOMAIN: [(u64, u64); 8] = [
+    (0, 100), // 1 anom 置信阈值
+    (0, 1),   // 2 自动隔离 on/off
+    (0, 100), // 3 策略时段 start
+    (0, 100), // 4 策略时段 end
+    (0, 100), // 5 策略参数
+    (0, 100), // 6 审计掩码
+    (0, 100), // 7 τ_high (trust 加宽)
+    (0, 100), // 8 τ_low (trust 收缩)
+];
 
 pub fn cfg_set(key: u64, val: u64) -> i64 {
     if key == 0 || key > 8 {
         return -22;
+    }
+    let (lo, hi) = CFG_DOMAIN[(key - 1) as usize];
+    if val < lo || val > hi {
+        serial::write_str("cfg  : reject #");
+        crate::syscall::debug_dec(key);
+        serial::write_str(" = ");
+        crate::syscall::debug_dec(val);
+        serial::write_line(" (out of value domain)");
+        return -22;
+    }
+    // B24: S3 策略不变式 —— τ_high > τ_low (加宽阈必须高于收缩阈),
+    // 否则 "quality >= tau_high" 恒真 -> 加宽无条件放行 (Goodhart 绕过值域).
+    if key == 7 {
+        let tau_low;
+        unsafe {
+            tau_low = if CFG[7].0 == 8 { CFG[7].1 } else { 30 };
+        }
+        if val <= tau_low {
+            serial::write_line("cfg  : reject #7 (tau invariant: tau_high <= tau_low)");
+            return -22;
+        }
+    }
+    if key == 8 {
+        let tau_high;
+        unsafe {
+            tau_high = if CFG[6].0 == 7 { CFG[6].1 } else { 70 };
+        }
+        if val >= tau_high {
+            serial::write_line("cfg  : reject #8 (tau invariant: tau_low >= tau_high)");
+            return -22;
+        }
     }
     unsafe {
         CFG[(key - 1) as usize] = (key, val);
