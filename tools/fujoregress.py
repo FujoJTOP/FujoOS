@@ -130,6 +130,11 @@ CASES = [
      [], {"append": "fujo.run=m142_feedback", "keys": []}),
     # W32: 信任自适应域 (质量台账 -> dom_admit -> 域宽=f(质量); zcode 框架)
     ("m149-trust", "ELF64 x trust-admit", "sdk/linux/m149_trust.elf", "M149 RESULT: PASS", [], {}),
+    # B2: TCP 客户端数据面探针 (复现 W21 slirp 数据段 DROP; 双模式对照列)
+    ("m150-tcpclient", "ELF64 x tcp-probe", "sdk/linux/m150_tcpclient.elf", "M150 RESULT: PASS",
+     ["-netdev", "user,id=net0",
+      "-device", "virtio-net-pci,netdev=net0,mac=52:54:00:12:34:57,disable-modern=on,disable-legacy=off"],
+     {"tcp_server": [8021], "bootsleep": 10.0}),
 ]
 
 MON_PORT = 4568
@@ -213,6 +218,36 @@ def run_case(kernel, case, timeout_s, accel="tcg"):
                 print(f"udpsrv: req {len(d)}B from {a}", flush=True)
                 s.sendto(hbody, a)
         threading.Thread(target=hsrv, daemon=True).start()
+    # B2 (W21 followup): host 侧 TCP echo server (m150: guest -> slirp 10.0.2.2:port)
+    if opts.get("tcp_server"):
+        tport = int(opts["tcp_server"][0])
+        tstop_t = [False]
+
+        def tsrv():
+            s = sk.socket(sk.AF_INET, sk.SOCK_STREAM)
+            s.setsockopt(sk.SOL_SOCKET, sk.SO_REUSEADDR, 1)
+            s.bind(("127.0.0.1", tport))
+            s.listen(2)
+            while not tstop_t[0]:
+                s.settimeout(0.5)
+                try:
+                    conn, addr = s.accept()
+                except sk.timeout:
+                    continue
+                except OSError:
+                    break
+                try:
+                    while True:
+                        d = conn.recv(2048)
+                        if not d:
+                            break
+                        print(f"tcpsrv: rx {len(d)}B", flush=True)
+                        conn.sendall(d)
+                except Exception:
+                    pass
+                finally:
+                    conn.close()
+        threading.Thread(target=tsrv, daemon=True).start()
     initrd = os.path.join(ROOT, rel)
     if not os.path.exists(initrd):
         return ("MISS", f"initrd not found: {initrd}", "")

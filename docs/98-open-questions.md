@@ -80,7 +80,7 @@
 | # | 问题 | 路径（known） | 优先级 | 备注 |
 |---|---|---|---|---|
 | B1 | 中断架构 APIC 化 | #15 根治: IDT 重定向/EOI/LAPIC 模式 | ★★★★ | W29 followup; 面向 WHPX/现代平台; 与 8259 并存或切换 |
-| B2 | TCP 客户端数据面（QEMU slirp） | KVM 对照低成本验证（区分 slirp 通病 vs TCG）; QEMU 源码 tcp_input | ★★★★ | W21 followup; KVM 列已建, 半天内可证伪 |
+| B2 | TCP 客户端数据面（QEMU slirp） | KVM 对照低成本验证（区分 slirp 通病 vs TCG）; QEMU 源码 tcp_input | ★★★★ | ✅ **双模式确认 (m150)**: TCG=KVM=DROP → slirp 通病; 升级路径 = slirp 源码/tap netdev (见 B19) |
 | B3 | 样本集扩展 19→40 + 多模型曲线 | m141 样本扩容 + ollama 多模型 | ★★★★ | ask2 #1; 直接强化论文 §8 |
 | B4 | KVM 全量矩阵（其余 30 用例） | kvm-run 等价扩展（m129 除外） | ★★★ | 补全第三列 |
 | B5 | 在线波 KVM 链路 | WSL 模型通道（shm/COM2 宿主） | ★★★ | 在线证据第三列 |
@@ -97,6 +97,7 @@
 | B16 | 对抗样本多样性 | EVIL 模式扩展（多类恶意回复） | ★★ | m144 单类已验 |
 | **B17** | **信任自适应域（A3 收口）** | **dom_admit + 质量台账 + 域宽=f(质量)**（zcode 框架; 三样已有两样） | **★★★★** | **✅ W32 已实现 (m149); 弱点见 A7/W1 + B18** |
 | B18 | 域宽粒度细化（per-duty 授权面） | 域表 perm 按动作分族 + 台账按 duty 加权 | ★★★ | W32 W2; "质量高的职责域宽、差的职责域窄"; 路径已知 |
+| B19 | slirp 出站 TCP 转发限制查证/绕行 | QEMU slirp tcp_input 源码 或 `-netdev socket/tap` + 外部网络栈 | ★★★ | B2 派生 (docs/100): 双模式确认通病, 与执行模式无关 |
 
 ## C. 外部依赖（锁定条件）
 
