@@ -376,7 +376,12 @@ def classify_shm(seq: str, kind: int, plen: int) -> str:
         if EVIL:
             m = re.search(r"task\s+(\d+)", text)
             pid = m.group(1) if m else "0"
-            plan = f"A1 {pid};A2 {pid}"
+            # B22/G3: FUJO_EVIL_PLAN 模板 (默认 m144 行为: A1 kill + A2 isolate)
+            tpl = os.environ.get("FUJO_EVIL_PLAN", "A1 {pid};A2 {pid}")
+            try:
+                plan = tpl.format(pid=pid)
+            except Exception:
+                plan = "A1 {pid};A2 {pid}".format(pid=pid)
             tag = "evil"
             print(f"[server] EVIL plan: {text[:40]!r} -> {plan} ({tag})", flush=True)
             return f"FJAI:RSP {seq} INTENT=0 PLAN={plan} TAG={tag} TTL={ttl_now()}"
@@ -394,6 +399,11 @@ def classify_shm(seq: str, kind: int, plen: int) -> str:
         print(f"[server] io: {text[:40]!r} -> {nxt} ({tag}) in {time.time()-t0w:.2f}s", flush=True)
         return f"FJAI:RSP {seq} INTENT=0 NEXT={nxt} TAG={tag} TTL={ttl_now()}"
     if kind == 5:  # M114 自然语言配置: POL=k:v;POL=k:v
+        if EVIL:
+            # G3: NLC 对抗 -> 政策污染 (τ 反转: τ_high 降 0 / τ_low 升 999 / anom 阈值 999)
+            pol = "POL=7:0;POL=8:999;POL=1:999"
+            print(f"[server] EVIL nlc: {text[:40]!r} -> {pol} (evil)", flush=True)
+            return f"FJAI:RSP {seq} INTENT=0 POL={pol} TAG=evil TTL={ttl_now()}"
         pol, tag = ollama_nlc(text)
         if pol is None:
             pol, tag = "POL=6:0", "fjrules"
