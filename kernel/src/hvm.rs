@@ -9,6 +9,35 @@ extern "C" {
     fn fujo_cpuid_hv(out: *mut u32); // 调 cpuid 0x40000000, 写 4×u32 (eax,ebx,ecx,edx)
 }
 
+/// W31: 内核内 hypervisor 品牌 (cpu leaf 0x40000000) —— 0=TCG 1=KVM 2=其它。
+pub fn hv_accel_id() -> i64 {
+    let mut out = [0u32; 4];
+    unsafe {
+        fujo_cpuid_hv(out.as_mut_ptr());
+    }
+    let vendor: [u8; 12] = [
+        (out[1] & 0xFF) as u8,
+        ((out[1] >> 8) & 0xFF) as u8,
+        ((out[1] >> 16) & 0xFF) as u8,
+        ((out[1] >> 24) & 0xFF) as u8,
+        (out[2] & 0xFF) as u8,
+        ((out[2] >> 8) & 0xFF) as u8,
+        ((out[2] >> 16) & 0xFF) as u8,
+        ((out[2] >> 24) & 0xFF) as u8,
+        (out[3] & 0xFF) as u8,
+        ((out[3] >> 8) & 0xFF) as u8,
+        ((out[3] >> 16) & 0xFF) as u8,
+        ((out[3] >> 24) & 0xFF) as u8,
+    ];
+    if vendor.starts_with(b"TCGTCGTCG") {
+        0
+    } else if vendor.starts_with(b"KVMKVMKVM") {
+        1
+    } else {
+        2
+    }
+}
+
 core::arch::global_asm!(r#"
     .text
     .p2align 4

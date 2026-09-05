@@ -289,8 +289,14 @@ fn icr_idle_wait() {
 /// 实证 (W17b): QEMU 写 0x300 (低 32) **触发**投递 (用已存高 32 dest);
 /// Intel SDM 10.5.2.2: 写高 32 触发 (低 32 仅存储)。二者相反 ——
 /// QEMU 下 Intel 路径会把 INIT 投给 dest=0 (BSP) 冻结 (负验证: docs/74)。
+/// W31 修正: 判据 = VBE 是 QEMU **且** hypervisor 品牌 = TCG ——
+/// KVM/WHPX 下 VBE 仍是 QEMU 设备 (Bochs 0xB0C5) 但 LAPIC 走真实 Intel 语义!
+fn qemu_tcg_icr() -> bool {
+    crate::platform::is_qemu() && crate::hvm::hv_accel_id() == 0
+}
+
 pub fn icr_mode() -> u8 {
-    if crate::platform::is_qemu() {
+    if qemu_tcg_icr() {
         0
     } else {
         1
@@ -298,12 +304,12 @@ pub fn icr_mode() -> u8 {
 }
 
 fn icr_send(value: u32, dest: u32) {
-    if crate::platform::is_qemu() {
+    if qemu_tcg_icr() {
         // QEMU LAPIC: 高 32 先存 (dest field), 低 32 后写触发
         mmio_wr32(lapic(0x310), dest << 24);
         mmio_wr32(lapic(0x300), value);
     } else {
-        // Intel SDM (真机): 低 32 先存 (值), 高 32 后写触发
+        // Intel SDM (真机/KVM/WHPX): 低 32 先存 (值), 高 32 后写触发
         mmio_wr32(lapic(0x300), value);
         mmio_wr32(lapic(0x310), dest << 24);
     }
@@ -376,6 +382,21 @@ fn map_lapic() -> bool {
     serial::write_str("smp  : lapic id=0x");
     crate::syscall::log_hex(id as u64);
     serial::write_str(if (id >> 24) == 0 { " (BSP)" } else { " (AP?)" });
+    serial::write_line("");
+    // W31: LAPIC 规范使能 (IA32_APIC_BASE.EN, MSR 0x1B) —— KVM 真 LAPIC 必须;
+    // TCG QEMU 设备模型宽容 (无此写也工作), 加此写两平台皆规范。
+    unsafe {
+        core::arch::asm!(
+            "mov ecx, 0x1B",
+            "mov eax, 0xFEE00800",
+            "xor edx, edx",
+            "wrmsr",
+            options(nomem, nostack, preserves_flags),
+        );
+    }
+    let id2 = mmio_rd32(lapic(0x20));
+    serial::write_str("smp  : after APIC-base.EN id=0x");
+    crate::syscall::log_hex(id2 as u64);
     serial::write_line("");
     // LAPIC SVR: APIC software enable (bit 8) — 复位后 ICR 不执行直到启用
     // W17b 取证: 写 0x1F5 回读回显 (铁律 17: 区分 RW/RO; 若读回 0 则 MMIO 路径可疑)
