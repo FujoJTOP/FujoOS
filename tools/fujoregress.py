@@ -164,6 +164,18 @@ CASES = [
     ("box-adapter", "ELF64 x box-adapter", "sdk/linux/m154_box.elf",
      "BOX ADAPTER PASS",
      [], {"box": {"mode": "adapter"}, "append": "fujo.run=m154_box", "keys": [], "bootsleep": 9.0, "timeout": 40}),
+    # W37/B-2v1: 大产物带外 (0xA10000 pin 页, 上限 512B->3072B) + file2pdf + framebuf
+    ("box-v1-online", "ELF64 x box-v1-online", "sdk/linux/m156_boxv1.elf",
+     "BX V1 RESULT: PASS",
+     [], {"box": {"mode": "normal"}, "append": "fujo.run=m156_boxv1", "keys": [], "bootsleep": 9.0, "timeout": 45}),
+    # W37/B-30: 盒黄金轨迹校验 (golden 表比对在宿主; mismatch -> 违约替代 -> demo -3 FAIL)
+    ("box-golden", "ELF64 x box-golden", "sdk/linux/m156_boxv1.elf",
+     "BX V1 RESULT: PASS",
+     [], {"box": {"mode": "normal", "golden": True}, "append": "fujo.run=m156_boxv1", "keys": [], "bootsleep": 9.0, "timeout": 45}),
+    # W37/B-31: 检疫门 fuzz (6 种畸形产物轮换 -> 全拒收)
+    ("box-fuzz", "ELF64 x box-fuzz", "sdk/linux/m157_boxfuzz.elf",
+     "BOX FUZZ PASS",
+     [], {"box": {"mode": "fuzz"}, "append": "fujo.run=m157_boxfuzz", "keys": [], "bootsleep": 9.0, "timeout": 45}),
 ]
 
 MON_PORT = 4568
@@ -299,7 +311,12 @@ def run_case(kernel, case, timeout_s, accel="tcg"):
     bxsrv = None
     if opts.get("box"):
         import box_server as bs
-        bxsrv = bs.BoxServer(port=SER_PORT, mon=MON_PORT, mode=opts["box"]["mode"])
+        bgold = None
+        if opts["box"].get("golden"):
+            bgold = json.load(open(os.path.join(ROOT, "sdk", "fixtures",
+                                                "box_golden.json")))
+        bxsrv = bs.BoxServer(port=SER_PORT, mon=MON_PORT,
+                             mode=opts["box"]["mode"], golden=bgold)
 
         def _serve():
             for _ in range(40):

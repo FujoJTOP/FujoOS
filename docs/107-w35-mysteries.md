@@ -45,7 +45,7 @@
 
 | 谜 | 状态 | 待办 |
 |---|---|---|
-| B-1 tcc 内编译（M-1 修正） | ⏳ 待重验 | 核外源 + 合规 load_end 对照实验 |
+| B-1 tcc 内编译（M-1 修正） | ✅ **已解（W37 对照实验：核外源 + 合规 load_end）** | 17KB 拼装源经 fujorun --lib 模块携带 → `mbuild /lib/sha256tool.c`（tcc-static 直读模块文件，绕开 tmpfs 2KB）→ tcc 启动/mmap/逐行编译**无 GP**（原 4KB 源即 GP at 0x49f630）——M-1 判定确认：原 GP = load_end 冲突污染，非 tcc 内部 bug。剩余小项：tcc 0.9.27 无 `__builtin_va_list` 内建（源适配，非阻断） |
 | qwen3:4b 慢 100× + 盲区 0/10 | 机理空白 | B27（ollama 后端取证） |
 | m134 干净盘首读 0 | AHCI 首调 DMA 竞态特征 | B26（QEMU 状态机剖析） |
 | io=0/30 | ✅ 已解（B20: 真实能力缺失, 非解析伪影） | — |

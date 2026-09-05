@@ -1,44 +1,56 @@
-//! box.rs — W36/B-2 · BOX-BRIDGE v0 盒面（内核侧）
+//! boxbridge.rs — W36/B-2 · BOX-BRIDGE 盒面（内核侧）· W37 v1 大产物升级
 //!
 //! 盒 = 内核外供应商（宿主 box_server，跑在它自己的世界里）：FujoOS 不装载其
 //! 代码、不实现其语义。协议与模型通道同构（shm 帧请求 + COM2 触发 + COM2 行
 //! 应答），内核侧只做五件事：
 //!   1) 注册表状态（per-provider：up/hit/total/schema）
-//!   2) 动词路由（白名单 1..=4；LEGO > BOX 决策在调用方，内核只拒未知动词）
-//!   3) 产物检疫门（帧级：ascii 白名单 + 禁执行魔数 + 动词 schema —— A1' 扩展）
+//!   2) 动词路由（白名单 1..=6；LEGO > BOX 决策在调用方，内核只拒未知动词）
+//!   3) 产物检疫门（帧级：ascii 白名单（verb 1-5）+ BMP 结构（verb 6）+
+//!      禁执行魔数 + 动词 schema —— A1' 扩展）
 //!   4) 双列台账（duty7 = 契约履约率 / duty8 = 下游可判定谓词，进 0x8314 族）
 //!   5) 域门（act7 = BOX_CMD，cap_exec/域宽 与模型同构）
 //!
+//! v1 带外缓冲：BOX_ARG/BOX_BUF 移 0xA10000 pin 页 (mem.rs demand_zero_init pin,
+//! PT_HEAP1[16]); 产物上限 512B → 3072B (48 × 64B 行); BSS 净回收 640B。
+//!
 //! 协议帧（应答方向，COM2 行，均为 ASCII）:
 //!   FJBOX:RSP  <seq> <status>          状态行 (status: 1=ok 0=busy)
-//!   FJBOX:DATA <seq> <off> <n> <text>  产物块 (off 必须连续, n ≤ 64B)
+//!   FJBOX:DATA <seq> <off> <n> <text>  产物块 (off 必须连续, n ≤ 64B,
+//!                                        text 到行尾; verb6 允许任意字节)
 //!   FJBOX:END  <seq>                   完成
 //! 请求方向: 共享页 0xA00000 帧 (kind=0xB0, payload = verb(1B)+arg) +
 //!           触发线 "FJBOX:REQ <seq> <len>"。
 //!
-//! ponytail: v0 单 provider 槽 (盒 = 宿主 box_server); 大产物/像素流 = v1
-//! (BOXXFR 块流经 tmpfs/带外通道, 需先过 load_end 检查 — docs/106 坑 #5)。
+//! ponytail: 单 provider 槽 (盒 = 宿主 box_server); GUI 像素流 = v1 通路版
+//! (verb6 framebuf = BMP 32×24 结构校验), 人类窗口呈现 = v2。
 
 use crate::serial;
 
-pub const BOX_PROV_MAX: usize = 1;
 pub const BOX_VERB_HASH: u64 = 1;
 pub const BOX_VERB_INFO: u64 = 2;
 pub const BOX_VERB_SIZE: u64 = 3;
 pub const BOX_VERB_ECHO: u64 = 4;
-pub const BOX_VERB_MAX: u64 = 4;
+pub const BOX_VERB_PDF: u64 = 5; // file2pdf (v1)
+pub const BOX_VERB_FB: u64 = 6; // framebuf (B-3 通路版, BMP)
+pub const BOX_VERB_MAX: u64 = 6;
 pub const BOX_ARG_MAX: usize = 128;
-pub const BOX_BUF_MAX: usize = 512;
+pub const BOX_BUF_MAX: usize = 3072; // v1: 512 -> 3072 (48 x 64B 行)
 pub const BOX_DATA_MAX: usize = 64;
-pub const BOX_TTL_TICKS: u64 = 800; // 8s @100Hz (命令型 TTL, 盒慢 — 不套 hint 级)
+pub const BOX_TTL_TICKS: u64 = 1200; // 12s @100Hz (命令型 TTL, 盒慢 — 不套 hint 级)
+
+/// verb6 = BMP: 32x24 RGB24 -> 54 + 32*24*3 = 2358B。
+pub const BOX_FB_W: u32 = 32;
+pub const BOX_FB_H: u32 = 24;
+pub const BOX_FB_LEN: usize = 54 + 32 * 24 * 3;
 
 const BOX_KIND: u32 = 0xB0;
-const BOX_LINE_MAX: usize = 128;
+const BOX_LINE_MAX: usize = 256; // DATA hex 编码: 64B -> 128 hex + 行头
+const BOX_PAGE: u64 = 0xA10000; // pin 页 (mem.rs)
+const BOX_ARG_OFF: usize = 0x100;
+const BOX_BUF_OFF: usize = 0x200;
 
 static mut BOX_SEQ: u64 = 0;
-static mut BOX_BUF: [u8; BOX_BUF_MAX] = [0; BOX_BUF_MAX];
 static mut BOX_BUF_N: usize = 0;
-static mut BOX_ARG: [u8; BOX_ARG_MAX] = [0; BOX_ARG_MAX];
 static mut BOX_ARG_N: usize = 0;
 /// per-provider 注册表槽 0 (host box_server; 域 = 1):
 static mut PROV_UP: u64 = 0;
@@ -47,12 +59,26 @@ static mut PROV_TOTAL: u64 = 0;
 static mut PROV_SCHEMA: u64 = 0;
 static mut PROV_LAST_RC: i64 = 0;
 
+/// v1: 页内缓冲 (pin 页 0xA10000; 派生任务 PT1 已同步 pin, mem.rs as_create)。
+unsafe fn box_arg() -> &'static mut [u8] {
+    core::slice::from_raw_parts_mut(
+        (BOX_PAGE as usize + BOX_ARG_OFF) as *mut u8,
+        BOX_ARG_MAX + 1,
+    )
+}
+
+unsafe fn box_buf() -> &'static mut [u8] {
+    core::slice::from_raw_parts_mut(
+        (BOX_PAGE as usize + BOX_BUF_OFF) as *mut u8,
+        BOX_BUF_MAX,
+    )
+}
+
 /// 行解析辅助: 找第 k 个空格分隔 token 的 (start, len)。
 fn tok(line: &[u8], k: usize) -> Option<(usize, usize)> {
     let mut i = 0usize;
     let mut cur = 0usize;
     while i < line.len() {
-        // 吞前置空格
         while i < line.len() && (line[i] == b' ' || line[i] == b'\t') {
             i += 1;
         }
@@ -85,7 +111,24 @@ fn parse_num(t: &[u8]) -> Option<u64> {
     Some(v)
 }
 
-/// 产物 ascii 白名单 (检疫: 只收可打印文本; 空字节/控制符即拒)。
+fn hexv(c: u8) -> Option<u8> {
+    match c {
+        b'0'..=b'9' => Some(c - b'0'),
+        b'a'..=b'f' => Some(c - b'a' + 10),
+        b'A'..=b'F' => Some(c - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn u16le(d: &[u8], off: usize) -> u16 {
+    u16::from_le_bytes([d[off], d[off + 1]])
+}
+
+fn u32le(d: &[u8], off: usize) -> u32 {
+    u32::from_le_bytes([d[off], d[off + 1], d[off + 2], d[off + 3]])
+}
+
+/// 产物 ascii 白名单 (检疫: verb 1-5 只收可打印文本; 空字节/控制符即拒)。
 fn ascii_ok(d: &[u8]) -> bool {
     for &c in d {
         if c < 0x20 && c != b'\n' && c != b'\r' && c != b'\t' {
@@ -130,14 +173,40 @@ fn is_digits(s: &[u8]) -> bool {
     true
 }
 
-/// 动词 schema (列2a: 机器可判定谓词; LLM 观察不进域宽 — v0 无列2b)。
+fn contains_sub(d: &[u8], pat: &[u8]) -> bool {
+    if pat.is_empty() || d.len() < pat.len() {
+        return false;
+    }
+    for i in 0..=(d.len() - pat.len()) {
+        if &d[i..i + pat.len()] == pat {
+            return true;
+        }
+    }
+    false
+}
+
+/// 动词 schema (列2a: 机器可判定谓词; LLM 观察不进域宽 — 无列2b)。
 /// 返回 true = 产物通过 schema; false = 契约违约 (adapter-fail)。
 fn schema_ok(verb: u64, d: &[u8]) -> bool {
     match verb {
         BOX_VERB_HASH => d.len() == 64 && is_hex(d),
         BOX_VERB_INFO => d.len() >= 4,
         BOX_VERB_SIZE => d.len() <= 20 && is_digits(d),
-        BOX_VERB_ECHO => unsafe { d.len() == BOX_ARG_N && d == &BOX_ARG[..BOX_ARG_N] },
+        BOX_VERB_ECHO => unsafe { d.len() == BOX_ARG_N && d == &box_arg()[..BOX_ARG_N] },
+        // v1: PDF (头 %PDF- + 尾 %%EOF 子串; 体 ascii 已由逐块白名单保证)
+        BOX_VERB_PDF => d.len() >= 8 && d[..5] == *b"%PDF-" && contains_sub(d, b"%%EOF"),
+        // v1: BMP 32x24 RGB24 结构 (魔数 + 文件大小@0x02 + 数据偏移@0x0A +
+        // DIB 尺寸字段)
+        BOX_VERB_FB => {
+            d.len() == BOX_FB_LEN
+                && d[0] == b'B'
+                && d[1] == b'M'
+                && u32le(d, 0x02) == BOX_FB_LEN as u32 // file size
+                && u32le(d, 0x0A) == 54 // pixel data offset (54)
+                && u32le(d, 0x12) == BOX_FB_W
+                && u32le(d, 0x16) == BOX_FB_H
+                && u16le(d, 0x1C) == 24 // bpp
+        }
         _ => false,
     }
 }
@@ -161,10 +230,6 @@ fn box_write_frame(seq: u64, payload: &[u8]) {
             b.add(0x030 + i).write_volatile(payload[i]);
         }
     }
-}
-
-fn box_tx_line(s: &[u8]) {
-    serial::ser2_tx_line(s);
 }
 
 /// trigger "FJBOX:REQ <seq> <len>\n"
@@ -212,7 +277,7 @@ fn box_trigger(seq: u64, len: u64) {
     }
     line[n] = b'\n';
     n += 1;
-    box_tx_line(&line[..n]);
+    serial::ser2_tx_line(&line[..n]);
 }
 
 /// 审计: 盒调用 (action=9) 与产物检疫 (action=10) 进统一审计环。
@@ -222,12 +287,6 @@ fn aud_box_call(verb: u64, rc: i64) {
 
 fn aud_box_gate(verb: u64, bad: u64) {
     crate::capability::aud_note(10, verb, bad);
-}
-
-fn prov_note(hit: u64) {
-    unsafe {
-        PROV_HIT += hit;
-    }
 }
 
 /// 0x8316 box_run(verb, arg_ptr, arg_len): 命令进 → 产物回 (同步等待, TTL 超时
@@ -256,10 +315,10 @@ pub extern "C" fn fujo_box_run(verb: u64, argptr: u64, arglen: u64) -> i64 {
         BOX_BUF_N = 0;
         BOX_ARG_N = arglen as usize;
         for i in 0..arglen as usize {
-            BOX_ARG[i] = ((argptr as *const u8).add(i)).read_volatile();
+            box_arg()[i] = ((argptr as *const u8).add(i)).read_volatile();
         }
         if BOX_ARG_N < BOX_ARG_MAX {
-            BOX_ARG[BOX_ARG_N] = 0;
+            box_arg()[BOX_ARG_N] = 0;
         }
     }
     let seq = unsafe {
@@ -271,7 +330,7 @@ pub extern "C" fn fujo_box_run(verb: u64, argptr: u64, arglen: u64) -> i64 {
     payload[0] = verb as u8;
     unsafe {
         for i in 0..arglen as usize {
-            payload[1 + i] = BOX_ARG[i];
+            payload[1 + i] = box_arg()[i];
         }
     }
     box_write_frame(seq, &payload[..1 + arglen as usize]);
@@ -285,13 +344,12 @@ pub extern "C" fn fujo_box_run(verb: u64, argptr: u64, arglen: u64) -> i64 {
     let mut line = [0u8; BOX_LINE_MAX];
     let mut ln = 0usize;
     let mut done = false;
-    let mut ended = false;
     let mut gate_bad: u8 = 0;
+    let binary = verb == BOX_VERB_FB; // verb6: 允许二进制体 (BMP)
     while !done && crate::interrupts::ticks().wrapping_sub(t0) < BOX_TTL_TICKS {
         if let Some(b) = serial::ser2_poll() {
             if b == b'\n' {
                 let l = &line[..ln];
-                // RSP / DATA / END 判定
                 if l.starts_with(b"FJBOX:RSP ") {
                     if let Some(k) = tok(l, 2) {
                         let st = parse_num(&l[k.0..k.0 + k.1]).unwrap_or(0);
@@ -300,13 +358,13 @@ pub extern "C" fn fujo_box_run(verb: u64, argptr: u64, arglen: u64) -> i64 {
                         }
                     }
                 } else if l.starts_with(b"FJBOX:DATA ") {
-                    // 行: FJBOX:DATA <seq> <off> <n> <text>
+                    // 行: FJBOX:DATA <seq> <off> <n> <hex64...>  (n = 原始字节数,
+                    // 内容 hex 编码 -> 二进制安全: PDF/BMP 内嵌 \n 不再折断行协议)
                     if let Some(k) = tok(l, 2) {
                         if let Some(k2) = tok(l, 3) {
                             if let Some(k3) = tok(l, 4) {
                                 let off = parse_num(&l[k.0..k.0 + k.1]).unwrap_or(usize::MAX as u64);
                                 let n = parse_num(&l[k2.0..k2.0 + k2.1]).unwrap_or(0) as usize;
-                                // text = token4 到行尾 (产物含空格, 不截断)
                                 let mut s = k3.0;
                                 while s < ln && (l[s] == b' ' || l[s] == b'\t') {
                                     s += 1;
@@ -314,16 +372,34 @@ pub extern "C" fn fujo_box_run(verb: u64, argptr: u64, arglen: u64) -> i64 {
                                 let d = &l[s..ln];
                                 if off as usize == unsafe { BOX_BUF_N }
                                     && n <= BOX_DATA_MAX
-                                    && n == d.len()
+                                    && n * 2 == d.len()
                                     && unsafe { BOX_BUF_N } + n <= BOX_BUF_MAX
-                                    && ascii_ok(d)
-                                    && !exec_magic(d)
                                 {
-                                    unsafe {
-                                        for (i, &c) in d.iter().enumerate() {
-                                            BOX_BUF[BOX_BUF_N + i] = c;
+                                    // hex 解码 -> 块缓冲
+                                    let mut tmp = [0u8; BOX_DATA_MAX];
+                                    let mut ok = true;
+                                    for i in 0..n {
+                                        let hi = hexv(d[i * 2]);
+                                        let lo = hexv(d[i * 2 + 1]);
+                                        match (hi, lo) {
+                                            (Some(a), Some(b)) => tmp[i] = (a << 4) | b,
+                                            _ => {
+                                                ok = false;
+                                                break;
+                                            }
                                         }
-                                        BOX_BUF_N += n;
+                                    }
+                                    if ok && (binary || ascii_ok(&tmp[..n])) && !exec_magic(&tmp[..n])
+                                    {
+                                        unsafe {
+                                            let bf = box_buf();
+                                            for i in 0..n {
+                                                bf[BOX_BUF_N + i] = tmp[i];
+                                            }
+                                            BOX_BUF_N += n;
+                                        }
+                                    } else {
+                                        gate_bad = 1;
                                     }
                                 } else {
                                     gate_bad = 1;
@@ -332,7 +408,6 @@ pub extern "C" fn fujo_box_run(verb: u64, argptr: u64, arglen: u64) -> i64 {
                         }
                     }
                 } else if l.starts_with(b"FJBOX:END ") {
-                    ended = true;
                     done = true;
                 }
                 ln = 0;
@@ -342,7 +417,7 @@ pub extern "C" fn fujo_box_run(verb: u64, argptr: u64, arglen: u64) -> i64 {
             }
         }
     }
-    if !done && !ended {
+    if !done {
         // 超时 = 供应商缺席声明 (不是错误码: 状态 + 审计, 调用方走降级)
         unsafe {
             PROV_UP = 0;
@@ -362,8 +437,8 @@ pub extern "C" fn fujo_box_run(verb: u64, argptr: u64, arglen: u64) -> i64 {
         crate::ai::fujo_qual_feed(7, 0);
         return -2;
     }
-    if !schema_ok(verb, unsafe { &BOX_BUF[..BOX_BUF_N] }) {
-        // 契约违约 (adapter): 文本可读但 schema 不符 —— 降权信号, 非健康
+    if !schema_ok(verb, unsafe { &box_buf()[..BOX_BUF_N] }) {
+        // 契约违约 (adapter): 结构可读但 schema 不符 —— 降权信号, 非健康
         aud_box_gate(verb, 2);
         unsafe {
             PROV_LAST_RC = -3;
@@ -378,7 +453,9 @@ pub extern "C" fn fujo_box_run(verb: u64, argptr: u64, arglen: u64) -> i64 {
         PROV_LAST_RC = 0;
         PROV_SCHEMA += 1;
     }
-    prov_note(1);
+    unsafe {
+        PROV_HIT += 1;
+    }
     crate::ai::fujo_qual_feed(7, 1);
     crate::ai::fujo_qual_feed(8, 1);
     aud_box_call(verb, 0);
@@ -409,9 +486,25 @@ pub extern "C" fn fujo_box_result(ptr: u64, cap: u64) -> i64 {
     }
     let n = (cap as usize).min(unsafe { BOX_BUF_N });
     unsafe {
+        let bf = box_buf();
         for i in 0..n {
-            ((ptr as *mut u8).add(i)).write_volatile(BOX_BUF[i]);
+            ((ptr as *mut u8).add(i)).write_volatile(bf[i]);
         }
     }
     n as i64
+}
+
+/// 0x8319 box_fb_info(out): u64×3 {w, h, len} —— 像素帧元数据 (B-3 通路版)。
+#[no_mangle]
+pub extern "C" fn fujo_box_fb_info(out: u64) -> i64 {
+    if !(0x400000..0xC00000).contains(&out) {
+        return -14;
+    }
+    unsafe {
+        let b = out as *mut u64;
+        b.add(0).write(BOX_FB_W as u64);
+        b.add(1).write(BOX_FB_H as u64);
+        b.add(2).write(BOX_FB_LEN as u64);
+    }
+    0
 }

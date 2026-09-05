@@ -1,0 +1,78 @@
+{
+ "family": "BOX-BRIDGE verb vocabulary (B-29)",
+ "providers": [
+  {
+   "id": 0,
+   "platform": "host (Windows/WSL)",
+   "domain": 1
+  }
+ ],
+ "verbs": {
+  "1": {
+   "name": "hash",
+   "schema": "len==64 & [0-9a-f]{64}",
+   "max": 64,
+   "case": "box-online/box-v1-online",
+   "status": "v0",
+   "note": "sha256 hexdigest; \u786e\u5b9a\u6027 (golden \u53ef\u590d\u7b97)"
+  },
+  "2": {
+   "name": "info",
+   "schema": "len>=4 & printable-ascii",
+   "max": 512,
+   "case": "box-online",
+   "status": "v0",
+   "note": "file(1) \u7b49\u4ef7; \u5bbf\u4e3b fallback ASCII text"
+  },
+  "3": {
+   "name": "size",
+   "schema": "[0-9]{1,20}",
+   "max": 64,
+   "case": "box-online",
+   "status": "v0",
+   "note": "wc -c \u7b49\u4ef7"
+  },
+  "4": {
+   "name": "echo",
+   "schema": "== arg (\u5168\u7b49\u56de\u663e)",
+   "max": 128,
+   "case": "box-online",
+   "status": "v0",
+   "note": "\u6700\u5f3a schema: \u8f93\u5165\u8f93\u51fa\u4e0d\u53d8\u5f0f (Adapter \u5951\u7ea6)"
+  },
+  "5": {
+   "name": "file2pdf",
+   "schema": "head %PDF- & tail %%EOF & ascii",
+   "max": 3072,
+   "case": "box-v1-online",
+   "status": "v1",
+   "note": "winword COM \u4f18\u5148 (\u771f\u5b9e Windows \u76d2), \u8d85\u9650\u56de\u9000\u96f6\u4f9d\u8d56\u5fae PDF"
+  },
+  "6": {
+   "name": "framebuf",
+   "schema": "BMP 32x24 RGB24 \u7ed3\u6784 (54+2304=2358B)",
+   "max": 3072,
+   "case": "box-v1-online",
+   "status": "v1",
+   "note": "B-3 \u50cf\u7d20\u6d41\u901a\u8def\u7248; \u4eba\u7c7b\u7a97\u53e3\u5448\u73b0 = v2"
+  }
+ },
+ "candidates": [
+  {
+   "name": "file2txt",
+   "need": "\u5927\u4ea7\u7269 (\u73b0\u6709 fileread \u4fa7\u53ef\u88c1\u526a, 512B-3072B \u5185\u53ef\u52a0)",
+   "blocked": "v1 \u53ef\u652f\u6301 (PDF \u5e26\u5916\u5df2\u901a)"
+  },
+  {
+   "name": "screen",
+   "need": "GUI \u5e27\u6d41 v2 (\u4eba\u7c7b\u7a97\u53e3\u5448\u73b0)",
+   "blocked": "\u50cf\u7d20\u6d41\u901a\u8def v1 \u5df2\u901a"
+  },
+  {
+   "name": "dbquery",
+   "need": "\u76d2\u534f\u8bae\u52a0\u7ed3\u6784\u5316\u6279\u91cf\u53c2\u6570 (arg 128B \u4e0a\u9650)",
+   "blocked": "arg \u69fd\u6269\u5c55"
+  }
+ ],
+ "claim": "\u63a5\u53e3\u5b8c\u5907\u6027: \u52a8\u8bcd\u96c6 = \u4efb\u52a1\u52a8\u8bcd\u767d\u540d\u5355 (\u6709\u9650\u5c01\u9876); \u65b0\u52a8\u8bcd\u65e0\u9700\u65b0\u5185\u6838\u8bbe\u65bd (\u5305\u88c5\u73b0\u6709\u8c13\u8bcd/\u4f20\u8f93), \u65b0\u8bbe\u65bd\u7c7b\u52a8\u8bcd (GUI \u5e27\u6d41/\u6279\u91cf\u53c2\u6570) \u663e\u5f0f\u5217\u5165\u5019\u9009 = \u58f0\u660e\u8fb9\u754c\u3002"
+}

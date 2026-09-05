@@ -44,6 +44,9 @@ foreach ($n in @('m30_linux','m33_trace','m35_bench','m36_mouse','m37_wm','m38_w
 }
 # W36/B-2: BOX-BRIDGE v0 通路 demo (宿主盒在线/离线/坏产物/违约 四态断言)
 Build-Elf 'm154_box'
+# W37/B-2v1: 大产物/file2pdf/framebuf + B-31 检疫门 fuzz
+Build-Elf 'm156_boxv1'
+Build-Elf 'm157_boxfuzz'
 Write-Host "samples: elf ok"
 
 # --- Mach-O / PE ---

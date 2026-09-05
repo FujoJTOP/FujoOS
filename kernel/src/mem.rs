@@ -365,7 +365,12 @@ pub fn demand_zero_init() {
         let pte = core::ptr::addr_of_mut!(PT_HEAP1).cast::<u64>();
         core::ptr::write_volatile(pte.add(0), 0xA00000u64 | 0x7); // P|W|U
         core::arch::asm!("invlpg [{0}]", in(reg) 0xA00000u64, options(nostack));
+        // W37/B-2v1: 盒产物带外页 (0xA10000 pin, 物理恒等; 4KB 缓冲区,
+        // 主模块产物/参数; 派生任务 PT1 需同步 pin —— 见 map_high_user 侧 W37 注)
+        core::ptr::write_volatile(pte.add(16), 0xA10000u64 | 0x7);
+        core::arch::asm!("invlpg [{0}]", in(reg) 0xA10000u64, options(nostack));
         serial::write_line("m12  : shm page 0xA00000 pinned (identity, M112 shm-link)");
+        serial::write_line("m12  : box page 0xA10000 pinned (identity, W37 BOX-BRIDGE v1)");
         serial::write_str("m12  : demand-zero heap PD[4/5] replaced (old ");
         print_hex(old0 & 0xFFF);
         serial::write_str("/");
@@ -500,6 +505,7 @@ pub fn as_create() -> (u64, u64, u64) {
                 (pd_ as *mut u64).add(5).write(h1 | 0x7);
                 (h0 as *mut u64).write(0);
                 (h1 as *mut u64).write(0xA00000u64 | 0x7); // shm pin (全局共享)
+                (h1 as *mut u64).add(16).write(0xA10000u64 | 0x7); // box pin (W37 v1)
                 serial::write_str("w11  : as_create cr3=0x");
                 print_hex(pm4);
                 serial::write_line("");

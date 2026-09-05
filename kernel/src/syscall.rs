@@ -383,6 +383,7 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x8316 => crate::boxbridge::fujo_box_run(a0, a1, a2),
         0x8317 => crate::boxbridge::fujo_box_stat(a0, a1),
         0x8318 => crate::boxbridge::fujo_box_result(a0, a1),
+        0x8319 => crate::boxbridge::fujo_box_fb_info(a0),
         // ---- W13: virtio-blk (PCI 总线模型 + 驱动) ----
         0x8A01 => crate::virtio::fujo_vblk_read(a0, a1, a2),
         0x8A02 => crate::virtio::fujo_vblk_info(a0),

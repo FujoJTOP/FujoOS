@@ -1,0 +1,38 @@
+{
+ "1": {
+  "verb": "hash",
+  "arg": "fujobox-v0 payload",
+  "len": 64,
+  "sha256": "29fdce78450675928ac1ee68ad7b18ae132b58ce5f5a3cacf3b11bfab0b988e7"
+ },
+ "2": {
+  "verb": "info",
+  "arg": "fujobox-v0 payload",
+  "len": 10,
+  "sha256": "7c512aaa1c5e3837fe2667afe1146261ef8b9eb355f8078e72900f845ada93fe"
+ },
+ "3": {
+  "verb": "size",
+  "arg": "fujobox-v0 payload",
+  "len": 2,
+  "sha256": "4ec9599fc203d176a301536c2e091a19bc852759b255bd6818810a42c5fed14a"
+ },
+ "4": {
+  "verb": "echo",
+  "arg": "fujobox-v0 payload",
+  "len": 18,
+  "sha256": "d4a997afdb0442de74a37dd7cad5eed9822b2f3084f605fd6d172d00d28f1520"
+ },
+ "5": {
+  "verb": "file2pdf",
+  "arg": "FujoOS BoxBridge v1",
+  "len": 555,
+  "sha256": "6d2d89bb3667711478b72a10f9225d8ddd60a80cc73dd17f31c8eee86b3b3f66"
+ },
+ "6": {
+  "verb": "framebuf",
+  "arg": "fujobox-v0 payload",
+  "len": 2358,
+  "sha256": "f3716a138eaeb54ef47a2eed5aa61b1e3c17a5f7d083c419dd39d13fd18acedc"
+ }
+}
