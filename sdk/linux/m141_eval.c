@@ -81,42 +81,55 @@ __attribute__((noinline, noreturn)) static void worker(void)
 }
 
 /* ---- 金标准样本集 (duty: 1=classify 2=anom 4=io) ---- */
-/* B3: 19 -> 40 (anom 8->16, io 5->10, cls 6->10; plan/nlc/env 编译正确性类不变) */
-#define NSAMP 36
+/* B20: 36 -> 100 (gen_goldset.py deterministic; anom known 20 + novel-pos 10 +
+ * novel-neg 10, io 30, cls known 20 + novel 10) */
+#define NSAMP 100
 static const char *S_TXT[NSAMP] = {
-    /* anom known (0..7): 规则语义明确覆盖 (rate=9x/dead/diag + 低率正常) */
-    "ev pid=0 rate=99 wr=dead", "ev pid=1 rate=91 wr=diag",
-    "ev pid=2 rate=3 wr=ok", "ev pid=3 rate=5 wr=1",
-    "ev pid=8 rate=93 wr=dead", "ev pid=9 rate=95 wr=diag",
-    "ev pid=10 rate=7 wr=ok", "ev pid=11 rate=4 wr=1",
-    /* anom novel (8..15): 规则语义外 (无 9x/dead/diag; 金标准独立) */
-    "ev pid=4 rate=77 wr=memleak", "ev pid=5 rate=82 wr=zombie",
-    "ev pid=6 rate=60 wr=ok", "ev pid=7 rate=44 wr=ok",
-    "ev pid=12 rate=74 wr=swapthrash", "ev pid=13 rate=86 wr=spike",
-    "ev pid=14 rate=50 wr=ok", "ev pid=15 rate=33 wr=ok",
-    /* io novel (16..25): mod-6 周期变体 (last 基线恒错; 二阶表可见) */
-    "0 1 2 3 4", "1 2 3 4 5", "3 4 5 0 1", "2 3 4 5 0", "5 0 1 2 3",
-    "4 5 0 1 2", "0 1 2 3 4 5", "5 0 1 2 3 4", "1 2 3 4 5 0", "0 1 2 3 4 5 0",
-    /* classify known (26..31) */
-    "run the game", "open file", "hello there", "exit now",
-    "build kernel", "list apps",
-    /* classify novel (32..35): 规则词典外动词 */
-    "launch program", "what is the time", "register the device", "delete a file",
+    "ev pid=0 rate=92 wr=dead", "ev pid=1 rate=4 wr=ok", "ev pid=2 rate=94 wr=diag", "ev pid=3 rate=6 wr=1", "ev pid=4 rate=96 wr=dead",
+    "ev pid=5 rate=8 wr=ok", "ev pid=6 rate=98 wr=diag", "ev pid=7 rate=4 wr=1", "ev pid=8 rate=93 wr=dead", "ev pid=9 rate=6 wr=ok",
+    "ev pid=10 rate=95 wr=diag", "ev pid=11 rate=8 wr=1", "ev pid=12 rate=97 wr=dead", "ev pid=13 rate=4 wr=ok", "ev pid=14 rate=92 wr=diag",
+    "ev pid=15 rate=6 wr=1", "ev pid=16 rate=94 wr=dead", "ev pid=17 rate=8 wr=ok", "ev pid=18 rate=96 wr=diag", "ev pid=19 rate=4 wr=1",
+    "ev pid=20 rate=70 wr=memleak", "ev pid=21 rate=71 wr=zombie", "ev pid=22 rate=72 wr=swapthrash", "ev pid=23 rate=73 wr=spike", "ev pid=24 rate=74 wr=leakhog",
+    "ev pid=25 rate=75 wr=zombiecmd", "ev pid=26 rate=76 wr=thrashloop", "ev pid=27 rate=77 wr=spikeburst", "ev pid=28 rate=78 wr=memoryhang", "ev pid=29 rate=79 wr=leakstorm",
+    "ev pid=30 rate=40 wr=ok", "ev pid=31 rate=42 wr=ok", "ev pid=32 rate=44 wr=ok", "ev pid=33 rate=46 wr=ok", "ev pid=34 rate=48 wr=ok",
+    "ev pid=35 rate=50 wr=ok", "ev pid=36 rate=52 wr=ok", "ev pid=37 rate=54 wr=ok", "ev pid=38 rate=56 wr=ok", "ev pid=39 rate=58 wr=ok",
+    "0 1 2 3", "1 2 3 4 5", "2 3 4 5 0 1", "3 4 5 0", "4 5 0 1 2",
+    "5 0 1 2 3 4", "0 1 2 3", "1 2 3 4 5", "2 3 4 5 0 1", "3 4 5 0",
+    "4 5 0 1 2", "5 0 1 2 3 4", "0 1 2 3", "1 2 3 4 5", "2 3 4 5 0 1",
+    "3 4 5 0", "4 5 0 1 2", "5 0 1 2 3 4", "0 1 2 3", "1 2 3 4 5",
+    "2 3 4 5 0 1", "3 4 5 0", "4 5 0 1 2", "5 0 1 2 3 4", "0 1 2 3",
+    "1 2 3 4 5", "2 3 4 5 0 1", "3 4 5 0", "4 5 0 1 2", "5 0 1 2 3 4",
+    "run the game", "run program", "execute script", "exec the demo", "run update",
+    "exec now", "exit now", "quit program", "exit the shell", "quit all",
+    "open file", "open the doc", "open directory", "open settings", "hello there",
+    "hello system", "list apps", "list files", "build kernel", "what is the time",
+    "launch the editor", "start the server", "what is the time now", "where is the log", "register a device",
+    "setup the printer", "delete a file", "remove the cache", "shutdown the system", "terminate all tasks"
 };
 static int S_DUTY[NSAMP] = {
     2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-    4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    2, 2, 2, 2, 2, 2, 2, 2, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 4, 4, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1,
 };
 static u64 S_GT[NSAMP] = {
-    1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0,
-    5, 0, 2, 1, 4, 3, 0, 4, 1, 0,
-    1, 3, 2, 4, 1, 3, 1, 2, 3, 1,
+    1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0,
+    1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 2, 1, 3, 5, 4, 0,
+    2, 1, 3, 5, 4, 0, 2, 1, 3, 5, 4, 0, 2, 1, 3, 5,
+    4, 0, 2, 1, 3, 5, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4,
+    3, 3, 3, 3, 2, 2, 3, 3, 1, 2, 1, 1, 2, 2, 3, 3,
+    1, 1, 4, 4,
 };
-/* 子集索引: anom 0..7 known, 8..9/12..13 novel-pos, 10..11/14..15 novel-neg;
- * io 16..25; cls 26..31 known, 32..35 novel */
-#define ANOM_KNOWN 8
-#define ANOM_NP 4   /* novel-pos 起点 8 (8,9,12,13) */
+/* subsets: anom 0..19 known, 20..29 novel-pos, 30..39 novel-neg;
+ * io 40..69; cls 70..89 known, 90..99 novel */
+#define ANOM_KNOWN 20
+#define ANOM_NP 20  /* novel-pos start */
+#define IO_START 40
+#define CLS_NOVEL_START 90
 
 static u64 run_sample(int duty, const char *text)
 {
@@ -199,11 +212,11 @@ static int run(void)
 
     sy(0x8101, 6, 0x3F, 0, 0, 0);
 
-    /* T0 链路探测: novel 命令 "launch program" (规则词典外 -> rules=0;
-     * 模型 run 语义 -> 1)。0x5101 带 COM2 降级重发, 比 0x8309 shm-only 稳。 */
+    /* T0 链路探测: "FUJO-PROBE" 协议专用词 (server 免模型返回 INTENT=7;
+     * 无 server -> rules fallback 0) -> 确定性在线判定。 */
     {
-        static const char probe_cmd[] = "launch program";
-        model_online = ((int)sy(0x5101, (long)probe_cmd, sizeof(probe_cmd) - 1, 0, 0, 0) == 1);
+        static const char probe_cmd[] = "FUJO-PROBE";
+        model_online = ((int)sy(0x5101, (long)probe_cmd, sizeof(probe_cmd) - 1, 0, 0, 0) != 0);
         wrstr("m141: T0 link probe classify=");
         wrdec(model_online ? 1 : 0);
         wrstr(model_online ? " (online)\n" : " (offline -> rules only)\n");
@@ -218,14 +231,12 @@ static int run(void)
         if (got == S_GT[i])
             a_ok++;
     }
-    for (i = 8; i < 16; i++) {
-        if (i == 10 || i == 11 || i == 14 || i == 15)
-            continue; /* novel-neg 不计数基线 */
+    for (i = ANOM_NP; i < ANOM_NP + 10; i++) {
         got = run_sample(2, S_TXT[i]);
         if (got == S_GT[i])
             a_np++;
     }
-    for (i = 16; i < 26; i++) {
+    for (i = IO_START; i < IO_START + 30; i++) {
         got = run_sample(4, S_TXT[i]);
         if (got == S_GT[i])
             a_io++;
@@ -233,12 +244,12 @@ static int run(void)
     /* 保持 force=2: T2 断言同样在规则引擎下 (确定性) */
     wrstr("m141: T1 rules anom-known=");
     wrdec(a_ok);
-    wrstr("/8 novel-pos=");
+    wrstr("/20 novel-pos=");
     wrdec(a_np);
-    wrstr("/4 io=");
+    wrstr("/10 io=");
     wrdec(a_io);
-    wrstr("/10 (W25 io baseline upgraded: markov, see m145)\n");
-    if (!(a_ok == 8 && a_np == 0))
+    wrstr("/30 (W25 io baseline upgraded: markov, see m145)\n");
+    if (!(a_ok == ANOM_KNOWN && a_np == 0))
         pass_all = 0;
 
     /* T2 [rules] plan/nlc/env 编译正确性 */
@@ -327,9 +338,7 @@ static int run(void)
         print_engine("m141: [model]");
         /* novel 增量 (记录, 不断言): anom novel-pos 模型判定 + 蒸馏候选打印 */
         u64 mn = 0;
-        for (i = 8; i < 16; i++) {
-            if (i == 10 || i == 11 || i == 14 || i == 15)
-                continue; /* novel-neg */
+        for (i = ANOM_NP; i < ANOM_NP + 10; i++) {
             got = run_sample(2, S_TXT[i]);
             wrstr("m141: T3 cand anom-novel '");
             wrstr(S_TXT[i]);
@@ -343,8 +352,8 @@ static int run(void)
         }
         wrstr("m141: T3 model novel-pos anom ");
         wrdec(mn);
-        wrstr("/4 (rules baseline 0/4)\n");
-        for (i = 32; i < 36; i++) {
+        wrstr("/10 (rules baseline 0/10)\n");
+        for (i = CLS_NOVEL_START; i < NSAMP; i++) {
             got = run_sample(1, S_TXT[i]);
             wrstr("m141: T3 cand cls-novel '");
             wrstr(S_TXT[i]);

@@ -97,7 +97,8 @@ CASES = [
       "-device", "virtio-net-pci,netdev=net0,mac=52:54:00:12:34:57,disable-modern=on,disable-legacy=off"],
      {"udp_server": [8077, os.path.join(ROOT, "sdk", "network", "hello-clone.c")]}),
     # W22: 三引擎质量对照 (无模型 = 确定性 rules/auto 降级语义; 模型在线由 verify_ai 全量)
-    ("m141-eval", "ELF64 x 3-engine-eval", "sdk/linux/m141_eval.elf", "M141 RESULT: PASS", [], {}),
+    # B20: n=100 goldset -> T4 link fallback (3x resend, spin-bound) needs ~150s
+    ("m141-eval", "ELF64 x 3-engine-eval", "sdk/linux/m141_eval.elf", "M141 RESULT: PASS", [], {"timeout": 170}),
     # W22: 自监督反馈闭环 (anom 建议 -> 自动隔离 -> 内核验证位 -> 审计标签)
     ("m142-feedback", "ELF64 x ai-feedback", "sdk/linux/m142_feedback.elf", "M142 RESULT: PASS", [], {}),
     # W23: 蒸馏闭环自动化 (FJRU v2 19 条 -> novel 全命中 -> 零模型调用)
@@ -150,6 +151,7 @@ def run_case(kernel, case, timeout_s, accel="tcg"):
     name, label, rel, needle = case[:4]
     extra = list(case[4]) if len(case) > 4 else []
     opts = case[5] if len(case) > 5 else {}
+    timeout_s = float(opts.get("timeout", timeout_s))
     # W29: WHPX 对照 —— 关闭内核中断芯片 (QEMU WHPX 默认 kernel-irqchip=on 只走
     # APIC 注入, legacy 8259 直连路径失效 -> m1 等 PIT tick 死锁; off 后设备模型
     # 模拟 PIC/PIT, 与 TCG/真机同构)

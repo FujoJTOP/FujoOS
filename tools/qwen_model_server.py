@@ -406,6 +406,10 @@ def classify_shm(seq: str, kind: int, plen: int) -> str:
         print(f"[server] env: {text[:40]!r} -> {scene}/{prof} ({tag}) in {time.time()-t0w:.2f}s", flush=True)
         return f"FJAI:RSP {seq} INTENT=0 SCENE={scene} PROFILE={prof} TAG={tag} TTL={ttl_now()}"
     # kind=1 意图
+    # B20: 链路探测专用词 (T0: 无模型调用, 确定性在线信号; 帧内文本已小写化)
+    if text == "fujo-probe":
+        print(f"[server] probe: {text!r} -> 7 in {time.time()-t0w:.2f}s", flush=True)
+        return f"FJAI:RSP {seq} INTENT=7 TAG=FUJO-PROBE TTL={ttl_now()}"
     intent, tag = ollama_classify(text)
     if intent is None:
         intent, tag = fjrules_intent(text), "fjrules"
