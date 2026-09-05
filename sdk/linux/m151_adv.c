@@ -224,6 +224,51 @@ static int run(void)
         sy(0x8105, 1, tid0, 0, 0, 0); /* 清理 kill */
     }
 
+    /* T5 ρ (FUAI TODO): 代表性质量流 (高16/低16/高16/噪16) -> 0x8315 读回环 ->
+     * lag-1 自相关 (Pearson) —— 测量不断言, 打印数值 (论文 §6.1 honest boundary 更新)。 */
+    {
+        int k;
+        for (k = 0; k < 64; k++) {
+            int hit;
+            if (k < 16)
+                hit = 1;            /* 高质段 */
+            else if (k < 32)
+                hit = 0;            /* 低质段 */
+            else if (k < 48)
+                hit = 1;            /* 高质段 2 */
+            else
+                hit = (k & 1);      /* 噪段 (交替) */
+            sy(0x8314, 2, (u64)hit, 0, 0, 0);
+        }
+        u64 seq[65];
+        long n = sy(0x8315, (long)seq, 64, 0, 0, 0);
+        if (n >= 2) {
+            double mean = 0;
+            double num = 0, den = 0;
+            int t;
+            for (t = 0; t < 64; t++)
+                mean += (double)seq[t];
+            mean /= 64.0;
+            for (t = 0; t < 63; t++) {
+                num += (seq[t] - mean) * (seq[t + 1] - mean);
+                den += (seq[t] - mean) * (seq[t] - mean);
+            }
+            den += (seq[63] - mean) * (seq[63] - mean);
+            /* rho = num / den (approx): demo 内浮点近似 */
+            u64 rho_scale = (den > 0) ? (u64)(num / den * 1000000.0 + 0.5) : 0;
+            wrstr("m151: T5 rho-lag1 (representative stream) = ");
+            wrdec(rho_scale / 1000000);
+            wrstr(".");
+            u64 frac = rho_scale % 1000000;
+            int d6 = 6;
+            while (d6--) {
+                wrdec((frac / 100000) % 10);
+                frac = frac % 100000 * 10;
+            }
+            wrstr(" (measurement only; synthetic pattern)\n");
+        }
+    }
+
     if (pass_all) {
         static const char m2[] = "m151: M151 RESULT: PASS\n";
         wr(m2, sizeof(m2) - 1);

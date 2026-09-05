@@ -1059,6 +1059,10 @@ static mut QUAL_TOTAL: [u64; QUAL_DUTY] = [0; QUAL_DUTY];
 /// A7-② 防污染: 加宽需连续高 (WIDEN_CONFIRM=2), 收缩即时 —— 域宽滞后于涨、跟随于跌。
 static mut QUAL_UP_RUN: [u64; QUAL_DUTY] = [0; QUAL_DUTY];
 const WIDEN_CONFIRM: u64 = 2;
+/// W35/ρ: 全局时序环 (64 槽, 每次 qual_feed 记 hit; 0x8315 导出 -> m151 T5 自相关)。
+const QUAL_SEQ_N: usize = 64;
+static mut QUAL_SEQ: [u64; QUAL_SEQ_N] = [0; QUAL_SEQ_N];
+static mut QUAL_SEQ_I: usize = 0;
 
 /// 0x8314: 质量提交 (生产自动点 + 测试显式)。
 #[no_mangle]
@@ -1077,8 +1081,27 @@ pub extern "C" fn fujo_qual_feed(duty: u64, hit: u64) -> i64 {
             // ponytail: 整数移位平均近似滚动窗口 (数据量小, 无需精确 FIFO)
             QUAL_HIT[d] = (QUAL_HIT[d] * 63 + (hit & 1) * 64) / 64;
         }
+        QUAL_SEQ[QUAL_SEQ_I % QUAL_SEQ_N] = hit & 1;
+        QUAL_SEQ_I += 1;
     }
     0
+}
+
+/// 0x8315: 导出质量时序环 (64 槽 hit 序列; 供 ρ 估计 - m151 T5)。
+#[no_mangle]
+pub extern "C" fn fujo_qual_seq(out: u64, out_n: u64) -> i64 {
+    if !(0x400000..0xC00000).contains(&out) {
+        return -14;
+    }
+    let n = (out_n as usize).min(QUAL_SEQ_N);
+    unsafe {
+        for k in 0..n {
+            let v = QUAL_SEQ[(QUAL_SEQ_I as usize + k) % QUAL_SEQ_N];
+            ((out as *mut u64).add(k)).write(v);
+        }
+        ((out as *mut u64).add(n)).write(QUAL_SEQ_I as u64);
+    }
+    n as i64
 }
 
 fn qual_rate(duty: usize) -> u64 {
