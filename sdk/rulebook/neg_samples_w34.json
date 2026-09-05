@@ -1,0 +1,724 @@
+{
+ "cases": [
+  {
+   "duty": 2,
+   "text": "ev pid=0 rate=1 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=1 rate=2 wr=1",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=2 rate=3 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=3 rate=4 wr=1",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=4 rate=5 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=5 rate=6 wr=1",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=6 rate=7 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=7 rate=8 wr=1",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=8 rate=9 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=9 rate=1 wr=1",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=10 rate=2 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=11 rate=3 wr=1",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=12 rate=4 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=13 rate=5 wr=1",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=14 rate=6 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=15 rate=7 wr=1",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=16 rate=8 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=17 rate=9 wr=1",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=18 rate=1 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=19 rate=2 wr=1",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=20 rate=40 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=21 rate=41 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=22 rate=42 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=23 rate=43 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=24 rate=44 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=25 rate=45 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=26 rate=46 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=27 rate=47 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=28 rate=48 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=29 rate=49 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=30 rate=50 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=31 rate=51 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=32 rate=52 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=33 rate=53 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=34 rate=54 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=35 rate=55 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=36 rate=56 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=37 rate=57 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=38 rate=58 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=39 rate=59 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=40 rate=60 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=41 rate=61 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=42 rate=62 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=43 rate=63 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=44 rate=64 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=45 rate=65 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=46 rate=66 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=47 rate=67 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=48 rate=68 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=49 rate=69 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=50 rate=70 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=51 rate=71 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=52 rate=72 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=53 rate=73 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=54 rate=74 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=55 rate=75 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=56 rate=76 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=57 rate=77 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=58 rate=78 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=59 rate=79 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=60 rate=80 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=61 rate=81 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=62 rate=82 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=63 rate=83 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=64 rate=84 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=65 rate=85 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=66 rate=86 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=67 rate=87 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=68 rate=88 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=69 rate=89 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=40 rate=90 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=41 rate=91 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=42 rate=92 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=43 rate=93 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=44 rate=94 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=45 rate=95 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=46 rate=96 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=47 rate=97 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=48 rate=98 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=49 rate=90 wr=ok",
+   "value": 0,
+   "a0": 0,
+   "a1": 0,
+   "conf": 90,
+   "param": 0
+  }
+ ]
+}

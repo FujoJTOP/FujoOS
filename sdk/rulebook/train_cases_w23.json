@@ -1,0 +1,40 @@
+{
+ "cases": [
+  {
+   "duty": 2,
+   "text": "ev pid=4 rate=77 wr=memleak",
+   "value": 1,
+   "a0": 0,
+   "a1": 0,
+   "conf": 80,
+   "param": 0
+  },
+  {
+   "duty": 2,
+   "text": "ev pid=5 rate=82 wr=zombie",
+   "value": 1,
+   "a0": 0,
+   "a1": 0,
+   "conf": 80,
+   "param": 0
+  },
+  {
+   "duty": 1,
+   "text": "launch program",
+   "value": 1,
+   "a0": 0,
+   "a1": 0,
+   "conf": 80,
+   "param": 0
+  },
+  {
+   "duty": 1,
+   "text": "what is the time",
+   "value": 2,
+   "a0": 0,
+   "a1": 0,
+   "conf": 80,
+   "param": 0
+  }
+ ]
+}
