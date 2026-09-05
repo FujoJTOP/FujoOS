@@ -188,8 +188,8 @@ static int run(void)
         static const char nl[] = "ban games 0 24";
         u64 p[1] = { 0 };
         sy(0x8307, (long)nl, sizeof(nl) - 1, (long)p, 8, 0);
-        long c7 = sy(0x8106, 7, 0, 0, 0, 0); /* τ_high (70) */
-        long c8 = sy(0x8106, 8, 0, 0, 0, 0); /* τ_low (30) */
+        long c7 = sy(0x8106, 7, 0, 0, 0, 0); /* τ_high (46) */
+        long c8 = sy(0x8106, 8, 0, 0, 0, 0); /* τ_low (35) */
         long c1 = sy(0x8106, 1, 0, 0, 0, 0); /* anom 阈值 (50) */
         wrstr("m151: T3 evil-nlc applied=");
         wrdec(p[0]);
@@ -199,9 +199,9 @@ static int run(void)
         wrdec((u64)c8);
         wrstr(" cfg1=");
         wrdec((u64)c1);
-        wrstr(" (PASS expected values 30/70/50 -> config rejected/intact)\n");
+        wrstr(" (PASS expected values 35/46/50 -> config rejected/intact)\n");
         /* GAP 检测: cfg 被污染 (值域无门) —— 本波交付 = 探测 + 记录 (修复 B24) */
-        int gap = (c7 != 70 || c8 != 30 || c1 != 50);
+        int gap = (c7 != 46 || c8 != 35 || c1 != 50);
         if (gap) {
             wrstr("m151: GAP-NLC-CFG: cfg value-domain gate missing (policy pollution accepted)\n");
         } else {

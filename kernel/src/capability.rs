@@ -99,8 +99,8 @@ pub fn fujo_cfg_get(key: u64) -> i64 {
     let def = match key {
         1 => 50,  // anom 阈值
         2 => 0,   // 自动隔离 off
-        7 => 70,  // W32: 信任自适应域 加宽阈值 τ_high
-        8 => 30,  // W32: 信任自适应域 收缩阈值 τ_low
+        7 => 46,  // W32/B20: 信任自适应域 加宽阈值 τ_high (derived, docs/105-tau-derivation)
+        8 => 35,  // W32/B20: 信任自适应域 收缩阈值 τ_low (derived, two-tier {0.35,0.46})
         _ => 0,
     };
     if key == 0 || key > 8 {
