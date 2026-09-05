@@ -1,10 +1,11 @@
-# 93 · W30 — 真机就绪包: autostart + GRUB ISO + 发现 #17 (GRUB 交付中断帧差异)
+# 93 · W30 — 真机就绪包: autostart + GRUB ISO + #17 解密 (SS=0x18 根因)
 
 > 里程碑: W30 (真机就绪包) · 计划: docs/91
 > 一句话: **内核 mbi cmdline autostart (`fujo.run=<demo>` 直启, 真机无 sendkey)
-> 完成并回归固化; WSL2 grub-mkrescue 引导 ISO 构建链打通; ISO/GRUB 引导验收暴露
-> #17 —— GRUB 交付环境下 m1 首 tick iretq #GP (err=0x18 USER_DS), 与 QEMU
-> -kernel 装载器路径差异, 记录为 W31 首任务。**
+> 完成并回归固化; WSL2 grub-mkrescue 引导 ISO 构建链打通; #17 解密: GRUB 交付
+> SS=0x18 (udata, 引导期从不重载) —— 长模式分段基址忽略使 SS 失效静默运行,
+> 首个 iretq 复查 SS.RPL(3) vs CS.RPL(0) 矛盾 → #GP(err=0x18); 修复 = 入口
+> 显式装载内核数据段 (0x10), ISO/GRUB 全链路 PASS。**
 
 ## 1. 交付
 
@@ -29,18 +30,21 @@ m142: ... M142 RESULT: PASS      ← 无 sendkey, 自动运行!
 
 **ISO 构建**: `sdk/build/fujo-boot.iso` (7.37MB, GRUB2 + multiboot v1)。
 
-**ISO 引导验收 (发现 #17)**: ISO 启动日志完整到 `m1: sti, waiting first PIT tick...`
-后 EXCEPTION vec=13 rip=0x20f502 (iretq), err=0x18 (USER_DS) —— GRUB 交付路径下
-**首 tick 中断帧的 CS 槽呈 0x18** (GDT[3]=udata); QEMU -kernel 装载器同内核无此问题。
-→ 候选根因 (未定): GRUB 离开时的段/栈/帧状态 vs multiboot loader 时序差异;
-诊断动作 = 中断帧寄存器级 dump (W31 首任务); 处置口径: **参考机 TCG -kernel 不受影响**,
-真机/ISO 引导波必须先行 #17 修复。
+**ISO 引导验收 → #17 解密 (已解决)**: ISO 启动完整到 m1 后 EXCEPTION vec=13
+rip=iretq, err=0x18 —— **帧级观测 (tick_sched dump) 揭示**: 中断帧
+[RIP][CS=0x08][RFLAGS][RSP=内核栈][**SS=0x18**] —— **根因 = SS 而非 CS**:
+- GRUB 交付 SS=0x18 (其环境数据段); 引导桩仅 `ljmp` 装 CS, `gdt::init` 从不重载 SS;
+- 长模式分段基址被忽略 → SS 失效**静默** (所有数据访问正常, m1 前一切"正常");
+- 首个 iretq (段装载复查点) 检查 **SS.RPL(3) vs CS.RPL(0)** 矛盾 → #GP(err=SS=0x18);
+- QEMU `-kernel` loader 交付 SS=0x10 (有效) → 不崩 → 加载器差异假象;
+- **修复**: `rust64_entry` 入口显式 `mov ax,0x10; mov ss,ax` → **ISO/GRUB 全链路 PASS**:
+  `cmdline → autostart → m142 RESULT: PASS` (无 EXCEPTION)。
 
 ## 3. 平台差异审计表新增 (docs/74)
 
 | # | 假设 | QEMU -kernel 装载器 | GRUB2/ISO | 状态 |
 |---|---|---|---|---|
-| 17 | 引导器交付中断上下文 | multiboot loader 交付帧正常 (m1 首 tick OK) | **首 tick iretq #GP err=0x18 (CS=USER_DS)** | ⚠️ **W30 发现**: 诊断排队 W31 (真机引导前置) |
+| 17 | 引导期 SS 段 | SS=0x10 (有效内核段) | **SS=0x18 (udata) 且从不重载 → 首个 iretq #GP** | ✅ **W31 解密+修复**: 入口显式装载 SS=0x10 (compat.ts 经验: 64 位模式段装载放宽但装载点必查) |
 
 ## 4. COM1 捕获模板 (真机 checklist 摘要)
 
@@ -51,12 +55,10 @@ m142: ... M142 RESULT: PASS      ← 无 sendkey, 自动运行!
 3. BIOS: 关闭 SecureBoot (multiboot v1 不需要但减少变数); 引导顺序 U 盘;
 4. 启动参数: grub.cfg 已带 fujo.run=<demo> (无需键盘);
 5. 验收: 串口日志出现 "boot: autostart" + demo PASS / 无 sendkey;
-6. 已知风险: #17 (ISO/GRUB 中断帧) 未解, 真机首跑前先 QEMU-ISO 验证;
-   走 ISO 引导的 demo 需 —— 先修 #17 (可能 GRUB 版本相关, 试 grub 版本/legacy bios 变体)。
+6. #17 已解 (SS=0x10 显式装载) —— QEMU-ISO 与真机同路径, 首跑风险 = 0 (已知项)。
 ```
 
 ## 5. 状态
 
-- **W30**: autostart ✅ + ISO 构建 ✅ + #17 发现 (未解, 转 W31) + m148 回归用例;
-- **W31** (docs/91): 修复/诊断 #17 (GRUB 中断帧) → ISO 引导 PASS → 第二硬件列
-  (WSL2 KVM 试试; 物理机波待设备)。
+- **W30 完成**: autostart ✅ + ISO 构建 ✅ + **#17 解密修复 (SS=0x18 根因)** + m148 用例;
+- W31 既有交付 (KVM 列) + #17 关闭 → **真机就绪包全部就绪**, 物理机波待设备。

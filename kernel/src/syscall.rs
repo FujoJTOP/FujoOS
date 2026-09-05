@@ -2560,22 +2560,12 @@ pub fn boot_autostart(mbi: u32) -> bool {
             }
             i += 1;
         }
-        if vn == 0 || MOD_SNAP.2 == 0 {
+        // W31: 模块名匹配不可靠 (GRUB/ISO 交付 module cmdline 字段为空,
+        // QEMU -initrd 才带文件名) —— cmdline 是权威: fujo.run 存在 + 模块存在 -> 直启。
+        if vn == 0 || MOD_SNAP.0 == 0 || MOD_SNAP.1 == 0 {
             return false;
         }
-        let mut nb = [0u8; 64];
-        let mut n = 0usize;
-        while n < 63 {
-            let b = (MOD_SNAP.2 as *const u8).add(n).read();
-            if b == 0 {
-                break;
-            }
-            nb[n] = b;
-            n += 1;
-        }
-        let s = core::str::from_utf8(&nb[..n]).unwrap_or("");
-        let v = core::str::from_utf8(&val[..vn]).unwrap_or("");
-        s.contains(v)
+        true
     }
 }
 

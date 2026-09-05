@@ -221,6 +221,10 @@ pub extern "C" fn rust64_entry(magic: u32, mbi: u32) -> ! {
     // interrupts::init+sti 全权负责 (启动早期提前 IRQ 会以错码/时序崩溃)。
     unsafe {
         core::arch::asm!("cli", options(nomem, nostack, preserves_flags));
+        // W31 #17 根因修复: 引导期 SS=GRUB 交付值 (0x18=udata); 长模式分段基址
+        // 忽略, SS 失效不影响数据访问, 但首个 iretq 复查 SS.RPL(3) vs CS.RPL(0)
+        // 矛盾 -> #GP(err=0x18)。显式装载内核数据段。
+        core::arch::asm!("mov ax, 0x10", "mov ss, ax", options(nomem, nostack, preserves_flags));
     }
     vga::init();
     serial::init();
