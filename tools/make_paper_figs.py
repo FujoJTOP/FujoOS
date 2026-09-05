@@ -64,8 +64,9 @@ def arrow(ax, x1, y1, x2, y2, label="", fs=7):
     ax.add_patch(FancyArrowPatch((x1, y1), (x2, y2), arrowstyle="-|>",
                                  mutation_scale=10, color="#555", lw=1.2))
     if label:
-        ax.text((x1 + x2) / 2, (y1 + y2) / 2 + 0.02, label, ha="center",
-                fontsize=fs, color="#555")
+        ax.text((x1 + x2) / 2, (y1 + y2) / 2 + 0.08, label, ha="center",
+                fontsize=fs, color="#555",
+                bbox=dict(facecolor="white", alpha=0.9, edgecolor="none", pad=1.5))
 
 
 def fig_arch():
@@ -101,7 +102,7 @@ def fig_arch():
     ax.set_title("FUAI: model as a system organ (proposes) - kernel disposes\n"
                  "audit at every exchange; rules final arbiter; absence degrades to rules")
     fig.tight_layout()
-    fig.savefig(os.path.join(PRIV, "fig-arch.png"), dpi=300)
+    fig.savefig(os.path.join(PRIV, "fig-arch.png"), dpi=300, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -118,11 +119,13 @@ def fig_regression():
     ax2.set_ylabel("milestones", color="#d62728")
     ax2.set_ylim(120, 160)
     for x, y in zip(waves, reg):
-        ax.annotate(str(y), (x, y), textcoords="offset points", xytext=(0, 7), fontsize=8)
+        ax.annotate(str(y), (x, y), textcoords="offset points", xytext=(0, 12),
+                    fontsize=8, zorder=6,
+                    bbox=dict(facecolor="white", alpha=0.85, edgecolor="none", pad=0.5))
     ax.grid(alpha=0.3)
     ax.set_title("FujoOS verification growth: 29->40 regressions alongside milestones")
     fig.tight_layout()
-    fig.savefig(os.path.join(PRIV, "fig-regression.png"), dpi=300)
+    fig.savefig(os.path.join(PRIV, "fig-regression.png"), dpi=300, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -156,7 +159,7 @@ def fig_gsn():
     arrow(ax, 10.2, 3.0, 10.2, 2.5)
     ax.set_title("GSN-style assurance case: S1 x S2 x S3 with measurement-parameterized envelope (B20 revision)")
     fig.tight_layout()
-    fig.savefig(os.path.join(PRIV, "fig-gsn.png"), dpi=300)
+    fig.savefig(os.path.join(PRIV, "fig-gsn.png"), dpi=300, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -174,14 +177,18 @@ def fig_latency():
         ax.annotate(f"{y:.2f}s", (x, y), textcoords="offset points",
                     xytext=(0, 3), fontsize=6.5, rotation=90)
     ax.axhline(0.001, color="#2ca02c", ls="--", lw=1)
-    ax.text(0.02, 0.001, "L1 realtime band (us-ms)", va="bottom", fontsize=7, color="#2ca02c")
+    ax.text(0.015, 0.003, "L1 realtime band (us-ms)", ha="left", va="bottom",
+            fontsize=7, color="#2ca02c", zorder=5,
+            bbox=dict(facecolor="white", alpha=0.85, edgecolor="none", pad=1))
     ax.axhline(4.0, color="#d62728", ls="--", lw=1)
-    ax.text(0.02, 4.0, "L3 staleness TTL hardening (4s budget)", va="bottom", fontsize=7, color="#d62728")
+    ax.text(0.015, 9.0, "L3 staleness TTL hardening (4s budget)", ha="left", va="bottom",
+            fontsize=7, color="#d62728", zorder=5,
+            bbox=dict(facecolor="white", alpha=0.85, edgecolor="none", pad=1))
     ax.set_title("A5 latency: per-model median inference (L1 realtime / L2 measured\n"
                  "0.06-14.4s / L3 TTL 4s -> availability = latency<=budget AND TTL>=p95)")
     ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
-    fig.savefig(os.path.join(PRIV, "fig-latency.png"), dpi=300)
+    fig.savefig(os.path.join(PRIV, "fig-latency.png"), dpi=300, bbox_inches="tight")
     plt.close(fig)
 
 

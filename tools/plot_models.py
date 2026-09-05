@@ -59,14 +59,21 @@ def main():
         ax.set_ylim(0, max(ys) * 1.15 if ys else 1)
         ax.tick_params(axis="x", rotation=45, labelsize=7)
         ax.grid(axis="y", alpha=0.3)
+        # zero-value bars stay visible (0/30 = real, not missing)
+        for i, v in enumerate(ys):
+            if v == 0:
+                ax.annotate("0", (xs[i], 0), textcoords="offset points",
+                            xytext=(0, 2), fontsize=6, ha="center", color="#777")
     # scale vs blind-spot coverage: the corrected B3 claim (non-monotone)
     ax = axs[1][1]
     for m, fam, d in rows:
         ax.scatter(PARAMS[m], d["novel_pos_hits"], color=COL.get(fam, "#333"),
                    s=60, label=fam if d["model"] == rows[0][0] else None)
     for m, fam, d in rows:
-        ax.annotate(m.split(":")[-1], (PARAMS[m], d["novel_pos_hits"]),
-                    textcoords="offset points", xytext=(3, 3), fontsize=6)
+        ax.annotate(m.replace(":", " "), (PARAMS[m], d["novel_pos_hits"]),
+                    textcoords="offset points", xytext=(4, 4), fontsize=5.5,
+                    zorder=6,
+                    bbox=dict(facecolor="white", alpha=0.8, edgecolor="none", pad=0.5))
     ax.set_xscale("log")
     ax.set_xlabel("params (B, log)")
     ax.set_ylabel("novel blind-spot hits /10")
@@ -90,7 +97,7 @@ def main():
                  "green=llama red=gemma purple=phi brown=mistral pink=deepseek)", fontsize=9)
     fig.tight_layout()
     outp = os.path.join(r"D:\Dev\FujoOS-private\docs", "quality-curve-15.png")
-    fig.savefig(outp, dpi=300)
+    fig.savefig(outp, dpi=300, bbox_inches="tight")
     print("saved", outp)
 
 
