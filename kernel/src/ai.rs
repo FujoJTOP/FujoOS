@@ -906,6 +906,8 @@ pub extern "C" fn fujo_anom_run(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 
         }
     }
     ai_aud_note(2, engine, anom, conf, iso_rc as u64, fb_verified, &text[..len]);
+    // W32: 信任自适应域 —— 哨兵质量信号 (验证位)
+    qual_note(2, fb_verified);
 
     let o = out as *mut u64;
     unsafe {
@@ -1042,6 +1044,103 @@ pub fn act_verify(act: u64, a0: u64, a1: u64) -> u64 {
         crate::capability::ACT_ACK => (anom_pending() == 0) as u64,
         _ => 0,
     }
+}
+
+// ---------------------------------------------------------------------------
+// W32 · 信任自适应域 (zcode 框架收口 A3): 质量台账 → dom_admit → 域宽=f(质量)
+// 「AI OS 安全」= α 无越界 × 域宽=f(测量质量): S1 机制(S2 委托(S3 政策。
+// 台账 = 每 duty 滚动窗口 (64) 命中率; 生产信号自动接入 (anom/plan/io/nlc 验证点),
+// 测试可显式提交 (0x8314) 构造高/低质量场景。
+// ---------------------------------------------------------------------------
+
+const QUAL_DUTY: usize = 6;
+static mut QUAL_HIT: [u64; QUAL_DUTY] = [0; QUAL_DUTY];
+static mut QUAL_TOTAL: [u64; QUAL_DUTY] = [0; QUAL_DUTY];
+
+/// 0x8314: 质量提交 (生产自动点 + 测试显式)。
+#[no_mangle]
+pub extern "C" fn fujo_qual_feed(duty: u64, hit: u64) -> i64 {
+    if duty == 0 || duty > QUAL_DUTY as u64 {
+        return -22;
+    }
+    let d = (duty - 1) as usize;
+    unsafe {
+        if QUAL_TOTAL[d] < 64 {
+            QUAL_TOTAL[d] += 1;
+            if hit != 0 {
+                QUAL_HIT[d] += 1;
+            }
+        } else {
+            // ponytail: 整数移位平均近似滚动窗口 (数据量小, 无需精确 FIFO)
+            QUAL_HIT[d] = (QUAL_HIT[d] * 63 + (hit & 1) * 64) / 64;
+        }
+    }
+    0
+}
+
+fn qual_rate(duty: usize) -> u64 {
+    unsafe {
+        if QUAL_TOTAL[duty] == 0 {
+            return 50; // 无数据: 中性 (维持)
+        }
+        QUAL_HIT[duty] * 100 / QUAL_TOTAL[duty]
+    }
+}
+
+fn qual_note(duty: u64, hit: u64) {
+    let _ = fujo_qual_feed(duty, hit);
+}
+
+/// 0x8313: 按质量调域 —— 质量≥τ_high → 当前任务域加宽 (ALL_ACTS);
+/// 质量<τ_low → 收缩 (仅 ACK 最低)。域表变化落审计 (A1/A2 语义: 加宽被审计)。
+/// 返回 0=维持 1=加宽 2=收缩; out = u64×3 {rate, code, perm_low8}。
+#[no_mangle]
+pub extern "C" fn fujo_dom_admit(duty: u64, out: u64) -> i64 {
+    if duty == 0 || duty > QUAL_DUTY as u64 || !(0x400000..0xC00000).contains(&out) {
+        return -22;
+    }
+    let d = (duty - 1) as usize;
+    let q = qual_rate(d);
+    let t_high = crate::capability::fujo_cfg_get(7).max(1) as u64;
+    let t_low = crate::capability::fujo_cfg_get(8).max(0) as u64;
+    let cur = crate::sched::current_domain_id();
+    let mut code = 0i64;
+    let mut perm = 0u64;
+    if q >= t_high {
+        // 加宽: 域 (非 0) 授全权 (域 0 为系统域, 不改)
+        if cur >= 1 && cur < crate::capability::DOM_MAX as u64 {
+            crate::capability::dom_adjust(cur, crate::capability::ALL_ACTS);
+            code = 1;
+            perm = crate::capability::domain_perm(cur).1;
+        }
+    } else if q < t_low && t_low > 0 {
+        // 收缩: 仅 ACK 最小权限
+        if cur >= 1 && cur < crate::capability::DOM_MAX as u64 {
+            crate::capability::dom_adjust(cur, 1u64 << (crate::capability::ACT_ACK - 1));
+            code = 2;
+            perm = crate::capability::domain_perm(cur).1;
+        }
+    }
+    serial::write_str("admit: duty=");
+    crate::syscall::debug_dec(duty);
+    serial::write_str(" rate=");
+    crate::syscall::debug_dec(q);
+    serial::write_str(" cur=");
+    crate::syscall::debug_dec(cur);
+    serial::write_str(" th=");
+    crate::syscall::debug_dec(t_high);
+    serial::write_str("/");
+    crate::syscall::debug_dec(t_low);
+    serial::write_str(" code=");
+    crate::syscall::debug_dec(code as u64);
+    serial::write_line("");
+    unsafe {
+        let o = out as *mut u64;
+        o.write(q);
+        o.add(1).write(code as u64);
+        o.add(2).write(perm & 0xFF);
+    }
+    code
 }
 
 /// 解析 "A<act> <a0> <a1>" 形式的动作令牌。
@@ -1184,6 +1283,8 @@ pub extern "C" fn fujo_plan_run(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 
         n_verified,
         &goal[..len],
     );
+    // W32: 信任自适应域 —— 计划质量信号 (动作后果验证)
+    qual_note(3, if n_verified > 0 { 1 } else { 0 });
     serial::write_str("plan: goal [");
     serial::write_str(core::str::from_utf8(&goal[..len.min(60)]).unwrap_or(""));
     serial::write_str("] -> ");
@@ -1355,6 +1456,8 @@ pub extern "C" fn fujo_io_predict(ptr: u64, len: u64, out: u64, _cap: u64) -> i6
         h
     };
     ai_aud_note(4, eng, next, hit, 0, 0, &seq[..len]);
+    // W32: 信任自适应域 —— IO 质量信号 (自监督 hit 标签)
+    qual_note(4, if hit == 1 { 1 } else { 0 });
     unsafe {
         (out as *mut u64).write(next);
     }
@@ -1539,6 +1642,8 @@ pub extern "C" fn fujo_nlc_set(ptr: u64, len: u64, out: u64, _cap: u64) -> i64 {
         (out as *mut u64).write(n_applied);
     }
     ai_aud_note(5, eng, n_applied, n_verified, 0, n_verified, &text[..len]);
+    // W32: 信任自适应域 —— NLC 质量信号 (cfg 读回验证)
+    qual_note(5, if n_verified > 0 { 1 } else { 0 });
     serial::write_str("nlc : policy [");
     serial::write_str(core::str::from_utf8(&pol[..plen.min(60)]).unwrap_or(""));
     serial::write_str("] applied=");

@@ -128,6 +128,8 @@ CASES = [
     #      GRUB/真机等效路径: mbi cmdline 由引导器交付)
     ("m148-autostart", "ELF64 x autostart", "sdk/linux/m142_feedback.elf", "M142 RESULT: PASS",
      [], {"append": "fujo.run=m142_feedback", "keys": []}),
+    # W32: 信任自适应域 (质量台账 -> dom_admit -> 域宽=f(质量); zcode 框架)
+    ("m149-trust", "ELF64 x trust-admit", "sdk/linux/m149_trust.elf", "M149 RESULT: PASS", [], {}),
 ]
 
 MON_PORT = 4568

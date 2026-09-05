@@ -57,6 +57,8 @@ pub fn fujo_cfg_get(key: u64) -> i64 {
     let def = match key {
         1 => 50,  // anom 阈值
         2 => 0,   // 自动隔离 off
+        7 => 70,  // W32: 信任自适应域 加宽阈值 τ_high
+        8 => 30,  // W32: 信任自适应域 收缩阈值 τ_low
         _ => 0,
     };
     if key == 0 || key > 8 {
@@ -325,6 +327,27 @@ pub fn fujo_dom_revoke(id: u64) -> i64 {
         serial::write_line("");
         0
     }
+}
+
+/// W32: 信任自适应域 —— 由 dom_admit 按模型质量调域 perm (加宽/收缩;
+/// 域表变化落审计 action=3, 与 revoke 同一审计面)。
+pub fn dom_adjust(id: u64, perm: u64) -> i64 {
+    unsafe {
+        if id == 0 || id >= DOM_MAX as u64 {
+            return -22;
+        }
+        DOM[id as usize].perm = perm & ALL_ACTS;
+        if perm != 0 {
+            DOM[id as usize].granted = true;
+        }
+        aud_dom(id, 2);
+        serial::write_str("dom  : adjust #");
+        crate::syscall::debug_dec(id);
+        serial::write_str(" perm=");
+        crate::syscall::debug_hex(DOM[id as usize].perm);
+        serial::write_line("");
+    }
+    0
 }
 
 /// 域审计: action=3 (domain 操作), subject=域 id, result=0/1。

@@ -374,6 +374,9 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x830F => crate::ai::fujo_evl_mode(a0),
         // ---- W27: 事件流摘要 (哨兵感知系统自身; 最近 100tick 速率+最近事件) ----
         0x8312 => crate::ai::fujo_ev_digest(a0, a1),
+        // ---- W32: 信任自适应域 (质量台账 -> 域宽=f(质量); zcode 框架) ----
+        0x8313 => crate::ai::fujo_dom_admit(a0, a1),
+        0x8314 => crate::ai::fujo_qual_feed(a0, a1),
         // ---- W13: virtio-blk (PCI 总线模型 + 驱动) ----
         0x8A01 => crate::virtio::fujo_vblk_read(a0, a1, a2),
         0x8A02 => crate::virtio::fujo_vblk_info(a0),

@@ -616,7 +616,8 @@ pub fn exec_spawn(entry: u64) -> i64 {
                 sig_handler: 0,
                 sig_pending: false,
                 sig_active: false,
-                domain: 0,
+                // W32: 继承绑定域 (BOUND_DOMAIN) —— 隐式任务登记不得丢失 0x8108 绑定
+                domain: BOUND_DOMAIN,
                 cr3: 0,
                 heap0: 0,
                 heap1: 0,
