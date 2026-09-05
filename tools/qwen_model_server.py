@@ -187,6 +187,9 @@ def ollama_generate(prompt: str, timeout: float = 120.0) -> str:
             "model": MODEL,
             "prompt": prompt,
             "stream": False,
+            # B3: qwen3 系列默认思考模式 (单次 20-47s, 全为 <think> token);
+            # think=false 直出答案 (10-20x 提速; 链路只取结构化字段)。
+            "think": False,
             "options": {"num_ctx": 3072, "temperature": 0},
         }
     ).encode()

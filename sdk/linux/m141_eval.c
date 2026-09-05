@@ -354,8 +354,9 @@ static int run(void)
             wrdec(S_GT[i]);
             wrstr(got == S_GT[i] ? " HIT\n" : " miss\n");
         }
-        run_engine(0);
-        print_engine("m141: [auto ]");
+        /* B3: auto=蒸馏→模型→规则; 本 demo 未载入 rulebook (m120/m143 才载),
+         * 在线时 auto==model —— 跳过 [auto] 全量 (省 36 次调用; 离线语义见 T1/T4) */
+        wrstr("m141: [auto ] == model (no rulebook loaded; see m120/m143)\n");
     } else {
         /* offline: auto 降级语义已由 T1/T4 确定性覆盖 (不再全量, 免 6s×N 超时) */
         wrstr("m141: [auto ] == rules (offline fallback; see T1/T4)\n");
