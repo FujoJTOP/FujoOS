@@ -72,15 +72,19 @@ def main():
     ax.set_ylabel("novel blind-spot hits /10")
     ax.set_title("coverage is NOT size-monotone (0.6B 10/10 vs 4B 0/10)")
     ax.grid(alpha=0.3)
-    # LOO result summary panel
+    # LOO result summary panel (one text call per line: \n multi-line text has
+    # unreliable linespacing on some backends -> overlap)
     ax = axs[1][2]
     ax.axis("off")
-    ax.text(0, 0.95, "Leave-one-model-out (15 removals):", fontsize=10)
-    ax.text(0, 0.75, "C1 blind-spot coverage: no flip\n"
-                     "C2 io rule-ownership: no flip\n"
-                     "C3 worst model: qwen2.5:0.5b (32)\n"
-                     "C4 orthogonality: FLIPS when\n   llama3.2:3b removed (dual-best)",
-            fontsize=9, family="monospace")
+    for s, y in [
+        ("Leave-one-model-out (15 removals):", 0.96),
+        ("C1 blind-spot coverage: no flip", 0.78),
+        ("C2 io rule-ownership: no flip", 0.60),
+        ("C3 worst model: qwen2.5:0.5b (32)", 0.42),
+        ("C4 orthogonality: FLIPS when", 0.24),
+        ("   llama3.2:3b removed (dual-best)", 0.08),
+    ]:
+        ax.text(0, y, s, fontsize=9, family="monospace")
     fig.suptitle("B20: 15 local models x 100-sample m141 goldset (rules baseline: "
                  "anom 30/40 io 30/30 cls 16/30 novel 0/10; blue=qwen2.5 orange=qwen3 "
                  "green=llama red=gemma purple=phi brown=mistral pink=deepseek)", fontsize=9)
