@@ -1,14 +1,14 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="dark">
-<title>FujoOS · 下个时代的操作系统</title>
-<meta name="description" content="什么是下个时代的操作系统?这是 FujoOS 的答案。零第三方依赖的 x86_64 原生操作系统内核:内核、驱动、窗口、游戏层、工具链、AI OS 层全栈自研,三平台二进制可原地运行。M1-M147 全部 PASS。">
+<title>FujoOS · What Is the Operating System of the Next Era?</title>
+<meta name="description" content="What is the operating system of the next era? FujoOS is the answer. A zero-dependency native x86_64 kernel with a full custom stack: kernel, drivers, windowing, game layer, toolchain, AI OS layer. Three-platform binaries run in place. M1-M147 all PASS.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230f172a'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='16' fill='%2322c55e' text-anchor='middle'%3EF%3C/text%3E%3C/svg%3E">
-<meta property="og:title" content="FujoOS · 下个时代的操作系统">
-<meta property="og:description" content="什么是下个时代的操作系统?这是 FujoOS 的答案。零第三方依赖的 x86_64 原生操作系统内核,M1-M147 全部 PASS,参考机回归 37/37,AI 六波 + 双执行模式对照。">
+<meta property="og:title" content="FujoOS · What Is the Operating System of the Next Era?">
+<meta property="og:description" content="A zero-dependency native x86_64 kernel with a full custom stack. M1-M147 all PASS, reference regression 37/37, AI six-wave + dual execution mode contrast.">
 <meta property="og:type" content="website">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,7 +16,7 @@
 <script>document.documentElement.classList.add('js');</script>
 <style>
 /* ============================================================
-   FujoOS 官网 v3 - 设计系统: ui-ux-pro-max "Dark Mode OLED"
+   FujoOS official site (EN) - design system: ui-ux-pro-max "Dark OLED"
    palette: code dark (#0F172A base) + run green (#22C55E accent)
    type: IBM Plex Sans (body) + JetBrains Mono (code/labels)
    effects: minimal glow 10px, visible focus, reduced-motion safe
@@ -37,7 +37,7 @@
   --code-bg: #0B1220;
   --r: 14px;
   --r-pill: 999px;
-  --sans: "IBM Plex Sans", "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   --mono: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -262,15 +262,15 @@ footer { padding: 44px 0 56px; }
 
 <header>
   <nav class="wrap">
-    <div class="brand"><a href="#" style="color:inherit">Fujo<em>OS</em></a></div>
+    <div class="brand"><a href="../" style="color:inherit">Fujo<em>OS</em></a></div>
     <div class="nav-links">
-      <a href="#features">特性</a>
-      <a href="#arch">架构</a>
-      <a href="#start">快速开始</a>
-      <a href="#evidence">证据</a>
-      <a href="#limits">边界</a>
-      <a href="#docs">文档</a>
-      <a class="nav-lang" href="en/" hreflang="en">English</a>
+      <a href="#features">Features</a>
+      <a href="#arch">Architecture</a>
+      <a href="#start">Quick Start</a>
+      <a href="#evidence">Evidence</a>
+      <a href="#limits">Limits</a>
+      <a href="#docs">Docs</a>
+      <a class="nav-lang" href="../" hreflang="zh-CN">中文</a>
       <a class="nav-github" href="https://github.com/FujoJTOP/FujoOS" target="_blank" rel="noopener">GitHub ↗</a>
     </div>
   </nav>
@@ -280,11 +280,11 @@ footer { padding: 44px 0 56px; }
   <div class="wrap hero-inner">
     <div class="hero-copy">
       <p class="eyebrow">rust no_std · x86_64 · zero-dependency</p>
-      <h1>什么是下个时代的<br><span class="accent">操作系统</span>?</h1>
-      <p class="lead"><strong>这是 FujoOS 的答案。</strong> 内核、驱动、窗口、游戏层、工具链、AI OS 层全栈自研，零第三方依赖。三平台二进制可原地运行。</p>
+      <h1>What is the OS of the<br><span class="accent">next era</span>?</h1>
+      <p class="lead"><strong>FujoOS is the answer.</strong> Kernel, drivers, windows, game layer, toolchain and AI OS layer, all built by hand. Zero third-party dependencies. Three-platform binaries run in place.</p>
       <div class="hero-cta">
-        <a class="btn primary" href="https://github.com/FujoJTOP/FujoOS" target="_blank" rel="noopener">前往 GitHub</a>
-        <a class="btn ghost" href="#start">看看怎么跑起来</a>
+        <a class="btn primary" href="https://github.com/FujoJTOP/FujoOS" target="_blank" rel="noopener">View on GitHub</a>
+        <a class="btn ghost" href="#start">See it boot</a>
       </div>
     </div>
     <div class="term" aria-hidden="true">
@@ -296,72 +296,72 @@ footer { padding: 44px 0 56px; }
 
 <div class="metrics">
   <div class="wrap metrics-inner">
-    <div><b data-count="147">0</b><span>里程碑 M1-M147 PASS</span></div>
-    <div><b data-count="37">0</b><span>参考机回归 37/37</span></div>
-    <div><b data-count="38">0</b><span>CI 用例</span></div>
+    <div><b data-count="147">0</b><span>Milestones M1-M147 PASS</span></div>
+    <div><b data-count="37">0</b><span>Reference regression 37/37</span></div>
+    <div><b data-count="38">0</b><span>CI cases</span></div>
     <div><b data-count="39">0</b><span>Linux syscalls</span></div>
-    <div><b data-count="94">0</b><span>输入延迟 μs (avg)</span></div>
+    <div><b data-count="94">0</b><span>Input latency µs (avg)</span></div>
   </div>
 </div>
 
 <section id="features">
   <div class="wrap">
-    <h2>特性一览</h2>
-    <p class="sub">从长模式内核到 AI OS 层，全部自己写。</p>
+    <h2>Features</h2>
+    <p class="sub">From the long-mode kernel to the AI OS layer, everything is written from scratch.</p>
     <div class="bento">
       <div class="cell big reveal" data-delay="0">
-        <h3>内核核心</h3>
-        <p>x86_64 长模式 · IDT/GDT/TSS · PIT 100Hz 抢占式多任务 (PIT round-robin, 亲和/均衡统计) · 虚拟内存 v0 · 按需零页 · 帧分配器 · U-位硬化 · 权重 mmap 按需页 · 用户异常隔离 · 双 TSS + IRQ 路由</p>
+        <h3>Kernel core</h3>
+        <p>x86_64 long mode · IDT/GDT/TSS · PIT 100Hz preemptive multitasking (PIT round-robin, affinity/balance stats) · virtual memory v0 · on-demand zero pages · frame allocator · U-bit hardening · weighted mmap demand paging · user exception isolation · dual TSS + IRQ routing</p>
         <div class="big-stats">
-          <span><b>0x00-0x8F</b> syscall 面</span>
-          <span><b>&gt;1GiB</b> 高内存恒等映射</span>
-          <span><b>per-task</b> 页表链</span>
+          <span><b>0x00-0x8F</b> syscall surface</span>
+          <span><b>&gt;1GiB</b> high memory identity map</span>
+          <span><b>per-task</b> page table chains</span>
         </div>
       </div>
       <div class="cell reveal" data-delay="40">
-        <h3>存储</h3>
-        <p>ATA PIO + FJFS 4MiB 卷 (格式化/持久化, 跨重启 PASS) · AHCI/SATA 真盘 (ICH9 q35) · 页缓存/预读 · 存档沙箱</p>
+        <h3>Storage</h3>
+        <p>ATA PIO + FJFS 4MiB volume (format/persist, PASS across reboot) · AHCI/SATA real disk (ICH9 q35) · page cache/readahead · archive sandbox</p>
       </div>
       <div class="cell code reveal" data-delay="80">
-        <h3>ABI · 三平台加载器</h3>
-        <p>ELF64 / Mach-O / PE32+ 原地运行，统一打包 .run (FUJR)。</p>
+        <h3>ABI · Three-platform loaders</h3>
+        <p>ELF64 / Mach-O / PE32+ run in place, packed as a self-contained .run (FUJR).</p>
         <p class="code">$ os run<span class="hl"> busybox</span> echo m131-ok</p>
       </div>
       <div class="cell reveal" data-delay="0">
-        <h3>网络</h3>
-        <p>virtio-net legacy · IPv4/UDP 往返 (ARP 应答) · 最小 TCP 服务器 SYN/ACK/PSH echo</p>
+        <h3>Networking</h3>
+        <p>virtio-net legacy · IPv4/UDP roundtrip (ARP reply) · minimal TCP server SYN/ACK/PSH echo</p>
       </div>
       <div class="cell reveal" data-delay="40">
-        <h3>图形</h3>
-        <p>VBE 1024x768x32 + LFB · 5x7 位图字体 · 软件光栅 rect/tri/line · blit/scale · 着色器字节码 VM</p>
+        <h3>Graphics</h3>
+        <p>VBE 1024x768x32 + LFB · 5x7 bitmap font · software raster rect/tri/line · blit/scale · shader bytecode VM</p>
       </div>
       <div class="cell reveal" data-delay="80">
-        <h3>桌面</h3>
-        <p>wmsg 窗口类表/64 消息队/刷新 (0x55xx) · fujokit button/textbox/list · IME 拼音候选</p>
+        <h3>Desktop</h3>
+        <p>wmsg window class table / 64 message queues / refresh (0x55xx) · fujokit button/textbox/list · IME pinyin candidates</p>
       </div>
       <div class="cell reveal" data-delay="0">
-        <h3>游戏</h3>
-        <p>游戏模式 (0x66xx) · Pong / Breakout 自研引擎 · 输入延迟基准 avg 94µs (0x6Fxx)</p>
+        <h3>Games</h3>
+        <p>game mode (0x66xx) · Pong / Breakout engine built from scratch · input latency bench avg 94µs (0x6Fxx)</p>
       </div>
       <div class="cell ai reveal" data-delay="40">
-        <h3>AI OS 层</h3>
-        <p>模型权重 mmap · 模型卡 (权限/计费/审计) · 会话检查点 · fujoctx 摘要/上下文压缩 · 意图路由 · 推理执行器 · 异常哨兵 · W22-W28 六波: 三引擎对照 / 蒸馏闭环 / 对抗验证 / IO 基线 / 全自监督 / 事件流哨兵 (m141-m147)</p>
+        <h3>AI OS layer</h3>
+        <p>model weights mmap · model cards (permission/billing/audit) · session checkpoints · fujoctx summary/context compression · intent routing · inference executor · anomaly sentinel · W22-W28 six waves: 3-engine contrast / distillation loop / adversarial validation / IO baseline / full self-supervision / event-stream sentinel (m141-m147)</p>
       </div>
       <div class="cell reveal" data-delay="80">
-        <h3>工具链</h3>
-        <p>系统内汇编器 (0x70xx) → 链接器 (0x71xx) → fujocc 编译壳 C→ELF64 全链 · 调试器 TF/int3 · trace · 性能窗口 · 泄漏/minidump</p>
+        <h3>Toolchain</h3>
+        <p>in-kernel assembler (0x70xx) → linker (0x71xx) → fujocc compile shell C→ELF64 full chain · debugger TF/int3 · trace · perf window · leak/minidump</p>
       </div>
       <div class="cell reveal" data-delay="0">
-        <h3>音频</h3>
-        <p>AC97 探测/音量 · 4ch 混音器 + LPF/增益链</p>
+        <h3>Audio</h3>
+        <p>AC97 probe/volume · 4ch mixer + LPF/gain chain</p>
       </div>
       <div class="cell reveal" data-delay="40">
-        <h3>真机化 + 平台对照 (W20/W29)</h3>
-        <p>平台检测 (Bochs VBE 证据链 → is_qemu) · LAPIC ICR 双语义运行时切换 · GRUB2 真机引导 · PCI 多函数枚举 · W29 第二执行模式 (TCG vs WHPX, --accel whpx)</p>
+        <h3>Real hardware + platform contrast (W20/W29)</h3>
+        <p>platform detection (Bochs VBE evidence chain → is_qemu) · LAPIC ICR dual semantics runtime switch · GRUB2 real-hardware boot · PCI multifunction enumeration · W29 second execution mode (TCG vs WHPX, --accel whpx)</p>
       </div>
       <div class="cell reveal" data-delay="80">
-        <h3>交付</h3>
-        <p>fujopack / fujorun · fujoci 38 用例 · onebuild 3/3 · live 镜像+安装器 (0x87xx) · 签名/更新 (0x88xx)</p>
+        <h3>Delivery</h3>
+        <p>fujopack / fujorun · fujoci 38 cases · onebuild 3/3 · live image + installer (0x87xx) · signing/update (0x88xx)</p>
       </div>
     </div>
   </div>
@@ -369,19 +369,19 @@ footer { padding: 44px 0 56px; }
 
 <section id="arch">
   <div class="wrap">
-    <h2>架构蓝图</h2>
-    <p class="sub">长模式内核 (Rust, no_std, 零依赖)，自底向上全栈。</p>
+    <h2>Architecture</h2>
+    <p class="sub">Long-mode kernel (Rust, no_std, zero deps), full stack from the ground up.</p>
     <div class="arch-frame reveal">
       <div class="arch">
 <pre><span class="c"># fujo - kernel layout</span>
-长模式内核 (Rust, no_std, 零依赖)
-  ├─ <span class="k">内存 / 调度 / 异常</span>  → 三 ABI 共存 (ELF / Mach-O / PE)
-  ├─ <span class="k">驱动</span>              → VBE / PS2 / ATA / AHCI / AC97 / virtio / PIT
-  ├─ <span class="k">桌面</span>              → wmsg 窗口 / fujokit / IME / 剪贴板 / 主题
-  ├─ <span class="k">游戏层</span>            → 光栅 / blit / 着色器 VM / 混音 / 游戏模式
-  ├─ <span class="k">工具链</span>            → asm / ld / fujocc / 调试 / trace / CI
-  ├─ <span class="k">AI OS</span>             → 权重页 / 模型卡 / 会话 / 审计 / 路由 / 执行器
-  └─ <span class="k">交付</span>              → live / 安装 / 签名更新 / .run 容器 (FUJR v1)</pre>
+Long-mode kernel (Rust, no_std, zero dependencies)
+  ├─ <span class="k">Memory / sched / faults</span>  → three ABIs coexist (ELF / Mach-O / PE)
+  ├─ <span class="k">Drivers</span>              → VBE / PS2 / ATA / AHCI / AC97 / virtio / PIT
+  ├─ <span class="k">Desktop</span>             → wmsg windows / fujokit / IME / clipboard / themes
+  ├─ <span class="k">Game layer</span>          → raster / blit / shader VM / mixer / game mode
+  ├─ <span class="k">Toolchain</span>           → asm / ld / fujocc / debug / trace / CI
+  ├─ <span class="k">AI OS</span>              → weight pages / model cards / sessions / audit / routing / executor
+  └─ <span class="k">Delivery</span>             → live / installer / signed updates / .run container (FUJR v1)</pre>
       </div>
     </div>
   </div>
@@ -389,14 +389,14 @@ footer { padding: 44px 0 56px; }
 
 <section id="start">
   <div class="wrap">
-    <h2>快速开始</h2>
-    <p class="sub">Windows 开发机 + QEMU，30 秒看到内核启动。</p>
+    <h2>Quick Start</h2>
+    <p class="sub">Windows dev box + QEMU, see the kernel boot in 30 seconds.</p>
     <div class="start-grid">
       <ol class="steps">
-        <li class="reveal"><span class="n">1</span><span class="s"><b>装依赖</b><span>rustup target add x86_64-unknown-none · winget install LLVM.LLVM qemu</span></span></li>
-        <li class="reveal"><span class="n">2</span><span class="s"><b>构建内核</b><span>cd kernel; cargo build --release; 确认出现 "Compiling" 行</span></span></li>
-        <li class="reveal"><span class="n">3</span><span class="s"><b>启动参考机</b><span>QEMU 无头拉起，monitor 注入 "os run hermes"</span></span></li>
-        <li class="reveal"><span class="n">4</span><span class="s"><b>跑回归</b><span>fujoregress.py 37/37 · --accel whpx 双模式 · ci.py 38 用例 · onebuild 3/3</span></span></li>
+        <li class="reveal"><span class="n">1</span><span class="s"><b>Install dependencies</b><span>rustup target add x86_64-unknown-none · winget install LLVM.LLVM qemu</span></span></li>
+        <li class="reveal"><span class="n">2</span><span class="s"><b>Build the kernel</b><span>cd kernel; cargo build --release; look for the "Compiling" line</span></span></li>
+        <li class="reveal"><span class="n">3</span><span class="s"><b>Boot the reference machine</b><span>headless QEMU, inject "os run hermes" via monitor</span></span></li>
+        <li class="reveal"><span class="n">4</span><span class="s"><b>Run regression</b><span>fujoregress.py 37/37 · --accel whpx dual mode · ci.py 38 cases · onebuild 3/3</span></span></li>
       </ol>
       <div class="term reveal">
         <div class="term-bar"><span>powershell / developer</span><span>Windows</span></div>
@@ -416,7 +416,7 @@ qemu-system-x86_64 -m 256M -kernel kernel/fujo-kernel.bin \
 <span class="c"># monitor: sendkey <span class="g">o s spc r u n spc h e r m e s ret</span></span>
 
 <span class="c"># 4) regression / one-click</span>
-python tools/fujoregress.py   <span class="c"># 37/37 (--accel whpx → 双模式对照)</span>
+python tools/fujoregress.py   <span class="c"># 37/37 (--accel whpx → dual mode)</span>
 python tools/ci.py            <span class="c"># 38 cases</span>
 pwsh scripts/onebuild.ps1     <span class="c"># 3/3</span></pre>
         </div>
@@ -427,64 +427,65 @@ pwsh scripts/onebuild.ps1     <span class="c"># 3/3</span></pre>
 
 <section id="evidence">
   <div class="wrap">
-    <h2>可验证的证据</h2>
-    <p class="sub">结论来自回归闭环，不是口头声明。全部命令在仓库内可复现。</p>
+    <h2>Evidence You Can Verify</h2>
+    <p class="sub">Conclusions come from a closed regression loop, not from claims. Every command is reproducible in the repo.</p>
     <div class="ev-list">
-      <div class="ev-item reveal"><p class="ev-head"><span class="tick">✓</span> 回归闭环</p><p><code>python tools/fujoregress.py</code> 全量 37/37 (TCG), AI 波 m141-m147 每波 PASS; <code>--accel whpx</code> 第二执行模式对照 36/37 (m129 = WHPX 平台限制)</p></div>
-      <div class="ev-item reveal"><p class="ev-head"><span class="tick">✓</span> 30 秒复现</p><p>上方命令直接跑: QEMU 无头启动 → monitor 注入 <code>os run hermes</code></p></div>
-      <div class="ev-item reveal"><p class="ev-head"><span class="tick">✓</span> 真机证据</p><p>GRUB2 multiboot v1 真机引导 (docs/74 §4) · AHCI/SATA 真盘持久化回读 (docs/75/76/79) · LAPIC 平台双语义 + CPUID/MSR 探测 (docs/74)</p></div>
-      <div class="ev-item reveal"><p class="ev-head"><span class="tick">✓</span> AI 在线波</p><p><code>verify_ai.py --model qwen2.5:7b</code> m141 三引擎对照 8/8·1/5·6/6 (novel 2/2) · <code>--evil</code> w24 对抗拦截: 越权 kill 全拒+审计, blast-radius 可复现 (docs/85)</p></div>
-      <div class="ev-item reveal"><p class="ev-head"><span class="tick">✓</span> 发布基线</p><p>M1-M147 全部 PASS (docs/08-roadmap-100.md 100 项勾选 + W13-W29 机制/平台线) · v1.0 发布 (docs/49-release-notes.md)</p></div>
+      <div class="ev-item reveal"><p class="ev-head"><span class="tick">✓</span> Regression loop</p><p><code>python tools/fujoregress.py</code> full 37/37 (TCG), AI waves m141-m147 pass each; <code>--accel whpx</code> second execution mode contrast 36/37 (m129 = WHPX platform limit)</p></div>
+      <div class="ev-item reveal"><p class="ev-head"><span class="tick">✓</span> 30-second reproduction</p><p>Run the commands above: headless QEMU boots → monitor injects <code>os run hermes</code></p></div>
+      <div class="ev-item reveal"><p class="ev-head"><span class="tick">✓</span> Real-hardware evidence</p><p>GRUB2 multiboot v1 real-hardware boot (docs/74 §4) · AHCI/SATA real disk persistence readback (docs/75/76/79) · LAPIC platform dual semantics + CPUID/MSR probes (docs/74)</p></div>
+      <div class="ev-item reveal"><p class="ev-head"><span class="tick">✓</span> AI online waves</p><p><code>verify_ai.py --model qwen2.5:7b</code> m141 three-engine contrast 8/8·1/5·6/6 (novel 2/2) · <code>--evil</code> w24 adversarial interception: unauthorized kill all rejected + audited, blast-radius reproducible (docs/85)</p></div>
+      <div class="ev-item reveal"><p class="ev-head"><span class="tick">✓</span> Release baseline</p><p>M1-M147 all PASS (docs/08-roadmap-100.md 100 checked + W13-W29 mechanism/platform waves) · v1.0 released (docs/49-release-notes.md)</p></div>
     </div>
   </div>
 </section>
 
 <section id="limits">
   <div class="wrap">
-    <h2>边界与已知限制</h2>
-    <p class="sub">能力边界如实列出，避免误读。参考机为 QEMU，真机化 W20 已开启。</p>
+    <h2>Boundaries & Known Limits</h2>
+    <p class="sub">Capability boundaries are stated honestly to avoid misreading. The reference machine is QEMU; real-hardware mode opened at W20.</p>
     <div class="faq">
-      <div class="faq-item reveal"><h3><span class="q">Q1</span>AI 推理是端侧的吗？</h3><p>不是。内核 (AI OS 层) 提供权重页/模型卡/审计/执行器编排面，实际推理由宿主链路 (COM2 → 宿主模型服务) 承载，无本地 LLM。</p></div>
-      <div class="faq-item reveal"><h3><span class="q">Q2</span>兼容性指什么？</h3><p>指加载器/垫片面，不是完整用户态兼容。Linux ELF / macOS Mach-O / Windows PE32+ 的最小静态样例可原地运行，三平台二进制统一打包为 .run (FUJR v1)。</p></div>
-      <div class="faq-item reveal"><h3><span class="q">Q3</span>性能如何？</h3><p>默认 TCG 解释执行，真机/KVM 预期 10-100x (M57 对照面已架)。W29 已加第二执行模式对照 (--accel whpx)。系统内编译器为 C 子集 (单函数)，ACPI 表体 &gt;64MiB 未映射 (M96 guard)。</p></div>
-      <div class="faq-item reveal"><h3><span class="q">Q4</span>还有哪些没做完？</h3><p>真机视频面 (INT 10h VBE) 与 USB 驱动面未完成；FJFS 多簇写往返已修复单簇读回，大文件列后续。</p></div>
+      <div class="faq-item reveal"><h3><span class="q">Q1</span>Is AI inference on-device?</h3><p>No. The kernel (AI OS layer) provides the weight pages/model cards/audit/executor orchestration surface; actual inference runs on the host link (COM2 → host model service). No local LLM.</p></div>
+      <div class="faq-item reveal"><h3><span class="q">Q2</span>What does "compatibility" mean?</h3><p>Loader/shim level, not full userspace compatibility. Minimal static samples of Linux ELF / macOS Mach-O / Windows PE32+ run in place, all packed as .run (FUJR v1).</p></div>
+      <div class="faq-item reveal"><h3><span class="q">Q3</span>How fast is it?</h3><p>TCG interpretation by default; expect 10-100x on real hardware/KVM (M57 contrast surface in place). W29 adds a second execution mode contrast (--accel whpx). The in-kernel compiler is a C subset (single function); ACPI tables &gt;64MiB unmapped (M96 guard).</p></div>
+      <div class="faq-item reveal"><h3><span class="q">Q4</span>What is still missing?</h3><p>Real-hardware video (INT 10h VBE) and the USB driver surface are unfinished; FJFS multi-cluster write fixed for single-cluster readback, large files on the list.</p></div>
     </div>
   </div>
 </section>
 
 <section id="docs">
   <div class="wrap">
-    <h2>文档与路线图</h2>
-    <p class="sub">仓库 docs/ 内 90+ 份里程碑文档，每步都是接口 / 实现 / 实测 / 踩坑四段式。</p>
+    <h2>Docs & Roadmap</h2>
+    <p class="sub">90+ milestone documents in the repo's docs/, every step in four parts: interface / implementation / measurements / pitfalls.</p>
     <div class="doc-row">
-      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/08-roadmap-100.md" target="_blank" rel="noopener"><span class="fn">08-roadmap-100.md</span><span class="desc">100 里程碑路线图, 全部完成</span><span class="arr">↗</span></a>
-      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/49-release-notes.md" target="_blank" rel="noopener"><span class="fn">49-release-notes.md</span><span class="desc">v1.0 发布公告</span><span class="arr">↗</span></a>
-      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/29-sdk-close.md" target="_blank" rel="noopener"><span class="fn">29-sdk-close.md</span><span class="desc">SDK 教程 · hello/game/gui 模板</span><span class="arr">↗</span></a>
-      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/01-architecture.md" target="_blank" rel="noopener"><span class="fn">01-architecture.md</span><span class="desc">总体架构 · 模块划分</span><span class="arr">↗</span></a>
-      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/10-2d-engine.md" target="_blank" rel="noopener"><span class="fn">10-2d-engine.md</span><span class="desc">2D 引擎分析 · fujogl</span><span class="arr">↗</span></a>
-      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/09-dxvk-feasibility.md" target="_blank" rel="noopener"><span class="fn">09-dxvk-feasibility.md</span><span class="desc">DXVK 可行性评估</span><span class="arr">↗</span></a>
+      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/08-roadmap-100.md" target="_blank" rel="noopener"><span class="fn">08-roadmap-100.md</span><span class="desc">100-milestone roadmap, all done</span><span class="arr">↗</span></a>
+      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/49-release-notes.md" target="_blank" rel="noopener"><span class="fn">49-release-notes.md</span><span class="desc">v1.0 release notes</span><span class="arr">↗</span></a>
+      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/29-sdk-close.md" target="_blank" rel="noopener"><span class="fn">29-sdk-close.md</span><span class="desc">SDK tutorial · hello/game/gui templates</span><span class="arr">↗</span></a>
+      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/01-architecture.md" target="_blank" rel="noopener"><span class="fn">01-architecture.md</span><span class="desc">Overall architecture · module layout</span><span class="arr">↗</span></a>
+      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/10-2d-engine.md" target="_blank" rel="noopener"><span class="fn">10-2d-engine.md</span><span class="desc">2D engine analysis · fujogl</span><span class="arr">↗</span></a>
+      <a href="https://github.com/FujoJTOP/FujoOS/blob/fujoos-ai-dev/docs/09-dxvk-feasibility.md" target="_blank" rel="noopener"><span class="fn">09-dxvk-feasibility.md</span><span class="desc">DXVK feasibility study</span><span class="arr">↗</span></a>
     </div>
   </div>
 </section>
 
 <div class="final-cta">
   <div class="wrap">
-    <h2>在 GitHub 上关注这个项目</h2>
-    <p>里程碑文档、回归脚本、模板源码都在仓库里，可自由阅读与复现。</p>
+    <h2>Follow the project on GitHub</h2>
+    <p>Milestone docs, regression scripts and template sources all live in the repo. Read and reproduce freely.</p>
     <div class="cta-row">
       <a class="btn primary" href="https://github.com/FujoJTOP/FujoOS" target="_blank" rel="noopener">Star on GitHub</a>
-      <a class="btn ghost" href="https://github.com/FujoJTOP/FujoOS/issues" target="_blank" rel="noopener">提 Issue</a>
+      <a class="btn ghost" href="https://github.com/FujoJTOP/FujoOS/issues" target="_blank" rel="noopener">Open an Issue</a>
     </div>
   </div>
 </div>
 
 <section id="thanks">
   <div class="wrap thanks-inner">
-    <h2>致谢</h2>
-    <p class="sub">感谢每一位参与 FujoOS 开发与同行的人。</p>
-    <p class="thanks-body reveal">从第一行内核代码到第 147 个里程碑，从每一条 QEMU 日志到每一次真机验证：
-      感谢贡献代码与驱动的开发者、跑回归与验证的协作者、写文档和做评审的人，
-      也感谢所有提 Issue、Star、阅读与分享的朋友。这个项目因你们而存在，也因你们继续向前。</p>
+    <h2>Thanks</h2>
+    <p class="sub">To everyone who built FujoOS with us.</p>
+    <p class="thanks-body reveal">From the first line of kernel code to the 147th milestone, from every QEMU log to every real-hardware verification:
+      thank you to the developers who wrote code and drivers, the collaborators who ran regressions and verified,
+      the people who wrote docs and reviewed, and every friend who filed an Issue, starred, read and shared.
+      This project exists because of you, and moves forward because of you.</p>
   </div>
 </section>
 
