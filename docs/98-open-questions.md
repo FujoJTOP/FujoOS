@@ -80,7 +80,7 @@
 | # | 问题 | 路径（known） | 优先级 | 备注 |
 |---|---|---|---|---|
 | B1 | 中断架构 APIC 化 | #15 根治: IDT 重定向/EOI/LAPIC 模式 | ★★★★ | W29 followup; 面向 WHPX/现代平台; 与 8259 并存或切换 |
-| B2 | TCP 客户端数据面（QEMU slirp） | KVM 对照低成本验证（区分 slirp 通病 vs TCG）; QEMU 源码 tcp_input | ★★★★ | ✅ **双模式确认 (m150)**: TCG=KVM=DROP → slirp 通病; 升级路径 = slirp 源码/tap netdev (见 B19) |
+| B2 | TCP 客户端数据面（QEMU slirp） | KVM 对照低成本验证（区分 slirp 通病 vs TCG）; QEMU 源码 tcp_input | ★★★★ | ✅ **方向反转 (m150)**: guest→host 通 (rx 18B), 出站连接响应方向丢; W21 取证=ph 越界污染; UDP 决策不变 (docs/100) |
 | B3 | 样本集扩展 19→40 + 多模型曲线 | m141 样本扩容 + ollama 多模型 | ★★★★ | ask2 #1; 直接强化论文 §8 |
 | B4 | KVM 全量矩阵（其余 30 用例） | kvm-run 等价扩展（m129 除外） | ★★★ | 补全第三列 |
 | B5 | 在线波 KVM 链路 | WSL 模型通道（shm/COM2 宿主） | ★★★ | 在线证据第三列 |
