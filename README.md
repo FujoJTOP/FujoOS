@@ -11,8 +11,9 @@
 > a C subset, ACPI high tables unmapped, reference machine is QEMU).
 
 **Status: v1.0 → W20 real-hardware path → W29–W31 three execution modes →**
-**W33/B20 trust-adaptive AI safety** — 100 milestones (docs/08-roadmap-100.md)
-plus W13–W33: virtio-blk/net + IPv4/TCP echo · VFS + busybox directory commands ·
+**W33/B20 trust-adaptive AI safety → W34–W36 FUFORALL** — 100 milestones
+(docs/08-roadmap-100.md) plus W13–W36: virtio-blk/net + IPv4/TCP echo ·
+VFS + busybox directory commands ·
 ABI v1 freeze · in-kernel tcc self-hosting compile chain · SMP AP online · unified
 audit ring · network closed loop (UDP source-clone → in-kernel compile → run) ·
 **W20 de-QEMU specifics**: platform detection (Bochs VBE evidence chain → is_qemu)
@@ -29,8 +30,13 @@ trust-adaptive domains** (quality ledger → dom_admit → domain width = f(qual
 A-class anti-abuse) · **B20 model sweep**: 15 local models × 100-sample goldset
 with leave-one-model-out robustness (novel blind-spot coverage is a
 family/instruction-following property, not size-monotone) · **B24 policy gate**
-(cfg value-domain + τ invariant). Reference regression: **40/40** (TCG);
-CI: 40 cases.
+(cfg value-domain + τ invariant) · **W34 Windows files run perfectly**
+(kernel32 30 + gdi32/user32 10 + msvcrt 31 shim APIs · `.run`/FUJR container ·
+`#!fujoshell` `.shell` scripts; m152_win.exe zero-modification, docs/105) ·
+**W35 scatter factory** (header-only POSIX libc subset + public-domain SHA-256
+source, runs natively; docs/106) · **W36 BOX-BRIDGE design** (closed-source =
+box interface, not LEGO; docs/108). Reference regression: **44/44** (TCG);
+CI: 44 cases.
 
 > **Paper.** *FUAI: A Measurement-Parameterized Safety Envelope for
 > AI-Integrated Operating Systems* — **preprint (priority record)**:
