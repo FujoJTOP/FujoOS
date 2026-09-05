@@ -140,6 +140,8 @@ CASES = [
     ("pe-m152", "PE32+ x win-console", "sdk/win/m152_win.exe", "W152 RESULT: PASS", [], {}),
     # W34: .run (FUJR) 容器内 Windows 载荷完美运行 (fujopack pack -e m152_win.exe)
     ("run-w152", "ELF(.run) x win32 console", "sdk/build/m152_win.run", "W152 RESULT: PASS", [], {}),
+    # W34: .shell 脚本 (FUJR 容器 EMBED = #!fujoshell 文本; 内置解释器)
+    ("run-w153", "ELF(.run) x fujo shell script", "sdk/build/m153_shell.run", "W153 RESULT: PASS", [], {}),
 ]
 
 MON_PORT = 4568

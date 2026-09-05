@@ -42,6 +42,10 @@ user : ExitProcess(171) - kernel takeover, M3 verified
 | gdi32/user32 | 10 | 字体/文本/DC（M109 图形面） |
 | msvcrt.dll | 31 | mingw CRT 面（M27/M28: malloc/printf/atof/...） |
 | 容器 | FUJR `.run` | header+manifest+≤8 资源; PE 载荷经统一加载器 |
+| 脚本 | `.shell` | FUJR EMBED 首行 `#!fujoshell`（零容器格式改动）→ 内置解释器（echo/注释/未知行报告） |
+
+W34 后回归: **43/43**（新增 `run-w153` .shell 用例；.shell 载荷 = `sdk/shell/m153_shell.sh` →
+`fujopack pack -e` → `.run`，解释执行输出 3 行 + `W153 RESULT: PASS`）。
 
 ## 4. 坑 (W34)
 
@@ -59,3 +63,30 @@ user : ExitProcess(171) - kernel takeover, M3 verified
   SHIM_TABLE msvcrt 面已 31 个, 缺口 = 常用 IO 系 printf/scanf 完整集验证）
 - LoadLibraryA 真实 DLL 映射（当前假句柄）
 - .run 容器资源 API（ResGet 等）与 PE 载荷 manifest 字段
+
+## 6. 兼容论（FUFORALL 立场文档）
+
+> 工程名: **FUFORALL**（"any file runs"）。与 Wine 的根本区别: **翻译不是仿真**。
+> 与 FUAI 论文同构: 不可信外部组件 → 翻译层 + 内核强制包络 → 度量。
+
+**兼容判据（功能性兼容）**：程序 P 在 FujoOS 上兼容 ⟺
+1. **命令全执行** — P 的完整命令序列（所有系统交互/API 调用）全部成功返回
+   （无 unimplemented、无崩溃、无静默丢失）；
+2. **画面显示** — P 的输出画面（文本控制台 + GUI 图形）被正确显示；
+3. **性能损失允许且可逆** — 当前慢可以接受；每个 shim 优化都是可逆回滚的改进。
+
+**与 Wine 的区分**：Wine 在非 Windows 上**仿真** win32 抽象（让程序以为自己在
+Windows）；FUFORALL **翻译**到 Fujo 原生语义（shim → 宏原生 syscall），验证的是
+**功能等价**（命令成功计数 + 画面核对）而非行为 diff。差异根源：Wine 的可用面
+= 仿真那些**没有对应系统**的 Windows 内部；FUFORALL 的边界 = 只翻译**有等价
+语义**的对象，没有等价语义就**声明不支持**（诚实边界，README "加载器子集"）。
+
+**四个命题**：
+- **P1 兼容 = 集合包含**：P 在 Fujo 运行 ⟺ P 的依赖闭包 ⊆ Fujo 提供的语义。
+  推论: 兼容层工作 = 枚举 + 补齐依赖闭包（shim 表 / def / 回归用例即证据）。
+- **P2 兼容 = 接口契约，不是容器模拟**：有等价语义→翻译；没有→声明不支持。
+  容器（.run）归一**二进制差异**，不模拟系统。
+- **P3 兼容边界必须可声明、可测量**：API 数量、回归矩阵（42/42、每 API 一用例）、
+  载荷测试 = 边界主张方式。兼容不是目标状态，是度量的函数（S2 思路）。
+- **P4 兼容 = 回归矩阵覆盖的依赖闭包**（度量自动化见 tools/compat_audit.py）：
+  每个 shim API 有正例用例；支持面有反例边界。

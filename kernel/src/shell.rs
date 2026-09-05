@@ -166,6 +166,43 @@ pub fn shell(mbi: u32) -> ! {
     shell_loop(mbi)
 }
 
+/// W34/FUFORALL: `.shell` 解释器 (FUJR 容器 EMBED = 脚本文本, 首行 `#!fujoshell`).
+/// 命令集 (最小): `#` 注释 / `echo <text>` 输出 / 空白行; 未知行报告后继续。
+pub fn run_script(p: u64, len: u64) -> ! {
+    out_line("script: #!fujoshell interpreter");
+    vga::set_color(0x07);
+    let src = p as *const u8;
+    let mut i = 0usize;
+    let mut line = [0u8; 64];
+    let mut ln = 0usize;
+    loop {
+        if i >= len as usize {
+            break;
+        }
+        let b = unsafe { src.add(i).read() };
+        if b == b'\n' || i == (len as usize) - 1 {
+            if b != b'\n' && ln < 63 {
+                line[ln] = b;
+                ln += 1;
+            }
+            let s = core::str::from_utf8(&line[..ln]).unwrap_or("");
+            let t = s.trim();
+            if t.starts_with("echo ") {
+                out_line(&t[5..]);
+            } else if !t.is_empty() && !t.starts_with('#') {
+                out_line("script: unknown command (ignored)");
+            }
+            ln = 0;
+        } else if ln < 63 {
+            line[ln] = b;
+            ln += 1;
+        }
+        i += 1;
+    }
+    out_line("script: EOF");
+    loop {}
+}
+
 /// W16: shell 主循环 (exit_to_shell 的跳转目标; 不再返回)。
 pub fn shell_loop(mbi: u32) -> ! {
     vga::set_color(0x07);

@@ -2287,6 +2287,16 @@ pub fn enter_user_test(mbi: u32) -> ! {
                     start = eaddr as u32;
                     len = elen as u32;
                     serial::write_line("run  : exec extracted -> format sniff");
+                    // W34+: .shell magic (#!fujoshell) -> 脚本解释器 (FUJR 容器内)
+                    unsafe {
+                        let mut m = [0u8; 11];
+                        for k in 0..11usize {
+                            m[k] = (eaddr as *const u8).add(k).read();
+                        }
+                        if &m == b"#!fujoshell" {
+                            crate::shell::run_script(eaddr, elen);
+                        }
+                    }
                 }
             }
             // 模块名 (bootloader 提供零终止字符串)
