@@ -136,14 +136,20 @@ pub fn init() -> bool {
                         core::hint::spin_loop();
                         w += 1;
                     }
-                    let sig = mmio_rd(p + P_SIG) & 0xFF;
+                    let sig = mmio_rd(p + P_SIG);
                     serial::write_str("ahci : port ");
                     print_dec(i as u64);
                     serial::write_str(" sig=0x");
                     crate::syscall::log_hex(mmio_rd(p + P_SIG) as u64);
                     serial::write_line("");
-                    if sig == 0x01 {
-                        // ATA (签名 0x00000101; 低字节 0x01)
+                    // W37/m137: 签名必须精确 0x0000_0101 (ATA LBA48)。QEMU 无盘端口
+                    // 默认 sig=0xffff_0101 (高 16 位全 1 = 设备不存在) —— 低字节判据
+                    // 0x01 会误判为 ATA -> AHCI_READY=true -> fjfs 对空盘 cmd() busy
+                    // 重试, WHPX/KVM 下 mmio 陷出 ×8M 次 = boot 拖延 >30s (TCG mmio
+                    // 模拟快, 掩盖该误判)。真盘 sig = 0x0000_0101。真机无设备端口的
+                    // sig = 0xffff_ffff 同理被拒。
+                    if sig == 0x0000_0101 {
+                        // ATA (精确签名; 高 16 位剔除设备缺失标志)
                         ACTIVE_PORT = i;
                         AHCI_READY = true;
                         serial::write_line("ahci : ATA device on (LBA48 ok)");
@@ -235,14 +241,21 @@ fn cmd(port: u32, kind: u8, lba: u32, count: u16, buf: *const u8) -> bool {
             mmio_wr(p + P_CI, 0); // 清残留 issue 位
             mmio_wr(p + P_CI, 1);
             let mut spins = 0u32;
-            while mmio_rd(p + P_CI) & 1 != 0 && spins < 2_000_000 {
+            // W37/m137: 墙钟双上限 (m123 教训, docs/92 §3b) —— WHPX/KVM 下每次
+            // mmio_rd 是 VP 陷出 (µs 级), 纯 spin 计数上限在快 CPU 上 = 数十秒拖
+            // 延; 墙钟 250ms 兜底 (真盘 SATA 冷启动 <100ms)。
+            let t_spin = rdtsc_smp();
+            while mmio_rd(p + P_CI) & 1 != 0 && spins < 2_000_000
+                && rdtsc_smp().wrapping_sub(t_spin) < 250_000_000
+            {
                 core::hint::spin_loop();
                 spins += 1;
             }
             let is = mmio_rd(p + P_IS);
             mmio_wr(p + P_IS, is); // 清
             let tfd = mmio_rd(p + P_TFD);
-            let done = spins < 2_000_000;
+            let done = spins < 2_000_000
+                && rdtsc_smp().wrapping_sub(t_spin) < 250_000_000;
             let err = (is & 0x7E00) != 0 || (tfd & 1) != 0; // PxIS 错误位簇 (TFE 等)/TFD.ERR
             if done && !err {
                 // W20 p5: 写后盘需回到空闲 (TFD.DRQ/BSY 清) 才能继续下一命令;

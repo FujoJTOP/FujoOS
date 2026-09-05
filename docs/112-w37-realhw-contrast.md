@@ -11,11 +11,11 @@
 
 ## 1. 三模式对照表（W37 全量 51 用例）
 
-| 模式 | 结果 | 说明 |
-|---|---|---|
-| TCG（W37 基线） | **51/51** | docs/111 已记录 |
-| **WHPX**（本机 Windows Hypervisor Platform, `--accel whpx`） | **48/51** | 新 14 用例（W33-W37 兼容层/散件/BOX 全链）首次硬件虚拟化执行 |
-| **KVM**（WSL2, `--accel kvm`, /dev/kvm 硬件虚拟化） | **48/51** | 同上；fujoregress 补 WSL 兼容（taskkill→pkill 平台分支） |
+| 模式 | 修复前 | 修复后（m137 AHCI 签名/墙钟） | 说明 |
+|---|---|---|---|
+| TCG（W37 基线） | **51/51** | **51/51** ✅ | docs/111 已记录；m137 修复无 TCG 回归 |
+| **WHPX**（本机 Windows Hypervisor Platform, `--accel whpx`） | **48/51** | **49/51** | +m137 修复；剩 m129（INIT/SIPI 平台限制）+ m121（既有时序敏感） |
+| **KVM**（WSL2, `--accel kvm`, /dev/kvm 硬件虚拟化） | **48/51** | **49/51** | +m137 修复；剩 m129（WSL2 嵌套 CPUID 隐藏 APIC）+ m140（键盘注入丢键，工具时序） |
 
 ## 2. 失败归因（全部分析完毕，无一为盲）
 
@@ -26,19 +26,30 @@
 | m137-pci | FAIL | FAIL | **新发现（真机风险，见 §3）** |
 | m140-selfhost | PASS | FAIL | **键盘注入丢键**（"hello-clone.c"→"ello-clone.c"，首字符丢）：WSL KVM 下 sendkey 注入时序交叠；非内核缺陷（TCG/WHPX 同注入 PASS） |
 
-## 3. m137 新发现 —— q35 + 无盘 AHCI 卡 boot（真机前置阻断）
+## 3. m137 新发现 —— q35 + 无盘 AHCI 卡 boot（真机前置阻断）✅ 已修
 
 **现象**：`-machine q35`（无 `-drive`）下 boot 打印至
 `ahci : ATA device on (LBA48 ok)` 后**再无输出**（demo 未启动）——WHPX 与 KVM
 **共同**；TCG 同参数 PASS（51/51 基线）。
 
-**意义**：q35 无盘 = **真机 U 盘/光驱引导等价拓扑**（USB 介质不占 AHCI 端口）——
-真机 checklist（docs/93 §4）的 ISO/U 盘路径受此直接威胁；同时影响 ISO/USB 中的
-"非 ATA 背板" 场景。**W38 修正前置项**（真机引导前必须过）。
+**根因（已定位，W37 修复）**：
+1. **签名误判**：QEMU q35 无盘端口默认 `P_SIG=0xffff_0101`（高 16 位全 1 =
+   设备不存在），原有判据 `sig & 0xFF == 0x01`（只看低字节）→ 误判 ATA →
+   `AHCI_READY=true` → fjfs 读卷 → cmd() 对空盘 busy 重试；TCG 的 mmio 模拟快
+   （几十 ms 失败），**WHPX/KVM 每次 mmio_rd 是 VP 陷出（µs 级 × 8M 次 = 30s+）**
+   → boot 拖延过 TTL。真机（无盘端口 sig=0xffff_ffff）同误判风险。
+2. **纯 spin 计数上限**（m123 同类，docs/92 §3b）：cmd busy 等待只有 spin 计数，
+   快 CPU 上墙钟无界。
 
-**调查计划**（独立波）：QEMU monitor `info pci/info qtree` 取证（kvm whpx 下
-ich9-ahci 设备模型行为）→ 定位 fjfs::init 或 ahci cmd 空盘路径的等待点 →
-修（无盘时不激活 AHCI_READY / fjfs 快退）。
+**修复（`kernel/src/ahci.rs`）**：
+- 签名**精确匹配** `sig == 0x0000_0101`（ATA LBA48；无盘/无设备端口拒绝）
+- cmd busy 等待双上限：`spins < 2M && rdtsc 差 < 250ms`（真盘 SATA 冷启动 <100ms）
+
+**验证（三模式单跑 + 全量复验）**：m137 TCG ✅ / WHPX ✅ / KVM ✅；盘路径
+m134/m135 TCG ✅；全量三模式复验见 §1（本波后）。
+
+**意义**：q35 无盘 = 真机 U 盘/ISO 引导等价拓扑 —— 修复后**真机引导前置阻断解除**
+（docs/93 §4 checklist 可执行）。
 
 ## 4. 交付与修复
 

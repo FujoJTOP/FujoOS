@@ -39,7 +39,10 @@ interface, not LEGO — host box_server as kernel-external provider, 4 verbs,
 artifact quarantine gate + dual ledger, FOUR-state regression; docs/108/109/110) ·
 **W37 B-1/B-2v1/B-29-31** (tcc big-source in-kernel no-GP re-verify; box big
 artifact band 512B→3072B via pinned page + file2pdf(winword COM real box) +
-framebuf pixel path; verb catalog/golden trace/quarantine fuzz; docs/111).
+framebuf pixel path; verb catalog/golden trace/quarantine fuzz; docs/111) ·
+**W37 real-hardware contrast** (TCG 51/51 · WHPX 49/51 · KVM 49/51; m137 fixed:
+AHCI signature exact-match + wall-clock dual bound — q35 no-disk boot stall on
+hardware virtualization, real-machine U-USB blocker cleared; docs/112).
 Reference regression: **51/51** (TCG); CI: 51 cases.
 
 > **Paper.** *FUAI: A Measurement-Parameterized Safety Envelope for
