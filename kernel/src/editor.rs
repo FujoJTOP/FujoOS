@@ -9,7 +9,8 @@
 
 use crate::serial;
 
-const CAP: usize = 2048;
+// W36/B-2: 编辑器缓冲 2KB -> 1KB (BSS 硬约束回收; 迷你编辑器 M73 面)
+const CAP: usize = 1024;
 
 static mut BUF: [u8; CAP] = [0; CAP];
 static mut LEN: usize = 0;

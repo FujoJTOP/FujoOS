@@ -15,6 +15,7 @@ mod ai;
 mod a11y;
 mod ahci;
 mod acpi;
+mod boxbridge;
 mod virtio;
 mod net;
 mod ata;

@@ -34,9 +34,10 @@ family/instruction-following property, not size-monotone) · **B24 policy gate**
 (kernel32 30 + gdi32/user32 10 + msvcrt 31 shim APIs · `.run`/FUJR container ·
 `#!fujoshell` `.shell` scripts; m152_win.exe zero-modification, docs/105) ·
 **W35 scatter factory** (header-only POSIX libc subset + public-domain SHA-256
-source, runs natively; docs/106) · **W36 BOX-BRIDGE design** (closed-source =
-box interface, not LEGO; docs/108 · B-2 v0 spec docs/109). Reference regression: **44/44** (TCG);
-CI: 44 cases.
+source, runs natively; docs/106) · **W36 BOX-BRIDGE v0** (closed-source = box
+interface, not LEGO — host box_server as kernel-external provider, 4 verbs,
+artifact quarantine gate + dual ledger, FOUR-state regression; docs/108/109/110).
+Reference regression: **48/48** (TCG); CI: 48 cases.
 
 > **Paper.** *FUAI: A Measurement-Parameterized Safety Envelope for
 > AI-Integrated Operating Systems* — **preprint (priority record)**:

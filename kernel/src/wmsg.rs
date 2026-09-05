@@ -14,7 +14,8 @@ use crate::mouse;
 use crate::serial;
 
 pub const WMAX: usize = 8;
-pub const QLEN: usize = 64;
+// W36/B-2: 消息队列 64 -> 56 (BSS 硬约束回收 -160B; 8 窗口场景 ring 语义不变)
+pub const QLEN: usize = 56;
 
 // 消息种类
 pub const WM_MOUSEMOVE: u32 = 0x01;

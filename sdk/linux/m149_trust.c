@@ -7,8 +7,9 @@
  * 新机制: 质量台账 (0x8314) → dom_admit (0x8313) → 当前域宽随质量加宽/收缩。
  *
  *   T1 绑定域 1 (perm=0, 无授权)
- *   T2 高质量 (io 12 命中) -> dom_admit(4) -> 加宽 (perm=ALL 0x3F)
- *   T3 加宽验证: 0x810A 域表读回 perm==0x3F
+ *   T2 高质量 (io 12 命中) -> dom_admit(4) -> 加宽 (perm=ALL 0x7F; W36: ALL_ACTS
+ *     含 act7 BOX_CMD, 0x3F→0x7F)
+ *   T3 加宽验证: 0x810A 域表读回 perm==0x7F
  *   T4 低质量 (anom 40 次 miss, 率<30) -> dom_admit(2) -> 收缩 (perm=仅 ACK)
  *   T5 收缩验证: perm==0x20 (ACK) 且 cap_exec(ISOLATE) 被拒 (-1) 且审计记 deny
  *   T6 回系统域
@@ -113,8 +114,8 @@ static int run(void)
         wrdec(o[0]);
         wrstr(" perm=");
         wrdec(info[d1 * 5 + 1]);
-        wrstr(" (expect 1/>=70/0x3F: widened after confirm)\n");
-        if (!(rc2 == 1 && o[0] >= 70 && info[d1 * 5 + 1] == 0x3F))
+        wrstr(" (expect 1/>=70/0x7F: widened after confirm)\n");
+        if (!(rc2 == 1 && o[0] >= 70 && info[d1 * 5 + 1] == 0x7F))
             pass_all = 0;
     }
 

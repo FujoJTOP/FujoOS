@@ -7,7 +7,8 @@
 use crate::mouse;
 use crate::wmsg;
 
-pub const CLIP_MAX: usize = 8192;
+// W36/B-2: 剪贴板 8KB -> 2KB (BSS 硬约束回收, docs/106 坑 #5; 文本剪贴板 v0 足够)
+pub const CLIP_MAX: usize = 2048;
 static mut CLIP: [u8; CLIP_MAX] = [0; CLIP_MAX];
 static mut CLIP_LEN: usize = 0;
 

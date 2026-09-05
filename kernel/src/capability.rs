@@ -32,7 +32,9 @@ pub const ACT_LAUNCH: u64 = 3;
 pub const ACT_SET_CFG: u64 = 4;
 pub const ACT_RESUME: u64 = 5;
 pub const ACT_ACK: u64 = 6;
-pub const ALL_ACTS: u64 = 0x3F;
+/// W36/B-2: act7 = BOX_CMD (盒供应商调用门; BOX_XFR act8 留 v1)。
+pub const ACT_BOX_CMD: u64 = 7;
+pub const ALL_ACTS: u64 = 0x7F;
 
 /// M112: 配置槽 (key 1..=8): 1=anom 置信阈值 (默认 50), 2=自动隔离 (默认 0)。
 /// B24: 政策值域表 (key -> (min, max)); 越界拒绝 (由 G3/m151 暴露: 无门 -> 污染接受)。
@@ -117,8 +119,9 @@ pub fn fujo_cfg_get(key: u64) -> i64 {
 }
 
 /// M116: exec 动作授权检查 —— 当前任务域门 (域 0 读全局槽 6, 兼容不变)。
+/// W36: act 7 (BOX_CMD) 同一门 (per-provider 域宽与模型同构)。
 pub fn exec_authorized(act: u64) -> bool {
-    if act == 0 || act > 6 {
+    if act == 0 || act > 8 {
         return false;
     }
     let (g, p) = domain_perm(cur_dom());
@@ -159,7 +162,8 @@ pub fn fujo_cap_exec(act: u64, a0: u64, a1: u64) -> i64 {
     rc
 }
 
-fn aud_note(action: u64, subject: u64, result: u64) {
+/// 审计落笔 (统一环; box 审计经此 — W36/B-2)。
+pub(crate) fn aud_note(action: u64, subject: u64, result: u64) {
     unsafe {
         AUD[(AUD_POS % N_AUD as u64) as usize] =
             (crate::interrupts::ticks(), action, subject, result);

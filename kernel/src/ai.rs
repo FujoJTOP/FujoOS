@@ -1053,7 +1053,8 @@ pub fn act_verify(act: u64, a0: u64, a1: u64) -> u64 {
 // 测试可显式提交 (0x8314) 构造高/低质量场景。
 // ---------------------------------------------------------------------------
 
-const QUAL_DUTY: usize = 6;
+// W36/B-2: duty 7/8 = 盒 (列1 契约履约 / 列2a 可判定谓词) —— 与模型同尺度的第三供应商面。
+const QUAL_DUTY: usize = 8;
 static mut QUAL_HIT: [u64; QUAL_DUTY] = [0; QUAL_DUTY];
 static mut QUAL_TOTAL: [u64; QUAL_DUTY] = [0; QUAL_DUTY];
 /// A7-② 防污染: 加宽需连续高 (WIDEN_CONFIRM=2), 收缩即时 —— 域宽滞后于涨、跟随于跌。

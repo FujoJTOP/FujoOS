@@ -206,3 +206,20 @@ R3 语义本质 = **"过期即弃"**；盒帧分三型复用同一裁决器：
 0xA00000 共享页区占用审计：帧布局 v2（ai.rs:189）用到的最大偏移 + 宿主 pmemsave
 直读窗口边界 → 判定"余量 ≥ 8KiB 盒窗口" → 决定走方案1（kind 分域）或方案3（新区）；
 方案2 仅在审计不可行时用（记录理由）。
+
+## 13. v0 实现记录（DSH 落地，2025-06）
+
+> 实现与规格的偏差（可追溯）：设计按 spec，实现按"最懒可用"，偏差逐条记录。
+
+| 项 | spec | 实现 | 原因 |
+|---|---|---|---|
+| 盒通道布局（D2） | 审计后 1→2→3 降级链 | **审计结论 = 方案1 余量仅 512B**（帧 payload 0x430 + ctx 至 0xE00，pin 页 0xA00000..0xA10000 内 0xE00..0x1000 只剩 512B，不足 8KiB 盒窗口）→ **方案3 化整为零**：盒帧/产物不经新页，请求复用共享页窗口、**产物经 COM2 行传输（每块 ≤64B）** | 共享页宿主侧只读（qwen model server 模式无写路径）；产物 512B 行协议零 BSS 零新页；0xA10000 页 pin 留 v1 高带宽 |
+| 动词集（D3） | 4 个：file2pdf/file2txt/hash/info | **hash / info / size / echo**（file2pdf→v1） | 产物 ≤512B 上界（检疫门 + 行协议）；file2pdf 大产物需 tmpfs/带外（v1），诚实记录 |
+| 双列台账 | duty7 履约 + duty8 下游 | 同 spec；**列2a = 动词 schema 谓词（hash=64hex/info 文本/size 数字/echo=arg 全等）**，列2b 未实现（D5） | 机器可判定 ✓ |
+| 域 | per-provider 域 | 域 1 = provider 0 端口域（demo 0x8107 建域 perm=0x40 act7 + 0x8108 绑），域宽调整由 dom_admit(duty7) 对**当前域**消费——demo 绑域 1 时即 per-provider 语义 | — |
+| 检疫门 | 流式 8KiB 块 | 帧级（ascii 白名单 + 禁 ELF/MZ 魔数 + schema）；审计 action=10 | 块流取消（产物行级） |
+| 审计 | 新动作码 | action=9（盒调用）/10（产物检疫）入统一环 | 0x8C01 可见 |
+
+**回归**：fujoregress 44 → **48/48**（新增 box-online/offline/badart/adapter 四态）。
+**BSS**：0x2BFBD0 < 0x2C0000（硬约束保住；回收 8.2KB：CLIP 8K→2K / editor 2K→1K /
+TRACE_COUNTS u64→u32 / wmsg QLEN 64→56）。

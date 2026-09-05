@@ -42,6 +42,8 @@ foreach ($n in @('m30_linux','m33_trace','m35_bench','m36_mouse','m37_wm','m38_w
                  'm112_ai','m113_plan','m114_nlc','m115_five','m118_r3','m119_inv','m116_dom','m120_distill','m121_isol','m122_dev','m123_vblk','m127_exec','m129_smp','m130_aud','m132_dirs','m133_plat','m134_ahci','m135_fs','m136_mem','m137_pci','m141_eval','m142_feedback','m143_distill_feed','m144_adv','m145_io_own','m146_full_fb','m147_storm','m149_trust','m150_tcpclient','m151_adv')) {
     Build-Elf $n
 }
+# W36/B-2: BOX-BRIDGE v0 通路 demo (宿主盒在线/离线/坏产物/违约 四态断言)
+Build-Elf 'm154_box'
 Write-Host "samples: elf ok"
 
 # --- Mach-O / PE ---

@@ -62,8 +62,9 @@ pub static mut pe_argv0: [u8; 64] = [0; 64];
 /// M33: 系统调用追踪 (默认关; 开关经 0x5301)。
 #[no_mangle]
 pub static mut TRACE_ON: u64 = 0;
+// W36/B-2: 计数 u64 -> u32 (BSS 硬约束回收 -1KB; 0x5303 仍返回 i64)
 #[no_mangle]
-pub static mut TRACE_COUNTS: [u64; 256] = [0; 256];
+pub static mut TRACE_COUNTS: [u32; 256] = [0; 256];
 pub static mut TRACE_RING: [(u64, u64, u64); 64] = [(0, 0, 0); 64];
 pub static mut TRACE_POS: usize = 0;
 /// M76: 后台记录 (不经 trace_show 也持续写入 ring/counts)。
@@ -378,6 +379,10 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         0x8313 => crate::ai::fujo_dom_admit(a0, a1),
         0x8314 => crate::ai::fujo_qual_feed(a0, a1),
         0x8315 => crate::ai::fujo_qual_seq(a0, a1),
+        // ---- W36/B-2: BOX-BRIDGE v0 (盒供应商: 命令进/产物检疫/状态) ----
+        0x8316 => crate::boxbridge::fujo_box_run(a0, a1, a2),
+        0x8317 => crate::boxbridge::fujo_box_stat(a0, a1),
+        0x8318 => crate::boxbridge::fujo_box_result(a0, a1),
         // ---- W13: virtio-blk (PCI 总线模型 + 驱动) ----
         0x8A01 => crate::virtio::fujo_vblk_read(a0, a1, a2),
         0x8A02 => crate::virtio::fujo_vblk_info(a0),
@@ -856,7 +861,7 @@ fn trace_show() -> i64 {
                 serial::write_str("trace :   nr%256=");
                 print_dec(c as u64);
                 serial::write_str(" count=");
-                print_dec(TRACE_COUNTS[c]);
+                print_dec(TRACE_COUNTS[c] as u64);
                 serial::write_line("");
                 shown += 1;
             }

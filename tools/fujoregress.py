@@ -147,6 +147,23 @@ CASES = [
     # B类后续: 内核内 tcc 编译大字源 (GP at tcc 0x49f630, 与大小无关, docs/106)
     ("scatter", "ELF64 x scatter-tool", "sdk/build/sha256tool.elf",
      "SFACTORY RESULT: PASS", [], {}),
+    # W36/B-2: BOX-BRIDGE v0 —— 盒供应商四态 (docs/109 §9):
+    #   online(宿主 box_server normal) / offline(无盒, TTL 缺席声明) /
+    #   badart(ELF 魔数产物 -> 检疫门拒收) / adapter(schema 违约 -> 列2a 记败)
+    # autostart (fujo.run) 直启: monitor 独占给盒服务 (键盘注入与 pmemsave 抢单连接),
+    # 与 m148 同路径
+    ("box-online", "ELF64 x box-online", "sdk/linux/m154_box.elf",
+     "BX V0 RESULT: PASS",
+     [], {"box": {"mode": "normal"}, "append": "fujo.run=m154_box", "keys": [], "bootsleep": 9.0, "timeout": 40}),
+    ("box-offline", "ELF64 x box-offline", "sdk/linux/m154_box.elf",
+     "BOX OFFLINE PASS",
+     [], {"append": "fujo.run=m154_box", "keys": [], "bootsleep": 9.0, "timeout": 40}),
+    ("box-badart", "ELF64 x box-badart", "sdk/linux/m154_box.elf",
+     "BOX GATE PASS",
+     [], {"box": {"mode": "badart"}, "append": "fujo.run=m154_box", "keys": [], "bootsleep": 9.0, "timeout": 40}),
+    ("box-adapter", "ELF64 x box-adapter", "sdk/linux/m154_box.elf",
+     "BOX ADAPTER PASS",
+     [], {"box": {"mode": "adapter"}, "append": "fujo.run=m154_box", "keys": [], "bootsleep": 9.0, "timeout": 40}),
 ]
 
 MON_PORT = 4568
@@ -278,6 +295,23 @@ def run_case(kernel, case, timeout_s, accel="tcg"):
         "-monitor", f"telnet:127.0.0.1:{MON_PORT},server,nowait",
         "-display", "none", "-no-reboot",
     ] + (["-append", opts.get("append")] if opts.get("append") else []) + extra)
+    # W36/B-2: 盒供应商 (宿主 box_server; daemon 线程, 用例结束随进程回收)
+    bxsrv = None
+    if opts.get("box"):
+        import box_server as bs
+        bxsrv = bs.BoxServer(port=SER_PORT, mon=MON_PORT, mode=opts["box"]["mode"])
+
+        def _serve():
+            for _ in range(40):
+                if bxsrv.stop:
+                    return
+                try:
+                    bxsrv.run()
+                    return
+                except OSError:
+                    time.sleep(0.5)
+
+        threading.Thread(target=_serve, daemon=True).start()
     time.sleep(float(opts.get("bootsleep", 9.0)))
     try:
         s = socket.create_connection(("127.0.0.1", MON_PORT), timeout=3)
