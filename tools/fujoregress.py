@@ -294,8 +294,11 @@ def run_case(kernel, case, timeout_s, accel="tcg"):
     if not os.path.exists(initrd):
         return ("MISS", f"initrd not found: {initrd}", "")
     # 每用例前清扫残留 qemu (端口独占; M39 起内核变大, 旧实例退出慢)
-    subprocess.run(["taskkill", "/F", "/IM", "qemu-system-x86_64.exe"],
-                   capture_output=True)
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/F", "/IM", "qemu-system-x86_64.exe"],
+                       capture_output=True)
+    else:
+        subprocess.run(["pkill", "-f", "qemu-system"], capture_output=True)
     time.sleep(0.8)
     tmpd = tempfile.mkdtemp(prefix="fujoregress-")
     log = os.path.join(tmpd, "qemu.log")
@@ -391,7 +394,8 @@ def main():
     ap.add_argument("--only", type=int, default=None)
     ap.add_argument("--timeout", type=float, default=14.0)
     ap.add_argument("--json", default=None)
-    ap.add_argument("--accel", default="tcg", help="QEMU accel: tcg (default) | whpx (W29 second-execution-mode contrast)")
+    ap.add_argument("--accel", default="tcg",
+                    help="QEMU accel: tcg (default) | whpx (W29 contrast) | kvm (WSL2 contrast)")
     a = ap.parse_args()
     if not os.path.exists(a.kernel):
         print(f"kernel not found: {a.kernel}", file=sys.stderr)
