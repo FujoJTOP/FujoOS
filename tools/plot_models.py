@@ -17,27 +17,34 @@ FAM = ["qwen2.5", "qwen3", "llama3.2", "gemma2", "phi3", "mistral",
 COL = {"qwen2.5": "#1f77b4", "qwen3": "#ff7f0e", "llama3.2": "#2ca02c",
        "gemma2": "#d62728", "phi3": "#9467bd", "mistral": "#8c564b",
        "deepseek-r1": "#e377c2"}
+PARAMS = {"qwen2.5:0.5b": 0.5, "qwen2.5:1.5b": 1.5, "qwen2.5:3b": 3,
+          "qwen2.5:7b": 7, "qwen3:0.6b": 0.6, "qwen3:1.7b": 1.7,
+          "qwen3:4b": 4, "qwen3:8b": 8, "llama3.2:1b": 1, "llama3.2:3b": 3,
+          "gemma2:2b": 2, "gemma2:9b": 9, "phi3:mini": 3.8,
+          "mistral:7b": 7, "deepseek-r1:1.5b": 1.5}
 
 
 def load():
     out = []
-    for fn in sorted(glob.glob(os.path.join(ROOT, "eval_results", "*.json"))):
-        d = json.load(open(fn))
-        if d.get("novel_pos_hits", -1) < 0:
-            continue
-        fam = d["model"].split(":")[0]
-        out.append((d["model"], fam, d))
-    return sorted(out, key=lambda x: x[0])
+    for base in (os.path.join(ROOT, "eval_results"),
+                 r"D:\Dev\FujoOS-private\eval_results"):
+        for fn in sorted(glob.glob(os.path.join(base, "*.json"))):
+            d = json.load(open(fn))
+            if d.get("novel_pos_hits", -1) < 0:
+                continue
+            fam = d["model"].split(":")[0]
+            out.append((d["model"], fam, d))
+    return sorted(out, key=lambda x: (FAM.index(x[1]), PARAMS.get(x[0], 0)))
 
 
 def main():
     rows = load()
-    fig, axs = plt.subplots(2, 2, figsize=(13, 8))
+    fig, axs = plt.subplots(2, 3, figsize=(15, 8))
     for ax, key, ttl in [
         (axs[0][0], "anom", "anomaly (%d)" % rows[0][2]["anom_t"]),
         (axs[0][1], "io", "io-next (%d)" % rows[0][2]["io_t"]),
-        (axs[1][0], "cls", "classify (%d)" % rows[0][2]["cls_t"]),
-        (axs[1][1], "novel_pos_hits", "novel blind-spot (10)"),
+        (axs[0][2], "cls", "classify (%d)" % rows[0][2]["cls_t"]),
+        (axs[1][0], "novel_pos_hits", "novel blind-spot (10)"),
     ]:
         xs, ys, cs = [], [], []
         for i, (m, fam, d) in enumerate(rows):
@@ -52,6 +59,28 @@ def main():
         ax.set_ylim(0, max(ys) * 1.15 if ys else 1)
         ax.tick_params(axis="x", rotation=45, labelsize=7)
         ax.grid(axis="y", alpha=0.3)
+    # scale vs blind-spot coverage: the corrected B3 claim (non-monotone)
+    ax = axs[1][1]
+    for m, fam, d in rows:
+        ax.scatter(PARAMS[m], d["novel_pos_hits"], color=COL.get(fam, "#333"),
+                   s=60, label=fam if d["model"] == rows[0][0] else None)
+    for m, fam, d in rows:
+        ax.annotate(m.split(":")[-1], (PARAMS[m], d["novel_pos_hits"]),
+                    textcoords="offset points", xytext=(3, 3), fontsize=6)
+    ax.set_xscale("log")
+    ax.set_xlabel("params (B, log)")
+    ax.set_ylabel("novel blind-spot hits /10")
+    ax.set_title("coverage is NOT size-monotone (0.6B 10/10 vs 4B 0/10)")
+    ax.grid(alpha=0.3)
+    # LOO result summary panel
+    ax = axs[1][2]
+    ax.axis("off")
+    ax.text(0, 0.95, "Leave-one-model-out (15 removals):", fontsize=10)
+    ax.text(0, 0.75, "C1 blind-spot coverage: no flip\n"
+                     "C2 io rule-ownership: no flip\n"
+                     "C3 worst model: qwen2.5:0.5b (32)\n"
+                     "C4 orthogonality: FLIPS when\n   llama3.2:3b removed (dual-best)",
+            fontsize=9, family="monospace")
     fig.suptitle("B20: 15 local models x 100-sample m141 goldset (rules baseline: "
                  "anom 30/40 io 30/30 cls 16/30 novel 0/10; blue=qwen2.5 orange=qwen3 "
                  "green=llama red=gemma purple=phi brown=mistral pink=deepseek)", fontsize=9)
