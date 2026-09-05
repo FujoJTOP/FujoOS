@@ -7,3 +7,13 @@ EXPORTS
     GetCurrentThreadId
     CloseHandle
     CreateFileA
+    GetStdHandle
+    WriteConsoleA
+    GetConsoleMode
+    SetConsoleMode
+    GetTickCount
+    GetSystemTimeAsFileTime
+    VirtualAlloc
+    VirtualFree
+    FlushFileBuffers
+    GetCurrentProcessId

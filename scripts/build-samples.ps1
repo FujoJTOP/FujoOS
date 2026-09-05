@@ -49,7 +49,7 @@ Write-Host "samples: elf ok"
     "$root\sdk\mac\m29_darwin.c" -o "$root\sdk\mac\m29_darwin.macho"
 if ($LASTEXITCODE -ne 0) { throw "macho failed" }
 & "$llvm\llvm-dlltool.exe" -d "$root\sdk\win\kernel32.def" -l "$root\sdk\win\kernel32.lib" -D kernel32.dll
-foreach ($n in @('hello_win','m26_win','m30_win')) {
+foreach ($n in @('hello_win','m26_win','m30_win','m152_win')) {
     & "$llvm\clang.exe" --target=x86_64-pc-windows-msvc -O2 -nostdlib -fuse-ld=lld `
         "-Wl,/entry:_start" "-Wl,/subsystem:console" "-Wl,/base:0x400000" `
         "$root\sdk\win\$n.c" "$root\sdk\win\kernel32.lib" -o "$root\sdk\win\$n.exe"

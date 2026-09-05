@@ -136,6 +136,10 @@ CASES = [
      ["-netdev", "user,id=net0",
       "-device", "virtio-net-pci,netdev=net0,mac=52:54:00:12:34:57,disable-modern=on,disable-legacy=off"],
      {"tcp_server": [8021], "bootsleep": 10.0}),
+    # W34: Windows 文件完美运行 —— 标准 Console API 集 (零 CRT PE32+)
+    ("pe-m152", "PE32+ x win-console", "sdk/win/m152_win.exe", "W152 RESULT: PASS", [], {}),
+    # W34: .run (FUJR) 容器内 Windows 载荷完美运行 (fujopack pack -e m152_win.exe)
+    ("run-w152", "ELF(.run) x win32 console", "sdk/build/m152_win.run", "W152 RESULT: PASS", [], {}),
 ]
 
 MON_PORT = 4568

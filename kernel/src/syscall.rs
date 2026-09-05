@@ -567,7 +567,7 @@ pub extern "C" fn fujo_syscall_dispatch(nr: u64, args: *const u64, ret: u64) -> 
         // clock_nanosleep -> 立即完成
         228 => 0,
         // ---- fujo 原生 Win32 shim 通道 (M3/M26 基础 + M27 mingw CRT + M28/M30) ----
-        0x5001..=0x5018 | 0x5201..=0x522B | 0x5019..=0x5024 => shim_dispatch(nr, args),
+        0x5001..=0x5018 | 0x5201..=0x522B | 0x5019..=0x502E => shim_dispatch(nr, args),
         // exit(code) / exit_group(code) -> 返回 shell (W16: 编译链三步可串行; 原 M6 halt)
         60 | 231 => {
             serial::write_str("user : sys_exit code=");
@@ -1131,6 +1131,45 @@ fn shim_dispatch(nr: u64, args: *const u64) -> i64 {
                 (a2 as *mut u8).write(1);
                 1
             }
+            // ---- W34: Console/时间/内存/进程 面 ----
+            0x5025 => {
+                // GetStdHandle(n): -11 stdout / -12 stderr / -10 stdin -> fd 1/2/0
+                // (Win64: (DWORD)-11 经 mov ecx 零扩展 -> 按低 32 位截断)
+                match (a1 as u32) as i32 {
+                    -11 => 1,
+                    -12 => 2,
+                    _ => 0,
+                }
+            }
+            0x5026 => {
+                // WriteConsoleA(h, buf, len, written, reserved)
+                let n = user_write(a1, a2, a3);
+                if a4 != 0 && n >= 0 {
+                    (a4 as *mut u32).write(n as u32);
+                }
+                if n >= 0 { 1 } else { 0 }
+            }
+            0x5027 => 1, // GetConsoleMode
+            0x5028 => 1, // SetConsoleMode
+            0x5029 => {
+                // GetTickCount(): ms (PIT 100Hz * 10)
+                interrupts::ticks() as i64 * 10
+            }
+            0x502A => {
+                // GetSystemTimeAsFileTime(ptr): u64 100ns since 1601 (boot 相对 + 偏移)
+                if a1 != 0 {
+                    let v = 0x01D3_0000_0000_0000u64 + interrupts::ticks() * 100_000;
+                    (a1 as *mut u64).write(v);
+                }
+                0
+            }
+            0x502B => {
+                // VirtualAlloc(addr, size, type, prot): addr=0 -> shim 堆; 否则原样
+                if a1 == 0 { shim_heap_alloc(a2) as i64 } else { a1 as i64 }
+            }
+            0x502C => 1, // VirtualFree
+            0x502D => 1, // FlushFileBuffers (写直通)
+            0x502E => crate::sched::current_task() as i64 + 1, // GetCurrentProcessId
             0x5018 => {
                 // CreateFileA(name, access, share, sec, disp, flags, tmpl)
                 // M30: 统一对象路径 — 反斜杠归一后走 vfs open; 句柄=fd。

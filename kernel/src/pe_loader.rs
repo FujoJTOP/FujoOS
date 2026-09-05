@@ -44,6 +44,17 @@ pub const SHIM_TABLE: &[(&str, &str, u64)] = &[
     ("kernel32.dll", "GetCPInfo", 0x5017),
     // ---- M30: 统一对象路径 ----
     ("kernel32.dll", "CreateFileA", 0x5018),
+    // ---- W34: Console/时间/内存/进程 面 (真实 Windows 程序依赖) ----
+    ("kernel32.dll", "GetStdHandle", 0x5025),
+    ("kernel32.dll", "WriteConsoleA", 0x5026),
+    ("kernel32.dll", "GetConsoleMode", 0x5027),
+    ("kernel32.dll", "SetConsoleMode", 0x5028),
+    ("kernel32.dll", "GetTickCount", 0x5029),
+    ("kernel32.dll", "GetSystemTimeAsFileTime", 0x502A),
+    ("kernel32.dll", "VirtualAlloc", 0x502B),
+    ("kernel32.dll", "VirtualFree", 0x502C),
+    ("kernel32.dll", "FlushFileBuffers", 0x502D),
+    ("kernel32.dll", "GetCurrentProcessId", 0x502E),
     // ---- M109: gdi32 字体兼容层 (win32 二进制 CreateFont/TextOut 路径) ----
     ("gdi32.dll", "CreateFontA", 0x5019),
     ("gdi32.dll", "CreateFontW", 0x501A),
