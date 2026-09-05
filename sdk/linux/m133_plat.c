@@ -67,9 +67,18 @@ static void run(void)
     if (ret != 0)
         pass = 0;
 
+    /* W33 (B4): KVM 证据 —— is_qemu (VBE 设备) ≠ LAPIC 语义;
+     * ICR 语义判据 = VBE 是 QEMU 且 hypervisor 为 TCG -> 低写, 否则 Intel 高写。
+     * 0x6401 accel_info: 0=TCG 1=KVM 2=其它 (docs/74 #1 + W33)。 */
     wrstr("m133: T2 icr session aligns platform\n");
     {
-        int aligned = (is_qemu == 1 && icr_mode == 0) || (is_qemu == 0 && icr_mode == 1);
+        long accel = sy(0x6401, (long)buf, 0, 0, 0, 0);
+        wrstr("m133: T2 accel=");
+        wrdec((u64)accel);
+        wrstr("\n");
+        int aligned = (is_qemu == 0 && icr_mode == 1) ||
+                      (is_qemu == 1 && accel == 0 && icr_mode == 0) ||
+                      (is_qemu == 1 && accel != 0 && icr_mode == 1);
         if (!aligned)
             pass = 0;
     }
