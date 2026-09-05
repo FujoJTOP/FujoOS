@@ -142,6 +142,11 @@ CASES = [
     ("run-w152", "ELF(.run) x win32 console", "sdk/build/m152_win.run", "W152 RESULT: PASS", [], {}),
     # W34: .shell 脚本 (FUJR 容器 EMBED = #!fujoshell 文本; 内置解释器)
     ("run-w153", "ELF(.run) x fujo shell script", "sdk/build/m153_shell.run", "W153 RESULT: PASS", [], {}),
+    # W35: 散件工厂 —— 公共域 sha256 工具 (fujo_libc 散件 + 原样源码拼装)
+    # 本波: 宿主编译 (WSL gcc -nostdlib) -> FujoOS 原生 ELF 运行; 向量验证
+    # B类后续: 内核内 tcc 编译大字源 (GP at tcc 0x49f630, 与大小无关, docs/106)
+    ("scatter", "ELF64 x scatter-tool", "sdk/build/sha256tool.elf",
+     "SFACTORY RESULT: PASS", [], {}),
 ]
 
 MON_PORT = 4568
