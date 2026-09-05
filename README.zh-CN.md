@@ -26,7 +26,9 @@ WHPX 36/37, KVM 37/38 — docs/92, docs/91) · **W32/W33 信任自适应域** (�
 (cfg 值域 + τ 不变式)。参考机回归: **40/40** (TCG); CI: 40 用例。
 
 > **论文.** *FUAI: A Measurement-Parameterized Safety Envelope for
-> AI-Integrated Operating Systems* —— arXiv 预印本提交中 (cs.OS; 作者 Yuxuan Jiang)。
+> AI-Integrated Operating Systems* —— **预印本（优先权记录）**:
+> [Zenodo 10.5281/zenodo.22352904](https://zenodo.org/records/22352904) ·
+> arXiv 提交进行中 (cs.OS; 作者 Yuxuan Jiang)。
 > 稿件随 venue 记录发布; 其证据附录全部可由本仓库复现。
 
 ## 特性一览

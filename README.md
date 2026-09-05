@@ -33,9 +33,11 @@ family/instruction-following property, not size-monotone) · **B24 policy gate**
 CI: 40 cases.
 
 > **Paper.** *FUAI: A Measurement-Parameterized Safety Envelope for
-> AI-Integrated Operating Systems* — arXiv preprint in submission (cs.OS;
-> author Yuxuan Jiang). The manuscript is published with the venue record;
-> its evidence appendix is regenerable from this repository.
+> AI-Integrated Operating Systems* — **preprint (priority record)**:
+> [Zenodo 10.5281/zenodo.22352904](https://zenodo.org/records/22352904) ·
+> arXiv submission in progress (cs.OS; author Yuxuan Jiang). The manuscript
+> is published with the venue record; its evidence appendix is regenerable
+> from this repository.
 
 ## Feature overview
 
