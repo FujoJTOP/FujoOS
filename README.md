@@ -35,7 +35,7 @@ family/instruction-following property, not size-monotone) · **B24 policy gate**
 `#!fujoshell` `.shell` scripts; m152_win.exe zero-modification, docs/105) ·
 **W35 scatter factory** (header-only POSIX libc subset + public-domain SHA-256
 source, runs natively; docs/106) · **W36 BOX-BRIDGE design** (closed-source =
-box interface, not LEGO; docs/108). Reference regression: **44/44** (TCG);
+box interface, not LEGO; docs/108 · B-2 v0 spec docs/109). Reference regression: **44/44** (TCG);
 CI: 44 cases.
 
 > **Paper.** *FUAI: A Measurement-Parameterized Safety Envelope for
